@@ -1,6 +1,14 @@
 # KeyMic
 
-A macOS menu-bar application that converts speech to text in real time using Apple's built-in Speech Recognition framework. Press a hotkey, speak, and the transcribed text is injected directly into the currently focused text field.
+**KeyMic = Mac's Keyboard + Voice + Clipboard.** A macOS menu-bar utility (`LSUIElement`) bundling three productivity layers in one app:
+
+- **Keyboard remap** — Karabiner-style modifier remaps applied through a session-level `CGEvent` tap (e.g. Right Cmd → Forward Delete, Caps Lock → Left Control).
+- **Voice input** — hold a trigger key (Fn or Right Option), speak, transcribed text is pasted into the focused field. Optional LLM refinement via any OpenAI-compatible chat-completions endpoint.
+- **Clipboard history** — text-only background monitor with SwiftData storage. Hotkey `⌥V` opens a search panel; arrow keys navigate, `⌥1`–`⌥0` quick-paste.
+
+All three pillars share a single event tap and a single menu-bar process.
+
+https://github.com/user-attachments/assets/3228f78a-f035-447d-98ef-8826798a122c
 
 ## Requirements
 
@@ -10,25 +18,43 @@ A macOS menu-bar application that converts speech to text in real time using App
 ## Build & Run
 
 ```bash
-make build   # build the .app bundle
-make run     # build and launch
-make install # copy to /Applications
-make clean   # remove build artifacts
+make build   # release build → ./KeyMic.app (ad-hoc codesigned)
+make run     # build then launch
+make install # copy bundle to /Applications
+make clean   # swift package clean + remove .app
 ```
 
-## Source Code
+## Tests
 
-The full source code lives at **<https://github.com/keymic-io/keymic>**.
+Tests are standalone `swiftc` runners, not XCTest. Run via Make:
 
-> **Reproducibility guarantee:** the source repository contains every file needed to produce **exactly** this distributed artifact. You can clone it and run `make build` to obtain an identical `KeyMic.app` bundle. The build process is recorded and publicly verifiable — see the asciinema session below.
+```bash
+make test                     # KeyMappingManager
+make test-clipboard-store     # ClipboardStore
+make test-clipboard-monitor   # ClipboardMonitor
+```
 
-## Build Recording
+`swift test` will not work — there is no test target in `Package.swift`.
 
-A complete, unedited terminal recording of the build from source is available here:
+## Permissions
+
+The app needs **Accessibility** access for its event tap (voice trigger, clipboard hotkey, key remap). Microphone + Speech Recognition prompts appear on first voice use.
+
+Because the build is ad-hoc codesigned, every fresh `make build` is treated as a new identity by macOS — you must re-grant Accessibility after rebuilding.
+
+## Source & Reproducibility
+
+The full source lives in this repository.
+
+> **Reproducibility guarantee:** this repository contains every file needed to produce **exactly** the distributed artifact. Clone it, run `make build`, get an identical `KeyMic.app` bundle.
+
+A complete, unedited terminal recording of a build from source:
 
 [![asciicast](https://asciinema.org/a/cHD6XaaNvomCuysh.svg)](https://asciinema.org/a/cHD6XaaNvomCuysh)
 
-This recording demonstrates that the source code at <https://github.com/keymic-io/keymic> **can and does** build this exact artifact without modification.
+## Architecture
+
+See [`CLAUDE.md`](CLAUDE.md) for component layout and [`AGENTS.md`](AGENTS.md) for the macOS HID / event-tap gotchas.
 
 ## License
 
