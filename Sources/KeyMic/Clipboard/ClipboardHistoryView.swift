@@ -16,7 +16,6 @@ struct ClipboardHistoryView: View {
     @State private var selectedID: UUID?
     @State private var filtered: FilteredItems = FilteredItems(pinned: [], history: [])
     @State private var suppressScrollOnce: Bool = false
-    @State private var keyboardNavMouseLock: NSPoint?
     @FocusState private var focusedField: FocusedField?
 
     let focus: ClipboardPanelFocus
@@ -212,7 +211,10 @@ struct ClipboardHistoryView: View {
                             .listRowBackground(rowBackground(for: item))
                             .contentShape(Rectangle())
                             .onHover { hovering in
-                                handleHover(hovering, item: item)
+                                if hovering, selectedID != item.id {
+                                    suppressScrollOnce = true
+                                    selectedID = item.id
+                                }
                             }
                             .onTapGesture { onPaste(item) }
                             .id(item.id)
@@ -292,19 +294,6 @@ struct ClipboardHistoryView: View {
             let currentIndex = list.firstIndex(where: { $0.id == selectedID }) ?? 0
             let newIndex = (currentIndex + delta + list.count) % list.count
             selectedID = list[newIndex].id
-            keyboardNavMouseLock = NSEvent.mouseLocation
-        }
-    }
-
-    private func handleHover(_ hovering: Bool, item: ClipboardItem) {
-        guard hovering else { return }
-        if let lock = keyboardNavMouseLock, NSEvent.mouseLocation == lock {
-            return
-        }
-        keyboardNavMouseLock = nil
-        if selectedID != item.id {
-            suppressScrollOnce = true
-            selectedID = item.id
         }
     }
 

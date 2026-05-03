@@ -69,11 +69,11 @@ final class ClipboardStore {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if let existing = findExisting(text: text) {
-            let previousDate = existing.createdAt
-            existing.createdAt = Date()
-            if !saveDedup(newest: existing) {
-                existing.createdAt = previousDate
+        if let newest = fetchAll().first, newest.text == text {
+            let previousDate = newest.createdAt
+            newest.createdAt = Date()
+            if !saveDedup(newest: newest) {
+                newest.createdAt = previousDate
             }
             return
         }
@@ -152,13 +152,6 @@ final class ClipboardStore {
         case .days:
             deleteOlderThan(days: cleanupDaysProvider())
         }
-    }
-
-    private func findExisting(text: String) -> ClipboardItem? {
-        let descriptor = FetchDescriptor<ClipboardItem>(
-            predicate: #Predicate { $0.text == text }
-        )
-        return try? context.fetch(descriptor).first
     }
 
     private func saveDedup(newest: ClipboardItem) -> Bool {
