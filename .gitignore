@@ -1,3 +1,28 @@
+# Build
 .build/
+.swiftpm/
+.release/
+KeyMic.app/
+*.app/
+
+# macOS
 .DS_Store
+
+# Logs
 logs/
+
+# Claude Code / AI tools
+.claude/
+.agents/
+skills-lock.json
+
+# Internal docs
+docs/superpowers/
+prompts.md
+
+# Sparkle private key
+scripts/keys/sparkle_private_key
+.sparkle_private_key
+
+# Git worktrees
+.worktrees/
