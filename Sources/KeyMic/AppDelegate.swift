@@ -6,30 +6,75 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let keyMonitor = KeyMonitor()
     private let speechEngine = SpeechEngine()
     private let textInjector = TextInjector()
+    private lazy var actionRunner = HotkeyActionRunner(
+        typeText: { [weak self] text in self?.textInjector.inject(text) }
+    )
     private lazy var overlayPanel = OverlayPanel()
+    private var clipboardController: ClipboardController!
 
-    private var isEnabled = true
     private var isRecording = false
     private var lastPartialResult = ""
     private var finalResultTimer: Timer?
+    private var singleInstanceLockURL: URL?
 
-    private var enableMenuItem: NSMenuItem!
+    /// Cached frontmost-app bundle ID. Updated via `NSWorkspace.didActivateApplicationNotification`.
+    /// KeyMonitor's event-tap callback reads this O(1); calling
+    /// `NSWorkspace.shared.frontmostApplication` directly in the callback can stall
+    /// LaunchServices for hundreds of ms and trigger the 1s tap-disable timeout
+    /// (which presents as system-wide kbd/mouse freezes).
+    private var cachedFrontBundleID: String?
+
+    private let voiceEnabledKey = "voiceEnabled"
+    private(set) var isVoiceEnabled: Bool = UserDefaults.standard.object(forKey: "voiceEnabled") as? Bool ?? true
+
+    private var voiceEnabledMenuItem: NSMenuItem!
     private var llmMenuItem: NSMenuItem!
-    private lazy var settingsWindow = SettingsWindow()
-    private var languageItems: [NSMenuItem] = []
-    private var selectedLocaleCode: String {
-        get { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "zh-CN" }
+    private var keyMappingMenuItem: NSMenuItem!
+    private var clipboardMenuItem: NSMenuItem!
+    private var shortcutsMenuItem: NSMenuItem!
+    private var settingsMenuItem: NSMenuItem!
+    private lazy var settingsWindow = SwiftUISettingsWindow()
+    var selectedLocaleCode: String {
+        get { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "selectedLocaleCode") }
+    }
+
+    /// Pick a speech locale identifier matching the system language on first launch.
+    /// `Locale.current.identifier` uses `en_US` but `SFSpeechRecognizer.supportedLocales()`
+    /// emits `en-US`, so a raw fall-back to `Locale.current` would leave the Picker empty.
+    static func defaultSpeechLocaleCode() -> String {
+        let supported = SFSpeechRecognizer.supportedLocales()
+        let supportedIDs = Set(supported.map { $0.identifier })
+
+        let candidates: [String] = (Locale.preferredLanguages + [Locale.current.identifier])
+        for candidate in candidates {
+            if supportedIDs.contains(candidate) { return candidate }
+            let dashed = candidate.replacingOccurrences(of: "_", with: "-")
+            if supportedIDs.contains(dashed) { return dashed }
+        }
+
+        let systemLang = Locale.current.language.languageCode?.identifier
+        if let systemLang,
+           let match = supported.first(where: { $0.language.languageCode?.identifier == systemLang }) {
+            return match.identifier
+        }
+        return "en-US"
     }
 
     // MARK: - Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let savedCode = selectedLocaleCode
-        if !savedCode.isEmpty {
-            speechEngine.locale = Locale(identifier: savedCode)
-        }
+        if activateExistingInstanceIfNeeded() { return }
 
+        AppScreen.refresh()
+
+        if UserDefaults.standard.string(forKey: "selectedLocaleCode") == nil {
+            selectedLocaleCode = Self.defaultSpeechLocaleCode()
+        }
+        let savedCode = selectedLocaleCode
+        speechEngine.locale = savedCode.isEmpty ? Locale.current : Locale(identifier: savedCode)
+
+        setupMainMenu()
         setupStatusBar()
         setupSpeechCallbacks()
 
@@ -39,18 +84,76 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        cachedFrontBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(workspaceDidActivateApplication(_:)),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+
+        if !AXIsProcessTrusted() {
+            showAccessibilityAlert()
+            return
+        }
         if !keyMonitor.start() {
             showAccessibilityAlert()
+            return
         }
+        keyMonitor.currentFrontBundleID = { [weak self] in self?.cachedFrontBundleID }
 
-        keyMonitor.onFnDown = { [weak self] in self?.fnDown() }
-        keyMonitor.onFnUp = { [weak self] in self?.fnUp() }
+        keyMonitor.onTriggerDown = { [weak self] in self?.triggerDown() }
+        keyMonitor.onTriggerUp = { [weak self] in self?.triggerUp() }
+        keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
+        keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
+        clipboardController = ClipboardController()
+        clipboardController.overlayPanel = overlayPanel
+        textInjector.onMarkIgnored = { [weak self] text in
+            self?.clipboardController.markPasteboardWrite(text)
+        }
+        keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
+        keyMonitor.onVaultHotkey = { [weak self] in
+            self?.clipboardController.toggle(initialTab: .vault)
+        }
+        keyMonitor.onClipboardQuickPaste = { [weak self] index in self?.clipboardController.quickPaste(index: index) }
+        keyMonitor.isClipboardPanelVisible = { [weak self] in self?.clipboardController.isPanelVisible == true }
+        keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
+        clipboardController.start()
+        _ = UpdaterController.shared
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(syncMenuStates),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        HIDRemapper.reset()
+        if let singleInstanceLockURL {
+            SingleInstance.releaseLock(at: singleInstanceLockURL)
+        }
+    }
+
+    private func activateExistingInstanceIfNeeded() -> Bool {
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return false }
+        if let lockURL = SingleInstance.acquireLock(bundleIdentifier: bundleIdentifier) {
+            singleInstanceLockURL = lockURL
+            return false
+        }
+        if let existing = SingleInstance.existingInstance(bundleIdentifier: bundleIdentifier),
+           let app = NSRunningApplication(processIdentifier: existing.processIdentifier) {
+            app.activate(options: [])
+        }
+        NSApp.terminate(nil)
+        return true
     }
 
     // MARK: - Key events
 
-    private func fnDown() {
-        guard isEnabled, !isRecording else { return }
+    private func triggerDown() {
+        guard isVoiceEnabled, !isRecording else { return }
         LLMRefiner.shared.cancel()
         isRecording = true
         lastPartialResult = ""
@@ -62,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngine.startRecording()
     }
 
-    private func fnUp() {
+    private func triggerUp() {
         guard isRecording else { return }
         isRecording = false
 
@@ -72,6 +175,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         finalResultTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
             self?.finishTranscription()
         }
+    }
+
+    private func cancelRecording() {
+        guard isRecording else { return }
+        isRecording = false
+        finalResultTimer?.invalidate()
+        finalResultTimer = nil
+        lastPartialResult = ""
+        speechEngine.cancel()
+        updateStatusIcon(recording: false)
+        overlayPanel.dismiss()
     }
 
     // MARK: - Speech callbacks
@@ -93,6 +207,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechEngine.onError = { [weak self] msg in
             guard let self else { return }
+            guard !self.lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                self.overlayPanel.dismiss()
+                return
+            }
             self.overlayPanel.updateText("Error: \(msg)")
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self.overlayPanel.dismiss()
@@ -170,6 +288,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: - Main Menu
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+
+        // Edit menu with standard text editing commands
+        let editMenu = NSMenu()
+        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editMenuItem.submenu = editMenu
+        mainMenu.addItem(editMenuItem)
+
+        NSApp.mainMenu = mainMenu
+    }
+
     // MARK: - Status bar
 
     private func setupStatusBar() {
@@ -178,97 +315,130 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        enableMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleEnabled), keyEquivalent: "")
-        enableMenuItem.target = self
-        enableMenuItem.state = .on
-        menu.addItem(enableMenuItem)
+        // Group 1: Voice + LLM
+        voiceEnabledMenuItem = NSMenuItem(title: "Voice Enabled", action: #selector(toggleVoiceEnabled), keyEquivalent: "")
+        voiceEnabledMenuItem.target = self
+        voiceEnabledMenuItem.state = isVoiceEnabled ? .on : .off
+        voiceEnabledMenuItem.image = symbolImage("mic.fill")
+        menu.addItem(voiceEnabledMenuItem)
 
-        menu.addItem(.separator())
-
-        let langItem = NSMenuItem(title: "Language", action: nil, keyEquivalent: "")
-        let langMenu = NSMenu()
-        let languages: [(String, String)] = [
-            ("System Default", ""),
-            ("English (US)", "en-US"),
-            ("中文 (简体)", "zh-CN"),
-            ("中文 (繁體)", "zh-TW"),
-            ("日本語", "ja-JP"),
-            ("한국어", "ko-KR"),
-        ]
-        for (name, code) in languages {
-            let item = NSMenuItem(title: name, action: #selector(changeLanguage(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = code
-            item.state = code == selectedLocaleCode ? .on : .off
-            languageItems.append(item)
-            langMenu.addItem(item)
-        }
-        langItem.submenu = langMenu
-        menu.addItem(langItem)
-
-        // LLM Refinement submenu
         let llmItem = NSMenuItem(title: "LLM Refinement", action: nil, keyEquivalent: "")
+        llmItem.image = symbolImage("sparkles")
         let llmMenu = NSMenu()
 
         llmMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleLLM), keyEquivalent: "")
         llmMenuItem.target = self
         llmMenuItem.state = LLMRefiner.shared.isEnabled ? .on : .off
+        llmMenuItem.image = symbolImage("checkmark.circle")
         llmMenu.addItem(llmMenuItem)
-
-        llmMenu.addItem(.separator())
-
-        let settingsItem = NSMenuItem(title: "Settings...", action: #selector(openLLMSettings), keyEquivalent: "")
-        settingsItem.target = self
-        llmMenu.addItem(settingsItem)
 
         llmItem.submenu = llmMenu
         menu.addItem(llmItem)
 
         menu.addItem(.separator())
 
+        // Group 2: Key mapping + Clipboard + Shortcuts
+        keyMappingMenuItem = NSMenuItem(title: "Key Mapping", action: #selector(toggleKeyMapping), keyEquivalent: "")
+        keyMappingMenuItem.target = self
+        keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
+        keyMappingMenuItem.image = symbolImage("keyboard")
+        menu.addItem(keyMappingMenuItem)
+
+        clipboardMenuItem = NSMenuItem(title: "Clipboard History", action: #selector(toggleClipboard), keyEquivalent: "")
+        clipboardMenuItem.target = self
+        clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
+        clipboardMenuItem.image = symbolImage("doc.on.clipboard")
+        menu.addItem(clipboardMenuItem)
+
+        shortcutsMenuItem = NSMenuItem(title: "Shortcuts", action: #selector(toggleShortcuts), keyEquivalent: "")
+        shortcutsMenuItem.target = self
+        shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
+        shortcutsMenuItem.image = symbolImage("bolt.horizontal")
+        menu.addItem(shortcutsMenuItem)
+
+        settingsMenuItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: "")
+        settingsMenuItem.target = self
+        settingsMenuItem.image = symbolImage("gearshape")
+        applySettingsShortcut(to: settingsMenuItem)
+        menu.addItem(settingsMenuItem)
+
+        menu.addItem(.separator())
+
+        let checkUpdateItem = NSMenuItem(
+            title: "Check for Updates…",
+            action: #selector(checkForUpdates),
+            keyEquivalent: ""
+        )
+        checkUpdateItem.target = self
+        checkUpdateItem.image = symbolImage("arrow.down.circle")
+        menu.addItem(checkUpdateItem)
+
+        menu.addItem(.separator())
+
         let quitItem = NSMenuItem(title: "Quit KeyMic", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
+        quitItem.image = symbolImage("power")
         menu.addItem(quitItem)
 
         statusItem.menu = menu
     }
 
+    private func symbolImage(_ name: String) -> NSImage? {
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)
+        let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        return image?.withSymbolConfiguration(config)
+    }
+
     private func updateStatusIcon(recording: Bool) {
         guard let button = statusItem.button else { return }
-        let name = recording ? "mic.fill" : "mic"
-        button.image = NSImage(systemSymbolName: name, accessibilityDescription: "Voice Input")
-        button.contentTintColor = recording ? .systemRed : nil
+        if recording {
+            button.image = NSImage(systemSymbolName: "mic.fill", accessibilityDescription: "KeyMic")
+            button.contentTintColor = .systemRed
+        } else {
+            button.image = idleTrayImage ?? NSImage(systemSymbolName: "mic", accessibilityDescription: "KeyMic")
+            button.contentTintColor = nil
+        }
     }
+
+    private lazy var idleTrayImage: NSImage? = {
+        let pointSize: CGFloat = 22
+        let image = NSImage()
+        for name in ["TrayIconTemplate", "TrayIconTemplate@2x"] {
+            guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
+                  let rep = NSImageRep(contentsOf: url) else { continue }
+            rep.size = NSSize(width: pointSize, height: pointSize)
+            image.addRepresentation(rep)
+        }
+        guard !image.representations.isEmpty else { return nil }
+        image.size = NSSize(width: pointSize, height: pointSize)
+        image.isTemplate = true
+        return image
+    }()
 
     // MARK: - Actions
 
-    @objc private func toggleEnabled() {
-        isEnabled.toggle()
-        enableMenuItem.state = isEnabled ? .on : .off
+    @objc private func toggleVoiceEnabled() {
+        setVoiceEnabled(!isVoiceEnabled)
+    }
 
-        if isEnabled {
-            if !keyMonitor.start() {
-                showAccessibilityAlert()
-            }
-        } else {
-            keyMonitor.stop()
-            if isRecording {
-                speechEngine.cancel()
-                overlayPanel.dismiss()
-                isRecording = false
-                updateStatusIcon(recording: false)
-            }
+    func setVoiceEnabled(_ enabled: Bool) {
+        guard enabled != isVoiceEnabled else { return }
+        isVoiceEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: voiceEnabledKey)
+        voiceEnabledMenuItem.state = enabled ? .on : .off
+
+        if !enabled, isRecording {
+            speechEngine.cancel()
+            overlayPanel.dismiss()
+            isRecording = false
+            updateStatusIcon(recording: false)
         }
     }
 
-    @objc private func changeLanguage(_ sender: NSMenuItem) {
-        guard let code = sender.representedObject as? String else { return }
-        selectedLocaleCode = code
-        speechEngine.locale = code.isEmpty ? .current : Locale(identifier: code)
-
-        for item in languageItems {
-            item.state = (item.representedObject as? String) == code ? .on : .off
-        }
+    @objc private func toggleKeyMapping() {
+        let manager = KeyMappingManager.shared
+        manager.isEnabled.toggle()
+        keyMappingMenuItem.state = manager.isEnabled ? .on : .off
     }
 
     @objc private func toggleLLM() {
@@ -277,14 +447,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         llmMenuItem.state = refiner.isEnabled ? .on : .off
     }
 
-    @objc private func openLLMSettings() {
+    @objc private func toggleClipboard() {
+        let newValue = !ClipboardPreferences.enabled
+        UserDefaults.standard.set(newValue, forKey: ClipboardPreferences.enabledKey)
+        clipboardMenuItem.state = newValue ? .on : .off
+    }
+
+    @objc private func toggleShortcuts() {
+        let newValue = !HotkeyPreferences.enabled
+        UserDefaults.standard.set(newValue, forKey: HotkeyPreferences.enabledKey)
+        shortcutsMenuItem.state = newValue ? .on : .off
+    }
+
+    @objc private func workspaceDidActivateApplication(_ notification: Notification) {
+        let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+        cachedFrontBundleID = app?.bundleIdentifier
+    }
+
+    @objc private func syncMenuStates() {
+        // Mirror runtime state from UserDefaults whenever any preference changes
+        // (SwiftUI Settings writes directly via @AppStorage).
+        clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
+        shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
+        keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
+        llmMenuItem.state = LLMRefiner.shared.isEnabled ? .on : .off
+        applySettingsShortcut(to: settingsMenuItem)
+
+        let defaultsVoice = UserDefaults.standard.object(forKey: voiceEnabledKey) as? Bool ?? true
+        if defaultsVoice != isVoiceEnabled {
+            setVoiceEnabled(defaultsVoice)
+        }
+
+        let code = selectedLocaleCode
+        let newLocale = code.isEmpty ? Locale.current : Locale(identifier: code)
+        if speechEngine.locale.identifier != newLocale.identifier {
+            speechEngine.locale = newLocale
+        }
+
+        // Voice trigger key may have changed — clear any stuck trigger state.
+        keyMonitor.resetTriggerState()
+    }
+
+    private func applySettingsShortcut(to item: NSMenuItem) {
+        let raw = UserDefaults.standard.string(forKey: "settingsHotkey") ?? "cmd+shift+,"
+        let cfg = HotkeyConfig.parse(raw) ?? HotkeyConfig(modifiers: [.maskCommand, .maskShift], keyCode: 0x2B)
+        let rep = cfg.menuRepresentation
+        item.keyEquivalent = rep.key
+        item.keyEquivalentModifierMask = rep.modifiers
+    }
+
+    @objc private func openSettings() {
+        let needsCenter = !settingsWindow.isVisible
+        if needsCenter {
+            // Pin to a known size first; SwiftUI's NSHostingController can
+            // resize the window after order-front, which races our centering
+            // and drops it in the bottom-right on first launch.
+            settingsWindow.setContentSize(NSSize(width: 760, height: 540))
+            centerSettingsWindowOnActiveScreen()
+        }
         settingsWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        // Re-center on next runloop tick after SwiftUI has finished its
+        // (possibly size-changing) layout pass.
+        if needsCenter {
+            DispatchQueue.main.async { [weak self] in
+                self?.centerSettingsWindowOnActiveScreen()
+            }
+        }
+    }
+
+    private func centerSettingsWindowOnActiveScreen() {
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+        guard let visible = screen?.visibleFrame else {
+            settingsWindow.center()
+            return
+        }
+        let size = settingsWindow.frame.size
+        let origin = NSPoint(
+            x: visible.midX - size.width / 2,
+            y: visible.midY - size.height / 2
+        )
+        settingsWindow.setFrameOrigin(origin)
     }
 
     @objc private func quit() {
         keyMonitor.stop()
         NSApp.terminate(nil)
+    }
+
+    @objc private func checkForUpdates() {
+        UpdaterController.shared.checkForUpdates()
     }
 
     // MARK: - Alerts
@@ -293,7 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Accessibility Permission Required"
         alert.informativeText = """
-            KeyMic needs Accessibility permission to monitor the Fn key.
+            KeyMic needs Accessibility permission to monitor the Fn key and apply key mappings.
 
             1. Open System Settings → Privacy & Security → Accessibility
             2. Add and enable KeyMic
@@ -319,5 +574,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+}
+
+// MARK: - HotkeyConfig → NSMenuItem
+
+private extension HotkeyConfig {
+    /// Convert this hotkey to an NSMenuItem keyEquivalent + modifier mask so the
+    /// shortcut shows next to the menu item title (e.g. "⇧⌘,").
+    var menuRepresentation: (key: String, modifiers: NSEvent.ModifierFlags) {
+        var mods: NSEvent.ModifierFlags = []
+        if modifiers.contains(.maskCommand)     { mods.insert(.command) }
+        if modifiers.contains(.maskShift)       { mods.insert(.shift) }
+        if modifiers.contains(.maskControl)     { mods.insert(.control) }
+        if modifiers.contains(.maskAlternate)   { mods.insert(.option) }
+        if modifiers.contains(.maskSecondaryFn) { mods.insert(.function) }
+
+        let key: String
+        switch keyCode {
+        case 0x35: key = "\u{1B}"   // ⎋
+        case 0x24: key = "\r"        // ↩
+        case 0x33: key = "\u{8}"     // ⌫
+        case 0x30: key = "\t"        // ⇥
+        case 0x31: key = " "         // Space
+        case 0x7B: key = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        case 0x7C: key = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+        case 0x7D: key = String(Character(UnicodeScalar(NSDownArrowFunctionKey)!))
+        case 0x7E: key = String(Character(UnicodeScalar(NSUpArrowFunctionKey)!))
+        default:
+            if let token = HotkeyConfig.tokenToKeyCode.first(where: { $0.value == keyCode })?.key,
+               token.count == 1 {
+                key = token
+            } else {
+                key = ""
+            }
+        }
+        return (key, mods)
     }
 }

@@ -2,6 +2,10 @@ import AppKit
 import Carbon
 
 final class TextInjector {
+    /// Optional hook called for each pasteboard write KeyMic performs (transcript + restore),
+    /// so ClipboardMonitor can exclude these from history.
+    var onMarkIgnored: ((String) -> Void)?
+
     func inject(_ text: String) {
         guard !text.isEmpty else { return }
 
@@ -13,6 +17,8 @@ final class TextInjector {
         // Write transcription to clipboard
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+        let writeChangeCount = pasteboard.changeCount
+        onMarkIgnored?(text)
 
         // If a non-ASCII input source (e.g. Chinese IME) is active, temporarily
         // switch to an ASCII-capable one so the Cmd+V paste is not intercepted.
@@ -45,11 +51,14 @@ final class TextInjector {
             }
         }
 
-        // Restore original clipboard content
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // Restore original clipboard content — but only if the user hasn't copied
+        // anything new in the meantime; otherwise we'd silently destroy their copy.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard pasteboard.changeCount == writeChangeCount else { return }
             pasteboard.clearContents()
             if let saved = savedText {
                 pasteboard.setString(saved, forType: .string)
+                self?.onMarkIgnored?(saved)
             }
         }
     }

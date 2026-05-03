@@ -1,0 +1,477 @@
+import AppKit
+import SwiftData
+import SwiftUI
+
+private struct FilteredItems {
+    var pinned: [ClipboardItem]
+    var history: [ClipboardItem]
+    var all: [ClipboardItem] { pinned + history }
+}
+
+struct ClipboardHistoryView: View {
+    @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
+
+    @State private var query: String = ""
+    @State private var tab: PanelTab = .clipboard
+    @State private var selectedID: UUID?
+    @State private var filtered: FilteredItems = FilteredItems(pinned: [], history: [])
+    @State private var suppressScrollOnce: Bool = false
+    @FocusState private var focusedField: FocusedField?
+
+    let focus: ClipboardPanelFocus
+    let onPaste: (ClipboardItem) -> Void
+    let onDelete: (UUID) -> Void
+    let onTogglePin: (UUID) -> Void
+    let onVaultPaste: (VaultItem) -> Void
+    let onVaultDelete: (VaultItem) -> Void
+    let onDismiss: () -> Void
+
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
+    private enum FocusedField {
+        case search
+    }
+
+    private func computeFiltered() -> FilteredItems {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pool: [ClipboardItem] = trimmed.isEmpty
+            ? items
+            : items.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
+        let pinned = pool.filter { $0.isPinned }
+            .sorted { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
+        let history = pool.filter { !$0.isPinned }
+            .sorted { $0.createdAt > $1.createdAt }
+        return FilteredItems(pinned: pinned, history: history)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if tab == .clipboard {
+                searchField
+                    .padding(.horizontal, 14)
+                    .padding(.top, 12)
+                    .padding(.bottom, 10)
+
+                Divider().overlay(Color.white.opacity(0.08))
+
+                if filtered.all.isEmpty {
+                    emptyState
+                } else {
+                    list
+                }
+            } else {
+                VaultListView(
+                    focus: focus,
+                    onPaste: onVaultPaste,
+                    onDelete: onVaultDelete,
+                    onDismiss: onDismiss
+                )
+            }
+
+            Divider().overlay(Color.white.opacity(0.08))
+            tabSwitcher
+        }
+        .background(VisualEffectBackground())
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .onAppear {
+            filtered = computeFiltered()
+            selectedID = filtered.all.first?.id
+            focusedField = .search
+        }
+        .onChange(of: focus.requestID) { _, _ in
+            query = ""
+            filtered = computeFiltered()
+            selectedID = filtered.all.first?.id
+            focusedField = .search
+        }
+        .onChange(of: focus.quickPasteRequestID) { _, _ in
+            triggerQuickPaste(focus.quickPasteIndex)
+        }
+        .onChange(of: focus.tabRequestID) { _, _ in
+            tab = focus.initialTab
+            query = ""
+        }
+        .onChange(of: tab) { _, newTab in
+            focus.currentTab = newTab
+        }
+        .onChange(of: query) { _, _ in
+            filtered = computeFiltered()
+            let firstID = filtered.all.first?.id
+            if selectedID != firstID { selectedID = firstID }
+        }
+        .onChange(of: items) { _, _ in
+            filtered = computeFiltered()
+            if let id = selectedID, !filtered.all.contains(where: { $0.id == id }) {
+                selectedID = filtered.all.first?.id
+            }
+        }
+        .background(KeyEventMonitor(
+            isEnabled: tab == .clipboard,
+            onArrowUp: moveSelection(by: -1),
+            onArrowDown: moveSelection(by: 1),
+            onReturn: triggerPaste,
+            onCommandDelete: triggerDelete,
+            onTogglePin: triggerTogglePin,
+            onEscape: onDismiss,
+            onQuickPaste: triggerQuickPaste,
+            onPinnedQuickPaste: triggerPinnedQuickPaste
+        ))
+    }
+
+    private var searchField: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.secondary)
+
+            TextField("Search clipboard history", text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 16))
+                .focused($focusedField, equals: .search)
+
+            if !query.isEmpty {
+                Button {
+                    query = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+        )
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: query.isEmpty ? "doc.on.clipboard" : "magnifyingglass")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(query.isEmpty ? "No Clipboard History" : "No Matches")
+                .font(.headline)
+            Text(query.isEmpty ? "Copied text will appear here." : "Try a different search term.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var tabSwitcher: some View {
+        Picker("", selection: $tab) {
+            Text("📋 Clipboard").tag(PanelTab.clipboard)
+            Text("🔒 Vault").tag(PanelTab.vault)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+    }
+
+    private var list: some View {
+        ScrollViewReader { proxy in
+            List {
+                if !filtered.pinned.isEmpty {
+                    Section(header: sectionHeader("Pinned")) {
+                        ForEach(Array(filtered.pinned.enumerated()), id: \.element.id) { index, item in
+                            row(item, quickKeyLabel: pinnedQuickKeyLabel(for: index))
+                                .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(rowBackground(for: item))
+                                .contentShape(Rectangle())
+                                .onHover { hovering in
+                                    if hovering, selectedID != item.id {
+                                        suppressScrollOnce = true
+                                        selectedID = item.id
+                                    }
+                                }
+                                .onTapGesture { onPaste(item) }
+                                .id(item.id)
+                        }
+                    }
+                }
+
+                Section(header: sectionHeader("History")) {
+                    ForEach(Array(filtered.history.enumerated()), id: \.element.id) { index, item in
+                        row(item, quickKeyLabel: historyQuickKeyLabel(for: index))
+                            .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(rowBackground(for: item))
+                            .contentShape(Rectangle())
+                            .onHover { hovering in
+                                if hovering, selectedID != item.id {
+                                    suppressScrollOnce = true
+                                    selectedID = item.id
+                                }
+                            }
+                            .onTapGesture { onPaste(item) }
+                            .id(item.id)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.clear)
+            .onChange(of: selectedID) { _, new in
+                guard let new else { return }
+                if suppressScrollOnce { suppressScrollOnce = false; return }
+                withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) }
+            }
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .textCase(nil)
+    }
+
+    private func row(_ item: ClipboardItem, quickKeyLabel label: String) -> some View {
+        HStack(spacing: 10) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 22, alignment: .leading)
+
+            if let symbol = item.kind.iconSymbolName {
+                Image(systemName: symbol)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+            }
+
+            HighlightedText(source: item.displayPreview, query: query)
+                .foregroundStyle(.primary)
+                .font(.system(size: 14))
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func rowBackground(for item: ClipboardItem) -> some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(item.id == selectedID ? Color.accentColor.opacity(0.35) : Color.clear)
+    }
+
+    private func historyQuickKeyLabel(for index: Int) -> String {
+        guard index < 10 else { return "" }
+        return "⌥" + (index == 9 ? "0" : "\(index + 1)")
+    }
+
+    private func pinnedQuickKeyLabel(for index: Int) -> String {
+        let chars = ["Q", "W", "E", "A", "S", "D", "Z", "X", "C"]
+        guard index < chars.count else { return "" }
+        return "⌥" + chars[index]
+    }
+
+    private func relativeTime(_ date: Date) -> String {
+        Self.relativeFormatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    private func moveSelection(by delta: Int) -> () -> Void {
+        return {
+            let list = filtered.all
+            guard !list.isEmpty else { return }
+            let currentIndex = list.firstIndex(where: { $0.id == selectedID }) ?? 0
+            let newIndex = (currentIndex + delta + list.count) % list.count
+            selectedID = list[newIndex].id
+        }
+    }
+
+    private func triggerPaste() {
+        guard let id = selectedID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        onPaste(item)
+    }
+
+    private func triggerDelete() {
+        guard let id = selectedID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        onDelete(item.id)
+    }
+
+    private func triggerTogglePin() {
+        guard let id = selectedID else { return }
+        onTogglePin(id)
+    }
+
+    private func triggerQuickPaste(_ index: Int) {
+        guard filtered.history.indices.contains(index) else { return }
+        onPaste(filtered.history[index])
+    }
+
+    private func triggerPinnedQuickPaste(_ index: Int) {
+        guard filtered.pinned.indices.contains(index) else { return }
+        onPaste(filtered.pinned[index])
+    }
+}
+
+private struct AppIconView: View {
+    let bundleID: String?
+    var body: some View {
+        if let image = ApplicationImageCache.shared.image(forBundleID: bundleID) {
+            Image(nsImage: image).resizable().frame(width: 18, height: 18)
+        } else {
+            Image(systemName: "app").foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct VisualEffectBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = .hudWindow
+        v.blendingMode = .behindWindow
+        v.state = .active
+        return v
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}
+
+private struct KeyEventMonitor: NSViewRepresentable {
+    let isEnabled: Bool
+    let onArrowUp: () -> Void
+    let onArrowDown: () -> Void
+    let onReturn: () -> Void
+    let onCommandDelete: () -> Void
+    let onTogglePin: () -> Void
+    let onEscape: () -> Void
+    let onQuickPaste: (Int) -> Void
+    let onPinnedQuickPaste: (Int) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = MonitorView()
+        view.isEnabled = isEnabled
+        view.onArrowUp = onArrowUp
+        view.onArrowDown = onArrowDown
+        view.onReturn = onReturn
+        view.onCommandDelete = onCommandDelete
+        view.onTogglePin = onTogglePin
+        view.onEscape = onEscape
+        view.onQuickPaste = onQuickPaste
+        view.onPinnedQuickPaste = onPinnedQuickPaste
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        guard let view = nsView as? MonitorView else { return }
+        view.isEnabled = isEnabled
+        view.onArrowUp = onArrowUp
+        view.onArrowDown = onArrowDown
+        view.onReturn = onReturn
+        view.onCommandDelete = onCommandDelete
+        view.onTogglePin = onTogglePin
+        view.onEscape = onEscape
+        view.onQuickPaste = onQuickPaste
+        view.onPinnedQuickPaste = onPinnedQuickPaste
+    }
+
+    private final class MonitorView: NSView {
+        var isEnabled = true
+        var onArrowUp: (() -> Void)?
+        var onArrowDown: (() -> Void)?
+        var onReturn: (() -> Void)?
+        var onCommandDelete: (() -> Void)?
+        var onTogglePin: (() -> Void)?
+        var onEscape: (() -> Void)?
+        var onQuickPaste: ((Int) -> Void)?
+        var onPinnedQuickPaste: ((Int) -> Void)?
+
+        private var monitor: Any?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window != nil, monitor == nil {
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                    self?.handle(event) ?? event
+                }
+            } else if window == nil, let m = monitor {
+                NSEvent.removeMonitor(m)
+                monitor = nil
+            }
+        }
+
+        private func handle(_ event: NSEvent) -> NSEvent? {
+            guard isEnabled, let window, window.isVisible, event.window === window else { return event }
+
+            let isCmd = event.modifierFlags.contains(.command)
+            let isAltOnly = event.modifierFlags.contains(.option)
+                && !event.modifierFlags.contains(.command)
+                && !event.modifierFlags.contains(.control)
+                && !event.modifierFlags.contains(.shift)
+
+            if isAltOnly, event.keyCode == 0x23 {
+                onTogglePin?()
+                return nil
+            }
+
+            if isAltOnly, let pinIndex = pinnedQuickPasteIndex(for: event.keyCode) {
+                onPinnedQuickPaste?(pinIndex)
+                return nil
+            }
+
+            if isAltOnly, let index = quickPasteIndex(for: event.keyCode) {
+                onQuickPaste?(index)
+                return nil
+            }
+
+            switch (event.keyCode, isCmd) {
+            case (126, _): onArrowUp?(); return nil
+            case (125, _): onArrowDown?(); return nil
+            case (36, _), (76, _): onReturn?(); return nil
+            case (51, true): onCommandDelete?(); return nil
+            case (53, _): onEscape?(); return nil
+            default: return event
+            }
+        }
+
+        private func pinnedQuickPasteIndex(for keyCode: UInt16) -> Int? {
+            switch keyCode {
+            case 0x0C: return 0   // Q
+            case 0x0D: return 1   // W
+            case 0x0E: return 2   // E
+            case 0x00: return 3   // A
+            case 0x01: return 4   // S
+            case 0x02: return 5   // D
+            case 0x06: return 6   // Z
+            case 0x07: return 7   // X
+            case 0x08: return 8   // C
+            default: return nil
+            }
+        }
+
+        private func quickPasteIndex(for keyCode: UInt16) -> Int? {
+            switch keyCode {
+            case 18: return 0
+            case 19: return 1
+            case 20: return 2
+            case 21: return 3
+            case 23: return 4
+            case 22: return 5
+            case 26: return 6
+            case 28: return 7
+            case 25: return 8
+            case 29: return 9
+            default: return nil
+            }
+        }
+    }
+}
