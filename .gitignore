@@ -20,8 +20,8 @@ skills-lock.json
 docs/superpowers/
 prompts.md
 
-# Sparkle private key
-scripts/keys/sparkle_private_key
+# Sparkle keys
+scripts/keys/
 .sparkle_private_key
 
 # Git worktrees
