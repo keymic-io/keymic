@@ -50,12 +50,7 @@ The full source lives in this repository.
 
 A complete, unedited terminal recording of a build from source:
 
-| Permission | Required for |
-|---|---|
-| Accessibility | Event tap (voice trigger, clipboard hotkey, key remap) |
-| Microphone | Voice input |
-| Speech Recognition | Voice-to-text transcription |
-| Screen Recording | Screenshot capture |
+[![asciicast](https://asciinema.org/a/cHD6XaaNvomCuysh.svg)](https://asciinema.org/a/cHD6XaaNvomCuysh)
 
 ## Architecture
 

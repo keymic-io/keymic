@@ -10,8 +10,6 @@ enum ClipboardPreferences {
     static let maxHistoryKey = "clipboardMaxHistory"
     static let ignoreConfidentialKey = "clipboardIgnoreConfidential"
     static let panelPositionKey = "clipboardPanelPosition"
-    static let panelWidthKey = "clipboardPanelWidth"
-    static let panelHeightKey = "clipboardPanelHeight"
 
     static let defaultEnabled = true
     static let defaultMaxHistory = 500
@@ -34,18 +32,6 @@ enum ClipboardPreferences {
     static var panelPosition: ClipboardPanelPosition {
         let raw = UserDefaults.standard.string(forKey: panelPositionKey)
         return raw.flatMap(ClipboardPanelPosition.init(rawValue:)) ?? defaultPanelPosition
-    }
-
-    static var panelSize: CGSize? {
-        let w = UserDefaults.standard.object(forKey: panelWidthKey) as? Double
-        let h = UserDefaults.standard.object(forKey: panelHeightKey) as? Double
-        guard let w, let h, w > 0, h > 0 else { return nil }
-        return CGSize(width: w, height: h)
-    }
-
-    static func savePanelSize(_ size: CGSize) {
-        UserDefaults.standard.set(Double(size.width), forKey: panelWidthKey)
-        UserDefaults.standard.set(Double(size.height), forKey: panelHeightKey)
     }
 
     static let cleanupModeKey = "clipboardCleanupMode"

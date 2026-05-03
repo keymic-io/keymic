@@ -2,6 +2,7 @@
 .build/
 .swiftpm/
 .release/
+KeyMic.app/
 *.app/
 
 # macOS
@@ -19,12 +20,9 @@ skills-lock.json
 docs/superpowers/
 prompts.md
 
-# Sparkle keys
-scripts/keys/
+# Sparkle private key
+scripts/keys/sparkle_private_key
 .sparkle_private_key
 
 # Git worktrees
 .worktrees/
-
-# Agent runtime
-agent-runtime/

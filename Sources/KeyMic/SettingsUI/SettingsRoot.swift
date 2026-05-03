@@ -42,7 +42,7 @@ final class SwiftUISettingsWindow: NSPanel {
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot
+    case general, voice, llm, keyMapping, shortcuts, clipboard
 
     var id: String { rawValue }
 
@@ -51,11 +51,9 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general:    "General"
         case .voice:      "Voice"
         case .llm:        "LLM"
-        case .personas:   "Personas"
         case .keyMapping: "Key Mapping"
         case .shortcuts:  "Shortcuts"
         case .clipboard:  "Clipboard"
-        case .screenshot: "Screenshot"
         }
     }
 
@@ -64,11 +62,9 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general:    "gearshape"
         case .voice:      "mic"
         case .llm:        "sparkles"
-        case .personas:   "person.crop.circle.badge.checkmark"
         case .keyMapping: "keyboard"
         case .shortcuts:  "command.square"
         case .clipboard:  "doc.on.clipboard"
-        case .screenshot: "camera.on.rectangle"
         }
     }
 }
@@ -99,33 +95,10 @@ struct SettingsRootView: View {
         case .general:    GeneralSettingsView()
         case .voice:      VoiceSettingsView()
         case .llm:        LLMSettingsView()
-        case .personas:   PersonasView()
         case .clipboard:  ClipboardSettingsView()
         case .keyMapping: KeyMappingSettingsSection()
         case .shortcuts:  ShortcutsSettingsSection()
-        case .screenshot: ScreenshotSettingsView()
         }
-    }
-}
-
-// MARK: - Screenshot
-
-private struct ScreenshotSettingsView: View {
-    @AppStorage("screenshotEnabled") private var screenshotEnabled: Bool = true
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Enable screenshot hotkey ⌃⇧A", isOn: $screenshotEnabled)
-            } header: {
-                Text("Screenshot")
-            } footer: {
-                Text("Press ⌃⇧A to capture a region of the screen and open it in the annotation editor.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 
@@ -381,17 +354,9 @@ private struct LLMSettingsView: View {
     var body: some View {
         Form {
             Section {
-                llmFieldRow("API Base URL") {
-                    TextField("", text: $apiBaseURL, prompt: Text("https://api.openai.com/v1"))
-                }
-
-                llmFieldRow("API Key") {
-                    SecureField("", text: $apiKey, prompt: Text("sk-…"))
-                }
-
-                llmFieldRow("Model") {
-                    TextField("", text: $model, prompt: Text("gpt-4o-mini"))
-                }
+                TextField("API Base URL:", text: $apiBaseURL, prompt: Text("https://api.openai.com/v1"))
+                SecureField("API Key:", text: $apiKey, prompt: Text("sk-…"))
+                TextField("Model:", text: $model, prompt: Text("gpt-4o-mini"))
             }
 
             Section {
@@ -409,22 +374,6 @@ private struct LLMSettingsView: View {
         .formStyle(.grouped)
     }
 
-    @ViewBuilder
-    private func llmFieldRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("\(label):")
-                .fontWeight(.semibold)
-                .frame(width: 160, alignment: .leading)
-
-            content()
-                .textFieldStyle(.plain)
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .multilineTextAlignment(.leading)
-        }
-    }
-
     private var isBusy: Bool {
         if case .testing = status { return true }
         return false
@@ -432,16 +381,12 @@ private struct LLMSettingsView: View {
 
     private func runTest() {
         let refiner = LLMRefiner.shared
-        guard refiner.isReady else {
+        guard refiner.isConfigured else {
             status = .fail("API key is empty")
             return
         }
         status = .testing
-        refiner.refine(
-            "Hello, this is a test.",
-            systemPrompt: "Return the input exactly as-is.",
-            temperature: 0.0
-        ) { result in
+        refiner.refine("Hello, this is a test.", force: true) { result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let text): status = .ok(text)

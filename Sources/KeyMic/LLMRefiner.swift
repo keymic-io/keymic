@@ -16,10 +16,13 @@ private func logToFile(_ message: String) {
     }
 }
 
-/// Stateless LLM endpoint config + per-call refinement.
-/// Persona-specific prompt + temperature are passed in by the caller.
 final class LLMRefiner {
     static let shared = LLMRefiner()
+
+    var isEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: "llmEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "llmEnabled") }
+    }
 
     var apiBaseURL: String {
         get { UserDefaults.standard.string(forKey: "llmAPIBaseURL") ?? "https://api.openai.com/v1" }
@@ -36,25 +39,32 @@ final class LLMRefiner {
         set { UserDefaults.standard.set(newValue, forKey: "llmModel") }
     }
 
-    /// True iff endpoint is fully configured (URL + apiKey + model).
-    /// Cheap synchronous check — does not hit the network.
-    var isReady: Bool {
-        !apiKey.isEmpty && !apiBaseURL.isEmpty && !model.isEmpty
-    }
+    var isConfigured: Bool { !apiKey.isEmpty }
 
     private var currentTask: URLSessionDataTask?
 
-    /// Refine using a persona's stylePrompt + temperature. `userText` is the raw
-    /// transcript; for context-aware personas the caller pre-formats it with
-    /// [Selected text] / [Recent clipboard] / [User said] sections.
-    func refine(
-        _ userText: String,
-        systemPrompt: String,
-        temperature: Double,
-        completion: @escaping (Result<String, Error>) -> Void
-    ) {
-        guard isReady else {
-            completion(.failure(RefinerError.notReady))
+    private let systemPrompt = """
+        You are a conservative speech recognition error corrector. \
+        ONLY fix clear, obvious transcription mistakes. When in doubt, leave the text unchanged.
+
+        What to fix:
+        - English words/acronyms wrongly rendered as Chinese characters \
+        (e.g. "配森" → "Python", "杰森" → "JSON", "阿皮爱" → "API")
+        - Obvious Chinese homophone errors where context makes the correct character clear
+        - Broken English words or phrases split/merged incorrectly by the recognizer
+
+        What NOT to do:
+        - Do NOT rephrase, rewrite, or "improve" any text
+        - Do NOT add or remove words beyond fixing recognition errors
+        - Do NOT change text that could plausibly be correct
+        - Do NOT alter punctuation unless clearly wrong
+
+        If the input appears correct, return it exactly as-is. Return ONLY the text, nothing else.
+        """
+
+    func refine(_ text: String, force: Bool = false, completion: @escaping (Result<String, Error>) -> Void) {
+        guard force || (isEnabled && isConfigured) else {
+            completion(.success(text))
             return
         }
 
@@ -74,12 +84,12 @@ final class LLMRefiner {
             "model": model,
             "messages": [
                 ["role": "system", "content": systemPrompt],
-                ["role": "user", "content": userText],
+                ["role": "user", "content": text],
             ],
-            "temperature": temperature,
+            "temperature": 0.3,
         ]
 
-        logToFile("Request: \(url.absoluteString) model=\(model) temp=\(temperature)")
+        logToFile("Request: \(url.absoluteString) model=\(model)")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         currentTask = URLSession.shared.dataTask(with: request) { data, _, error in
@@ -89,19 +99,24 @@ final class LLMRefiner {
                 return
             }
             guard let data else {
+                logToFile("No data in response")
                 DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
                 return
+            }
+            if let raw = String(data: data, encoding: .utf8) {
+                logToFile("Response: \(raw)")
             }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let message = choices.first?["message"] as? [String: Any],
                   let content = message["content"] as? String
             else {
+                logToFile("Failed to parse response")
                 DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
                 return
             }
             let refined = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            logToFile("Refined response received (\(refined.count) chars)")
+            logToFile("Refined: '\(text)' -> '\(refined)'")
             DispatchQueue.main.async { completion(.success(refined)) }
         }
         currentTask?.resume()
@@ -113,13 +128,11 @@ final class LLMRefiner {
     }
 
     enum RefinerError: LocalizedError {
-        case notReady
         case invalidURL
         case invalidResponse
 
         var errorDescription: String? {
             switch self {
-            case .notReady: return "LLM endpoint not configured"
             case .invalidURL: return "Invalid API base URL"
             case .invalidResponse: return "Invalid response from LLM API"
             }

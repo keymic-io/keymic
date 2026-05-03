@@ -11,7 +11,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
-    private var screenshotController: ScreenshotController?
 
     private var isRecording = false
     private var lastPartialResult = ""
@@ -26,12 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedFrontBundleID: String?
 
     private let voiceEnabledKey = "voiceEnabled"
-    private let voiceEnabledMenuTitle = "Voice Enabled"
     private(set) var isVoiceEnabled: Bool = UserDefaults.standard.object(forKey: "voiceEnabled") as? Bool ?? true
 
     private var voiceEnabledMenuItem: NSMenuItem!
-    private var personasRootMenuItem: NSMenuItem!
-    private var personasMenu: NSMenu?
+    private var llmMenuItem: NSMenuItem!
     private var keyMappingMenuItem: NSMenuItem!
     private var clipboardMenuItem: NSMenuItem!
     private var shortcutsMenuItem: NSMenuItem!
@@ -121,25 +118,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onClipboardQuickPaste = { [weak self] index in self?.clipboardController.quickPaste(index: index) }
         keyMonitor.isClipboardPanelVisible = { [weak self] in self?.clipboardController.isPanelVisible == true }
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
-        screenshotController = ScreenshotController()
-        keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
         clipboardController.start()
         _ = UpdaterController.shared
-
-        // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
-        let registry = HotkeyRegistry.shared
-        let triggerRaw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        if let cfg = HotkeyConfig.parse(triggerRaw) {
-            registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
-        }
-        let clipRaw = UserDefaults.standard.string(forKey: "clipboardHotkey") ?? "alt+v"
-        if let clipCfg = HotkeyConfig.parse(clipRaw) {
-            registry.register(clipCfg, owner: .clipboardPanel, purpose: "Clipboard panel (⌥V)")
-        }
-        AppDelegate.syncPersonaHotkeysToRegistry()
-        NotificationCenter.default.addObserver(
-            forName: PersonaStore.didChangeNotification, object: nil, queue: .main
-        ) { _ in AppDelegate.syncPersonaHotkeysToRegistry() }
 
         NotificationCenter.default.addObserver(
             self,
@@ -147,17 +127,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: UserDefaults.didChangeNotification,
             object: nil
         )
-    }
-
-    static func syncPersonaHotkeysToRegistry() {
-        let registry = HotkeyRegistry.shared
-        for entry in registry.all() {
-            if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
-        }
-        for persona in PersonaStore.shared.personas {
-            guard let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) else { continue }
-            registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
-        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -262,111 +231,61 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         finalResultTimer = nil
 
         let text = lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines)
+
         guard !text.isEmpty else {
             overlayPanel.dismiss()
             lastPartialResult = ""
             return
         }
 
-        let persona = PersonaStore.shared.activePersona
         let refiner = LLMRefiner.shared
-
-        // Passthrough: no active persona, or LLM endpoint not configured (silent, no toast).
-        guard let persona, refiner.isReady else {
-            if persona != nil {
-                NSLog("[Persona] LLM not ready; passthrough")
-            }
-            overlayPanel.dismiss()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.textInjector.inject(text)
-                NSSound(named: .init("Pop"))?.play()
-            }
-            lastPartialResult = ""
-            return
-        }
-
-        let userText = buildUserText(transcript: text, contextMode: persona.contextMode)
-
-        overlayPanel.showRefining()
-        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
-            guard let self else { return }
-            let finalText: String
-            switch result {
-            case .success(let refined):
-                finalText = refined.isEmpty ? text : refined
-                let wasRefined = finalText != text
-                if wasRefined {
-                    self.overlayPanel.updateText("✨ \(finalText)")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        if refiner.isEnabled && refiner.isConfigured {
+            overlayPanel.showRefining()
+            refiner.refine(text) { [weak self] result in
+                guard let self else { return }
+                let finalText: String
+                switch result {
+                case .success(let refined):
+                    finalText = refined.isEmpty ? text : refined
+                    let wasRefined = finalText != text
+                    if wasRefined {
+                        self.overlayPanel.updateText("✨ \(finalText)")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                            self.overlayPanel.dismiss()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                self.textInjector.inject(finalText)
+                                NSSound(named: .init("Pop"))?.play()
+                            }
+                        }
+                    } else {
                         self.overlayPanel.dismiss()
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                             self.textInjector.inject(finalText)
                             NSSound(named: .init("Pop"))?.play()
                         }
                     }
-                } else {
-                    self.overlayPanel.dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.textInjector.inject(finalText)
-                        NSSound(named: .init("Pop"))?.play()
+                case .failure(let error):
+                    NSLog("[LLMRefiner] Refine failed: %@", error.localizedDescription)
+                    finalText = text
+                    self.overlayPanel.updateText("Refine failed: \(error.localizedDescription)")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        self.overlayPanel.dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            self.textInjector.inject(finalText)
+                            NSSound(named: .init("Pop"))?.play()
+                        }
                     }
                 }
-            case .failure(let error):
-                NSLog("[LLMRefiner] Refine failed: %@", error.localizedDescription)
-                finalText = text
-                self.overlayPanel.updateText("Refine failed: \(error.localizedDescription)")
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    self.overlayPanel.dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.textInjector.inject(finalText)
-                        NSSound(named: .init("Pop"))?.play()
-                    }
-                }
+                self.lastPartialResult = ""
             }
-            self.lastPartialResult = ""
-        }
-    }
-
-    /// Builds the LLM user prompt, injecting selected text + clipboard as context
-    /// when the persona's contextMode is `.selectionAndClipboard`.
-    private func buildUserText(transcript: String, contextMode: ContextMode) -> String {
-        guard contextMode == .selectionAndClipboard else { return transcript }
-
-        let selection = SelectionTextProvider.currentSelection()?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let clipboard = NSPasteboard.general.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        var sections: [String] = []
-        var includeTranscript = true
-
-        if !selection.isEmpty {
-            sections.append("[Selected text]\n\(selection)")
-            // Omit [User said] if transcript equals selected text (redundant).
-            if transcript == selection {
-                includeTranscript = false
+        } else {
+            overlayPanel.dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+                self?.textInjector.inject(text)
+                NSSound(named: .init("Pop"))?.play()
             }
-            // Omit [User said] if selected text exceeds 2000 UTF-16 units.
-            if selection.utf16.count > 2000 {
-                includeTranscript = false
-            }
+            lastPartialResult = ""
         }
-        // Omit clipboard if identical to selection (avoid redundancy).
-        if !clipboard.isEmpty && clipboard != selection {
-            sections.append("[Recent clipboard]\n\(clipboard)")
-        }
-        if includeTranscript {
-            sections.append("[User said]\n\(transcript)")
-        }
-
-        var result = sections.joined(separator: "\n\n")
-        // Cap total output at 7500 UTF-16 units, truncating from end.
-        if result.utf16.count > 7500 {
-            let units = result.utf16
-            let cutIdx = units.index(units.startIndex, offsetBy: 7500)
-            result = String(units[units.startIndex..<cutIdx]) ?? String(result[..<result.unicodeScalars.index(result.startIndex, offsetBy: 7500)])
-        }
-        return result
     }
 
     // MARK: - Main Menu
@@ -396,21 +315,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Group 1: Voice + Personas
-        voiceEnabledMenuItem = NSMenuItem(title: voiceEnabledMenuTitle, action: #selector(toggleVoiceEnabled), keyEquivalent: "")
+        // Group 1: Voice + LLM
+        voiceEnabledMenuItem = NSMenuItem(title: "Voice Enabled", action: #selector(toggleVoiceEnabled), keyEquivalent: "")
         voiceEnabledMenuItem.target = self
         voiceEnabledMenuItem.state = isVoiceEnabled ? .on : .off
         voiceEnabledMenuItem.image = symbolImage("mic.fill")
-        applyVoiceShortcut(to: voiceEnabledMenuItem)
         menu.addItem(voiceEnabledMenuItem)
 
-        personasRootMenuItem = NSMenuItem(title: "Personas", action: nil, keyEquivalent: "")
-        personasRootMenuItem.image = symbolImage("person.crop.circle.badge.checkmark")
-        let personasMenu = NSMenu()
-        personasRootMenuItem.submenu = personasMenu
-        self.personasMenu = personasMenu
-        rebuildPersonasMenu()
-        menu.addItem(personasRootMenuItem)
+        let llmItem = NSMenuItem(title: "LLM Refinement", action: nil, keyEquivalent: "")
+        llmItem.image = symbolImage("sparkles")
+        let llmMenu = NSMenu()
+
+        llmMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleLLM), keyEquivalent: "")
+        llmMenuItem.target = self
+        llmMenuItem.state = LLMRefiner.shared.isEnabled ? .on : .off
+        llmMenuItem.image = symbolImage("checkmark.circle")
+        llmMenu.addItem(llmMenuItem)
+
+        llmItem.submenu = llmMenu
+        menu.addItem(llmItem)
 
         menu.addItem(.separator())
 
@@ -518,6 +441,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMappingMenuItem.state = manager.isEnabled ? .on : .off
     }
 
+    @objc private func toggleLLM() {
+        let refiner = LLMRefiner.shared
+        refiner.isEnabled.toggle()
+        llmMenuItem.state = refiner.isEnabled ? .on : .off
+    }
+
     @objc private func toggleClipboard() {
         let newValue = !ClipboardPreferences.enabled
         UserDefaults.standard.set(newValue, forKey: ClipboardPreferences.enabledKey)
@@ -541,6 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
         shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
         keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
+        llmMenuItem.state = LLMRefiner.shared.isEnabled ? .on : .off
         applySettingsShortcut(to: settingsMenuItem)
 
         let defaultsVoice = UserDefaults.standard.object(forKey: voiceEnabledKey) as? Bool ?? true
@@ -554,57 +484,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             speechEngine.locale = newLocale
         }
 
-        applyVoiceShortcut(to: voiceEnabledMenuItem)
-        rebuildPersonasMenu()
-
         // Voice trigger key may have changed — clear any stuck trigger state.
         keyMonitor.resetTriggerState()
-    }
-
-    private func applyVoiceShortcut(to item: NSMenuItem) {
-        let raw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        guard let cfg = HotkeyConfig.parse(raw) else {
-            item.title = voiceEnabledMenuTitle
-            item.keyEquivalent = ""
-            item.keyEquivalentModifierMask = []
-            return
-        }
-
-        let rep = cfg.menuRepresentation
-        if rep.key.isEmpty {
-            item.keyEquivalent = ""
-            item.keyEquivalentModifierMask = []
-            item.title = "\(voiceEnabledMenuTitle)\t\(cfg.displayString())"
-            return
-        }
-
-        item.title = voiceEnabledMenuTitle
-        item.keyEquivalent = rep.key
-        item.keyEquivalentModifierMask = rep.modifiers
-    }
-
-    private func rebuildPersonasMenu() {
-        guard let personasMenu else { return }
-        personasMenu.removeAllItems()
-
-        for persona in PersonaStore.shared.personas {
-            let item = NSMenuItem(title: persona.name, action: #selector(selectPersona(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = persona.id
-            item.state = persona.id == PersonaStore.shared.activePersonaId ? .on : .off
-            if let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) {
-                let rep = cfg.menuRepresentation
-                item.keyEquivalent = rep.key
-                item.keyEquivalentModifierMask = rep.modifiers
-            }
-            personasMenu.addItem(item)
-        }
-    }
-
-    @objc private func selectPersona(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        PersonaStore.shared.setActive(id)
-        rebuildPersonasMenu()
     }
 
     private func applySettingsShortcut(to item: NSMenuItem) {
