@@ -3,7 +3,7 @@ import ApplicationServices
 import SwiftData
 import SwiftUI
 
-final class ClipboardPanel: NSPanel {
+final class ClipboardPanel: NSPanel, NSWindowDelegate {
     private let focus = ClipboardPanelFocus()
     private let hostingController: NSHostingController<AnyView>
 
@@ -31,11 +31,12 @@ final class ClipboardPanel: NSPanel {
 
         super.init(
             contentRect: ClipboardPanel.initialContentRect(),
-            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView, .resizable],
             backing: .buffered,
             defer: false
         )
 
+        minSize = NSSize(width: 480, height: 420)
         isFloatingPanel = true
         level = .floating
         isOpaque = false
@@ -50,6 +51,12 @@ final class ClipboardPanel: NSPanel {
         contentView?.wantsLayer = true
         contentView?.layer?.cornerRadius = 14
         contentView?.layer?.masksToBounds = true
+
+        delegate = self
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        ClipboardPreferences.savePanelSize(frame.size)
     }
 
     var currentTab: PanelTab { focus.currentTab }
@@ -148,12 +155,19 @@ final class ClipboardPanel: NSPanel {
     }
 
     private static func initialContentRect() -> NSRect {
-        let widthRatio: CGFloat = 0.32
+        let widthRatio: CGFloat = 0.352
         let heightRatio: CGFloat = 0.56
         let minSize = NSSize(width: 480, height: 420)
-        let maxSize = NSSize(width: 900, height: 820)
+        let maxSize = NSSize(width: 990, height: 820)
 
         let visible = AppScreen.main.visibleFrame.size
+
+        if let saved = ClipboardPreferences.panelSize {
+            let w = min(max(saved.width, minSize.width), max(visible.width, minSize.width))
+            let h = min(max(saved.height, minSize.height), max(visible.height, minSize.height))
+            return NSRect(x: 0, y: 0, width: w, height: h)
+        }
+
         let width = min(max(visible.width * widthRatio, minSize.width), maxSize.width)
         let height = min(max(visible.height * heightRatio, minSize.height), maxSize.height)
         return NSRect(x: 0, y: 0, width: width, height: height)
