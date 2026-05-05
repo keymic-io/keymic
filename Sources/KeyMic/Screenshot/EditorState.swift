@@ -1,7 +1,6 @@
 import SwiftUI
 import Combine
 
-/// Bridges the SwiftUI floating toolbar to the AppKit overlay view.
 final class EditorState: ObservableObject {
     @Published var selectedTool: AnnotationTool = .select
     @Published var selectedColor: Color = .red
@@ -9,20 +8,31 @@ final class EditorState: ObservableObject {
     @Published var fontSize: CGFloat = 18
     @Published var dropShadowEnabled: Bool = false
 
+    // Canvas-driven (read-only from toolbar's POV)
     @Published var canUndo: Bool = false
     @Published var canRedo: Bool = false
-    @Published var hasAnnotation: Bool = false
+    @Published var hasSelection: Bool = false
 
+    // Action callbacks — set by EditorWindowController, invoked by toolbar buttons
     var undoAction: (() -> Void)?
     var redoAction: (() -> Void)?
-    var cancelAction: (() -> Void)?
+    var clearAction: (() -> Void)?
+    var copyAction: (() -> Void)?
     var saveAction: (() -> Void)?
-    var confirmAction: (() -> Void)?
+    /// Share anchor: the controller provides the anchor NSView and its bounds rect.
+    /// Pragmatic v1: toolbar passes NSApp.keyWindow?.contentView and .zero as anchor —
+    /// the share picker will appear near the window. The controller can override later.
+    var shareAction: ((NSView, NSRect) -> Void)?
 }
 
+// MARK: - Color Conversion Helpers
+
 extension Color {
-    var nsColor: NSColor { NSColor(self) }
+    var nsColor: NSColor {
+        NSColor(self)  // macOS 12+
+    }
 }
+
 extension NSColor {
     var swiftUIColor: Color { Color(nsColor: self) }
 }
