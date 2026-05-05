@@ -466,7 +466,13 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
             if let h = ResizeHandle.handle(at: p, in: state.selection) {
                 h.cursor.set()
             } else if state.selection.contains(p) {
-                NSCursor.openHand.set()
+                // Drawing tool armed → normal arrow (user will drag to draw, not move).
+                // Select tool → openHand to hint that the selection is draggable.
+                if state.selectedTool.isDrawingTool {
+                    NSCursor.arrow.set()
+                } else {
+                    NSCursor.openHand.set()
+                }
             } else {
                 NSCursor.arrow.set()
             }
