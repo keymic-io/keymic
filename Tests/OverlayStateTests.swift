@@ -18,7 +18,7 @@ struct OverlayStateTests {
     }
 
     static func testIdleToDrafting() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         assert(s.phase == .idle)
         s.beginDrafting(at: NSPoint(x: 100, y: 100))
         s.updateDrafting(to: NSPoint(x: 200, y: 200))
@@ -26,7 +26,7 @@ struct OverlayStateTests {
     }
 
     static func testDraftingTooSmallReturnsFalse() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 0, y: 0))
         s.updateDrafting(to: NSPoint(x: 2, y: 2))
         assert(s.finishDrafting() == false)
@@ -34,7 +34,7 @@ struct OverlayStateTests {
     }
 
     static func testDraftingValidTransitionsToDrafted() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 0, y: 0))
         s.updateDrafting(to: NSPoint(x: 100, y: 100))
         assert(s.finishDrafting() == true)
@@ -42,7 +42,7 @@ struct OverlayStateTests {
     }
 
     static func testHandleHitTakesPrecedenceOverInterior() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 100, y: 100))
         s.updateDrafting(to: NSPoint(x: 300, y: 200))
         _ = s.finishDrafting()
@@ -55,7 +55,7 @@ struct OverlayStateTests {
     }
 
     static func testInteriorSelectionTarget() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 100, y: 100))
         s.updateDrafting(to: NSPoint(x: 300, y: 200))
         _ = s.finishDrafting()
@@ -66,7 +66,7 @@ struct OverlayStateTests {
     }
 
     static func testAnnotationHit() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 100, y: 100))
         s.updateDrafting(to: NSPoint(x: 300, y: 300))
         _ = s.finishDrafting()
@@ -83,7 +83,7 @@ struct OverlayStateTests {
     }
 
     static func testResize() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 100, y: 100))
         s.updateDrafting(to: NSPoint(x: 300, y: 200))
         _ = s.finishDrafting()
@@ -95,7 +95,7 @@ struct OverlayStateTests {
     }
 
     static func testMove() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 100, y: 100))
         s.updateDrafting(to: NSPoint(x: 300, y: 200))
         _ = s.finishDrafting()
@@ -106,7 +106,7 @@ struct OverlayStateTests {
     }
 
     static func testAddRemoveAnnotation() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         let a = Annotation(kind: .rect, startPoint: .zero, endPoint: NSPoint(x: 10, y: 10))
         s.addAnnotation(a)
         assert(s.annotations.count == 1)
@@ -117,7 +117,7 @@ struct OverlayStateTests {
     }
 
     static func testClear() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.addAnnotation(Annotation(kind: .rect, startPoint: .zero, endPoint: NSPoint(x: 1, y: 1)))
         s.addAnnotation(Annotation(kind: .ellipse, startPoint: .zero, endPoint: NSPoint(x: 2, y: 2)))
         s.clearAnnotations()
@@ -125,7 +125,7 @@ struct OverlayStateTests {
     }
 
     static func testCancelResetsState() {
-        let s = OverlayState()
+        let s = ScreenshotOverlayState()
         s.beginDrafting(at: NSPoint(x: 0, y: 0))
         s.updateDrafting(to: NSPoint(x: 50, y: 50))
         _ = s.finishDrafting()
