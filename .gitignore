@@ -2,7 +2,6 @@
 .build/
 .swiftpm/
 .release/
-KeyMic.app/
 *.app/
 
 # macOS
@@ -26,3 +25,9 @@ scripts/keys/
 
 # Git worktrees
 .worktrees/
+
+# App backups
+KeyMic.app.bak/
+
+# Agent runtime
+agent-runtime/
