@@ -135,6 +135,9 @@ final class ScreenshotController {
 
     private func openEditor(with image: NSImage) {
         let controller = EditorWindowController(image: image)
+        controller.onClose = { [weak self] in
+            self?.editorController = nil
+        }
         editorController = controller
         controller.showWindow()
     }
@@ -151,6 +154,8 @@ final class ScreenshotController {
         dragStartPoint = nil
         dragCurrentPoint = nil
         isCapturing = false
+        permissionPollTimer?.invalidate()
+        permissionPollTimer = nil
     }
 
     // MARK: Permission handling
