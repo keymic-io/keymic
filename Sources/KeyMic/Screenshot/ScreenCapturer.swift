@@ -19,26 +19,20 @@ actor ScreenCapturer {
 
         var result: [NSScreen: CGImage] = [:]
         for display in content.displays {
-            // Match SCDisplay → NSScreen first, so we can use its backingScaleFactor.
-            let matchedScreen = NSScreen.screens.first { screen in
-                let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
-                return id == display.displayID
-            }
-            // SCDisplay.width/height are logical (point) dimensions. SCStreamConfiguration
-            // expects pixel dimensions — multiply by backingScaleFactor for Retina.
-            let scale = matchedScreen?.backingScaleFactor ?? 2.0
             let filter = SCContentFilter(display: display, excludingWindows: [])
             let config = SCStreamConfiguration()
             config.showsCursor = false
-            config.width = Int(CGFloat(display.width) * scale)
-            config.height = Int(CGFloat(display.height) * scale)
+            config.width = Int(display.width)
+            config.height = Int(display.height)
             config.scalesToFit = false
-            config.captureResolution = .best
             do {
                 let cgImage = try await SCScreenshotManager.captureImage(
                     contentFilter: filter, configuration: config
                 )
-                if let screen = matchedScreen {
+                if let screen = NSScreen.screens.first(where: { screen in
+                    let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+                    return id == display.displayID
+                }) {
                     result[screen] = cgImage
                 }
             } catch {
