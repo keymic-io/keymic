@@ -1,237 +1,544 @@
 import Cocoa
 
-// NOTE (concern): The magnifier in v1 is a mock — a dark circle with a crosshair reticle.
-// A true 4x-zoom magnifier using CGWindowListCreateImage is deferred because:
-//   1. We must exclude our own overlay panel windowIDs from the capture, requiring the
-//      window list to be known at draw-time (a threading/ordering hazard).
-//   2. A live capture every mouseMoved tick is too expensive; a proper implementation
-//      would capture a frozen frame once on drag-start and pass cropped chunks to the
-//      view via a separate update path (ScreenshotController can wire this up later).
-// ScreenshotController can upgrade this by calling setCursorPosition with a pre-cropped
-// CGImage thumbnail; the view can then blit it inside the circle.
+protocol SelectionOverlayViewDelegate: AnyObject {
+    func overlayDidEnterDrafted(_ view: SelectionOverlayView)
+    func overlayDidUpdateSelection(_ view: SelectionOverlayView)
+    func overlayDidUpdateState(_ view: SelectionOverlayView)
+    func overlayDidCancel(_ view: SelectionOverlayView)
+    func overlayDidConfirm(_ view: SelectionOverlayView)
+    func overlayDidSave(_ view: SelectionOverlayView)
+}
 
-final class SelectionOverlayView: NSView {
-    weak var panel: SelectionOverlayPanel?
-    var selectionRect: NSRect? = nil
-    var cursorPosition: NSPoint? = nil
-    var frozen: Bool = false  // when another screen owns active drag
+/// In-place WeChat-style overlay editor.
+final class SelectionOverlayView: NSView, NSTextFieldDelegate {
+
+    weak var delegate: SelectionOverlayViewDelegate?
+    let state = ScreenshotOverlayState()
+    let canvasUndoManager = UndoManager()
+
+    var frozenFrame: CGImage? { didSet { needsDisplay = true } }
+    var isOwner: Bool = true { didSet { needsDisplay = true; updateCursor() } }
+
+    var selection: NSRect { state.selection }
+    var annotations: [Annotation] { state.annotations }
+
+    func updateColor(_ color: NSColor) { state.currentColor = color }
+    func updateLineWidth(_ w: CGFloat) { state.currentLineWidth = w }
+    func updateFontSize(_ s: CGFloat) { state.currentFontSize = s }
+    func updateDropShadow(_ on: Bool) { state.currentDropShadow = on }
+    func updateTool(_ tool: AnnotationTool) {
+        cancelTextEditing()
+        state.setSelectedTool(tool)
+        updateCursor()
+        needsDisplay = true
+        delegate?.overlayDidUpdateState(self)
+    }
+
+    private var currentDraftAnnotation: Annotation?
+    private var activeTextField: NSTextField?
 
     override var acceptsFirstResponder: Bool { true }
-    override var isFlipped: Bool { false }  // bottom-left origin matches NSScreen
+    override var isFlipped: Bool { false }
+    override var undoManager: UndoManager? { canvasUndoManager }
+
+    private var trackingArea: NSTrackingArea?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .mouseMoved, .inVisibleRect, .mouseEnteredAndExited],
-            owner: self, userInfo: nil
-        )
-        addTrackingArea(area)
+        wantsLayer = true
+        rebuildTrackingArea()
     }
     required init?(coder: NSCoder) { fatalError() }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        rebuildTrackingArea()
+    }
+
+    private func rebuildTrackingArea() {
+        if let t = trackingArea { removeTrackingArea(t) }
+        let t = NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self, userInfo: nil
+        )
+        addTrackingArea(t)
+        trackingArea = t
+    }
+
+    // MARK: - Drawing
+
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-
-        // 1. 25% black mask over entire bounds
-        NSColor.black.withAlphaComponent(0.25).setFill()
+        let maskAlpha: CGFloat = isOwner ? 0.25 : 0.45
+        NSColor.black.withAlphaComponent(maskAlpha).setFill()
         bounds.fill()
 
-        // 2. Selection rect: clear the region + dual border
-        if let rect = selectionRect {
-            ctx.saveGState()
-            ctx.setBlendMode(.copy)
-            NSColor.clear.setFill()
-            rect.fill()
-            ctx.restoreGState()
-
-            // White solid 1.5pt outer border
-            NSColor.white.setStroke()
-            let outer = NSBezierPath(rect: rect)
-            outer.lineWidth = 1.5
-            outer.stroke()
-
-            // Black dashed 0.5pt inner border
-            NSColor.black.withAlphaComponent(0.7).setStroke()
-            let inner = NSBezierPath(rect: rect.insetBy(dx: 0.75, dy: 0.75))
-            inner.lineWidth = 0.5
-            inner.setLineDash([4, 4], count: 2, phase: 0)
-            inner.stroke()
-        }
-
-        // 3. Crosshair guides (only when not frozen and cursor known)
-        if !frozen, let cur = cursorPosition {
-            // Black 2pt background lines
-            NSColor.black.withAlphaComponent(0.6).setStroke()
-            let hBack = NSBezierPath()
-            hBack.move(to: NSPoint(x: bounds.minX, y: cur.y))
-            hBack.line(to: NSPoint(x: bounds.maxX, y: cur.y))
-            hBack.lineWidth = 2
-            hBack.stroke()
-
-            let vBack = NSBezierPath()
-            vBack.move(to: NSPoint(x: cur.x, y: bounds.minY))
-            vBack.line(to: NSPoint(x: cur.x, y: bounds.maxY))
-            vBack.lineWidth = 2
-            vBack.stroke()
-
-            // White 1pt overlay lines
-            NSColor.white.withAlphaComponent(0.8).setStroke()
-            let hFront = NSBezierPath()
-            hFront.move(to: NSPoint(x: bounds.minX, y: cur.y))
-            hFront.line(to: NSPoint(x: bounds.maxX, y: cur.y))
-            hFront.lineWidth = 1
-            hFront.stroke()
-
-            let vFront = NSBezierPath()
-            vFront.move(to: NSPoint(x: cur.x, y: bounds.minY))
-            vFront.line(to: NSPoint(x: cur.x, y: bounds.maxY))
-            vFront.lineWidth = 1
-            vFront.stroke()
-        }
-
-        // 4. Magnifier (v1 mock: dark circle with crosshair reticle)
-        // See concern note at top of file. True 4x zoom is deferred to a future task.
-        if !frozen, let cur = cursorPosition {
-            let magDiameter: CGFloat = 130
-            let magOffset: CGFloat = 20
-            var magOrigin = NSPoint(x: cur.x + magOffset, y: cur.y - magDiameter - magOffset)
-            let magRect = NSRect(origin: magOrigin, size: NSSize(width: magDiameter, height: magDiameter))
-            let clamped = clampToBounds(magRect)
-            magOrigin = clamped.origin
-
-            ctx.saveGState()
-
-            // Dark fill
-            NSColor.black.withAlphaComponent(0.65).setFill()
-            let circlePath = NSBezierPath(ovalIn: clamped)
-            circlePath.fill()
-
-            // White 2pt outer border
-            NSColor.white.setStroke()
-            circlePath.lineWidth = 2
-            circlePath.stroke()
-
-            // Black 1pt inner border
-            let innerCircle = NSBezierPath(ovalIn: clamped.insetBy(dx: 1.5, dy: 1.5))
-            NSColor.black.withAlphaComponent(0.4).setStroke()
-            innerCircle.lineWidth = 1
-            innerCircle.stroke()
-
-            // Crosshair inside magnifier circle
-            let cx = clamped.midX
-            let cy = clamped.midY
-            NSColor.white.withAlphaComponent(0.4).setStroke()
-            let xline = NSBezierPath()
-            xline.move(to: NSPoint(x: clamped.minX + 10, y: cy))
-            xline.line(to: NSPoint(x: clamped.maxX - 10, y: cy))
-            xline.lineWidth = 1
-            xline.stroke()
-
-            let yline = NSBezierPath()
-            yline.move(to: NSPoint(x: cx, y: clamped.minY + 10))
-            yline.line(to: NSPoint(x: cx, y: clamped.maxY - 10))
-            yline.lineWidth = 1
-            yline.stroke()
-
-            ctx.restoreGState()
-        }
-
-        // 5. Dimensions HUD
-        if let rect = selectionRect, rect.width >= 1, rect.height >= 1 {
-            let str = String(format: "%d × %d  @ %d,%d",
-                             Int(rect.width), Int(rect.height),
-                             Int(rect.origin.x), Int(rect.origin.y))
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor.white,
-            ]
-            let textSize = (str as NSString).size(withAttributes: attrs)
-            let pad: CGFloat = 4
-            var hudRect = NSRect(
-                x: rect.minX,
-                y: rect.minY - textSize.height - pad * 2 - 4,
-                width: textSize.width + pad * 2,
-                height: textSize.height + pad * 2
-            )
-            // Flip above selection if it would clip bottom of screen
-            if hudRect.minY < bounds.minY {
-                hudRect.origin.y = rect.maxY + 4
+        if state.selection != .zero, isOwner {
+            drawCutoutAndAnnotations(ctx: ctx)
+            drawSelectionChrome()
+            switch state.phase {
+            case .drafted, .resizing: drawHandles()
+            default: break
             }
-            // Clamp horizontally
-            if hudRect.maxX > bounds.maxX {
-                hudRect.origin.x = bounds.maxX - hudRect.width
-            }
-
-            NSColor.black.withAlphaComponent(0.75).setFill()
-            NSBezierPath(roundedRect: hudRect, xRadius: 3, yRadius: 3).fill()
-            (str as NSString).draw(
-                at: NSPoint(x: hudRect.minX + pad, y: hudRect.minY + pad),
-                withAttributes: attrs
-            )
-        }
-
-        // 6. Hint text (when no selection and not frozen)
-        if selectionRect == nil && !frozen {
-            let hint = "Click and drag to select a region  •  Press Esc to cancel"
-            let shadow = NSShadow()
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
-            shadow.shadowBlurRadius = 4
-            shadow.shadowOffset = .zero
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 13),
-                .foregroundColor: NSColor.white,
-                .shadow: shadow,
-            ]
-            let size = (hint as NSString).size(withAttributes: attrs)
-            (hint as NSString).draw(
-                at: NSPoint(x: (bounds.width - size.width) / 2,
-                            y: (bounds.height - size.height) / 2),
-                withAttributes: attrs
-            )
+            drawSelectedAnnotationChrome(ctx: ctx)
+            drawDimensionsHUD()
+        } else if isOwner && state.phase == .idle {
+            drawHint()
         }
     }
 
-    // MARK: - Helpers
+    private func drawCutoutAndAnnotations(ctx: CGContext) {
+        ctx.saveGState()
+        defer { ctx.restoreGState() }
 
-    private func clampToBounds(_ r: NSRect) -> NSRect {
-        var rect = r
-        if rect.minX < bounds.minX + 4 { rect.origin.x = bounds.minX + 4 }
-        if rect.minY < bounds.minY + 4 { rect.origin.y = bounds.minY + 4 }
-        if rect.maxX > bounds.maxX - 4 { rect.origin.x = bounds.maxX - rect.width - 4 }
-        if rect.maxY > bounds.maxY - 4 { rect.origin.y = bounds.maxY - rect.height - 4 }
-        return rect
+        let sel = state.selection
+        if let frame = frozenFrame {
+            let scaleX = CGFloat(frame.width) / bounds.width
+            let scaleY = CGFloat(frame.height) / bounds.height
+            let pxRect = CGRect(
+                x: sel.origin.x * scaleX,
+                y: (bounds.height - sel.maxY) * scaleY,
+                width: sel.width * scaleX,
+                height: sel.height * scaleY
+            )
+            if let cropped = frame.cropping(to: pxRect) {
+                ctx.draw(cropped, in: sel)
+            }
+        }
+
+        ctx.clip(to: sel)
+        ctx.translateBy(x: sel.origin.x, y: sel.origin.y)
+
+        for ann in state.annotations {
+            switch ann.kind {
+            case .mosaic, .blur: drawEffectAnnotation(ann, ctx: ctx, selection: sel)
+            case .rect: drawRectAnnotation(ann, ctx: ctx)
+            case .ellipse: drawEllipseAnnotation(ann, ctx: ctx)
+            case .arrow: drawArrowAnnotation(ann, ctx: ctx)
+            case .text: drawTextAnnotation(ann)
+            case .highlight: drawHighlightAnnotation(ann, ctx: ctx)
+            case .select: continue
+            }
+        }
+        if let draft = currentDraftAnnotation {
+            switch draft.kind {
+            case .rect: drawRectAnnotation(draft, ctx: ctx)
+            case .ellipse: drawEllipseAnnotation(draft, ctx: ctx)
+            case .arrow: drawArrowAnnotation(draft, ctx: ctx)
+            case .highlight: drawHighlightAnnotation(draft, ctx: ctx)
+            case .mosaic, .blur: drawEffectAnnotation(draft, ctx: ctx, selection: sel)
+            default: break
+            }
+        }
+    }
+
+    private func drawEffectAnnotation(_ ann: Annotation, ctx: CGContext, selection: NSRect) {
+        guard let frame = frozenFrame else { return }
+        let localRect = ann.rect
+        let screenRect = NSRect(
+            x: localRect.origin.x + selection.origin.x,
+            y: localRect.origin.y + selection.origin.y,
+            width: localRect.width,
+            height: localRect.height
+        )
+        let scaleX = CGFloat(frame.width) / bounds.width
+        let scaleY = CGFloat(frame.height) / bounds.height
+        let pxRect = CGRect(
+            x: screenRect.origin.x * scaleX,
+            y: (bounds.height - screenRect.maxY) * scaleY,
+            width: screenRect.width * scaleX,
+            height: screenRect.height * scaleY
+        )
+        guard pxRect.width >= 1, pxRect.height >= 1, let crop = frame.cropping(to: pxRect) else { return }
+        let effect: CGImage?
+        switch ann.kind {
+        case .mosaic: effect = Pixelator.mosaic(image: crop, scale: 12)
+        case .blur:   effect = Pixelator.blur(image: crop, radius: 10)
+        default: return
+        }
+        guard let result = effect else { return }
+        ctx.draw(result, in: localRect)
+    }
+
+    private func drawRectAnnotation(_ ann: Annotation, ctx: CGContext) {
+        ctx.saveGState(); defer { ctx.restoreGState() }
+        ctx.setStrokeColor(ann.color.cgColor)
+        ctx.setLineWidth(ann.lineWidth)
+        if ann.hasDropShadow {
+            ctx.setShadow(offset: CGSize(width: 2, height: -2), blur: 4,
+                          color: NSColor.black.withAlphaComponent(0.35).cgColor)
+        }
+        ctx.stroke(ann.rect)
+    }
+
+    private func drawEllipseAnnotation(_ ann: Annotation, ctx: CGContext) {
+        ctx.saveGState(); defer { ctx.restoreGState() }
+        ctx.setStrokeColor(ann.color.cgColor)
+        ctx.setLineWidth(ann.lineWidth)
+        ctx.strokeEllipse(in: ann.rect)
+    }
+
+    private func drawArrowAnnotation(_ ann: Annotation, ctx: CGContext) {
+        ctx.saveGState(); defer { ctx.restoreGState() }
+        ctx.setStrokeColor(ann.color.cgColor)
+        ctx.setLineWidth(ann.lineWidth)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        ctx.move(to: ann.startPoint)
+        ctx.addLine(to: ann.endPoint)
+        ctx.strokePath()
+        let angle = atan2(ann.endPoint.y - ann.startPoint.y, ann.endPoint.x - ann.startPoint.x)
+        let headLength = max(ann.lineWidth * 4, 12)
+        let headAngle = CGFloat.pi / 6
+        let tip1 = CGPoint(x: ann.endPoint.x - headLength * cos(angle - headAngle),
+                           y: ann.endPoint.y - headLength * sin(angle - headAngle))
+        let tip2 = CGPoint(x: ann.endPoint.x - headLength * cos(angle + headAngle),
+                           y: ann.endPoint.y - headLength * sin(angle + headAngle))
+        ctx.setFillColor(ann.color.cgColor)
+        ctx.move(to: ann.endPoint); ctx.addLine(to: tip1); ctx.addLine(to: tip2); ctx.closePath()
+        ctx.fillPath()
+    }
+
+    private func drawTextAnnotation(_ ann: Annotation) {
+        guard !ann.text.isEmpty else { return }
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: ann.fontSize, weight: .semibold),
+            .foregroundColor: ann.color,
+            .backgroundColor: NSColor.white.withAlphaComponent(0.75),
+        ]
+        NSAttributedString(string: ann.text, attributes: attrs).draw(at: ann.startPoint)
+    }
+
+    private func drawHighlightAnnotation(_ ann: Annotation, ctx: CGContext) {
+        ctx.saveGState(); defer { ctx.restoreGState() }
+        ctx.setFillColor(ann.color.withAlphaComponent(0.35).cgColor)
+        ctx.fill(ann.rect)
+    }
+
+    private func drawSelectionChrome() {
+        let sel = state.selection
+        NSColor.white.setStroke()
+        let outer = NSBezierPath(rect: sel)
+        outer.lineWidth = 1.5
+        outer.stroke()
+        NSColor.black.withAlphaComponent(0.7).setStroke()
+        let inner = NSBezierPath(rect: sel.insetBy(dx: 0.75, dy: 0.75))
+        inner.lineWidth = 0.5
+        inner.setLineDash([4, 4], count: 2, phase: 0)
+        inner.stroke()
+    }
+
+    private func drawHandles() {
+        let sel = state.selection
+        for h in ResizeHandle.allCases {
+            let r = h.visualRect(in: sel)
+            NSColor.white.setFill(); r.fill()
+            NSColor.systemBlue.setStroke()
+            let p = NSBezierPath(rect: r); p.lineWidth = 1; p.stroke()
+        }
+    }
+
+    private func drawSelectedAnnotationChrome(ctx: CGContext) {
+        guard let id = state.selectedAnnotationID,
+              let ann = state.annotations.first(where: { $0.id == id }) else { return }
+        let sel = state.selection
+        ctx.saveGState(); defer { ctx.restoreGState() }
+        ctx.translateBy(x: sel.origin.x, y: sel.origin.y)
+        let outline = NSBezierPath(rect: ann.rect.insetBy(dx: -4, dy: -4))
+        outline.lineWidth = 1; outline.setLineDash([3, 3], count: 2, phase: 0)
+        NSColor.systemBlue.setStroke()
+        outline.stroke()
+    }
+
+    private func drawDimensionsHUD() {
+        let sel = state.selection
+        guard sel.width >= 1, sel.height >= 1 else { return }
+        let str = String(format: "%d × %d", Int(sel.width), Int(sel.height))
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
+            .foregroundColor: NSColor.white,
+        ]
+        let textSize = (str as NSString).size(withAttributes: attrs)
+        let pad: CGFloat = 4
+        var hudRect = NSRect(
+            x: sel.minX,
+            y: sel.minY - textSize.height - pad * 2 - 4,
+            width: textSize.width + pad * 2,
+            height: textSize.height + pad * 2
+        )
+        if hudRect.minY < bounds.minY { hudRect.origin.y = sel.maxY + 4 }
+        NSColor.black.withAlphaComponent(0.75).setFill()
+        NSBezierPath(roundedRect: hudRect, xRadius: 3, yRadius: 3).fill()
+        (str as NSString).draw(at: NSPoint(x: hudRect.minX + pad, y: hudRect.minY + pad), withAttributes: attrs)
+    }
+
+    private func drawHint() {
+        let hint = "Click and drag to select a region  •  Press Esc to cancel"
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
+        shadow.shadowBlurRadius = 4
+        shadow.shadowOffset = .zero
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 13),
+            .foregroundColor: NSColor.white,
+            .shadow: shadow,
+        ]
+        let size = (hint as NSString).size(withAttributes: attrs)
+        (hint as NSString).draw(
+            at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
+            withAttributes: attrs
+        )
     }
 
     // MARK: - Mouse events
 
     override func mouseDown(with event: NSEvent) {
-        panel?.onMouseDown?(event, panel!.owningScreen)
+        guard isOwner else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        cancelTextEditing()
+        switch state.phase {
+        case .idle:
+            state.beginDrafting(at: p)
+            needsDisplay = true
+        case .drafted:
+            handleDraftedMouseDown(at: p, click: event.clickCount)
+        default: break
+        }
+    }
+
+    private func handleDraftedMouseDown(at p: NSPoint, click: Int) {
+        if click == 2, state.selection.contains(p),
+           ResizeHandle.handle(at: p, in: state.selection) == nil {
+            delegate?.overlayDidConfirm(self)
+            return
+        }
+        let target = state.target(for: p)
+        switch target {
+        case .handle(let h):
+            snapshotIfNeeded()
+            state.beginResizing(handle: h)
+        case .selectionInterior:
+            if state.selectedTool.isDrawingTool {
+                beginAnnotating(at: p)
+            } else {
+                snapshotIfNeeded()
+                state.beginMoving(at: p)
+            }
+        case .annotation(let id):
+            state.selectAnnotation(id)
+            needsDisplay = true
+            delegate?.overlayDidUpdateState(self)
+        case .nothing:
+            state.selectAnnotation(nil)
+            needsDisplay = true
+        }
+    }
+
+    private func beginAnnotating(at p: NSPoint) {
+        let sel = state.selection
+        let local = NSPoint(x: p.x - sel.minX, y: p.y - sel.minY)
+        if state.selectedTool == .text {
+            spawnTextField(atScreenPoint: p)
+            return
+        }
+        snapshotIfNeeded()
+        let ann = Annotation(
+            kind: state.selectedTool,
+            startPoint: local,
+            endPoint: local,
+            color: state.currentColor,
+            lineWidth: state.currentLineWidth,
+            text: "",
+            fontSize: state.currentFontSize,
+            hasDropShadow: state.currentDropShadow
+        )
+        currentDraftAnnotation = ann
+        needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
-        panel?.onMouseDragged?(event, panel!.owningScreen)
+        guard isOwner else { return }
+        let p = convert(event.locationInWindow, from: nil)
+        switch state.phase {
+        case .drafting:
+            state.updateDrafting(to: p)
+            delegate?.overlayDidUpdateSelection(self)
+            needsDisplay = true
+        case .resizing:
+            state.updateResizing(to: p)
+            delegate?.overlayDidUpdateSelection(self)
+            needsDisplay = true
+        case .moving:
+            state.updateMoving(to: p)
+            delegate?.overlayDidUpdateSelection(self)
+            needsDisplay = true
+        default:
+            if let draft = currentDraftAnnotation {
+                let sel = state.selection
+                draft.endPoint = NSPoint(x: p.x - sel.minX, y: p.y - sel.minY)
+                needsDisplay = true
+            }
+        }
     }
 
     override func mouseUp(with event: NSEvent) {
-        panel?.onMouseUp?(event, panel!.owningScreen)
+        guard isOwner else { return }
+        switch state.phase {
+        case .drafting:
+            if state.finishDrafting() {
+                delegate?.overlayDidEnterDrafted(self)
+            } else {
+                delegate?.overlayDidCancel(self)
+            }
+            needsDisplay = true
+        case .resizing, .moving:
+            state.finishGesture()
+            delegate?.overlayDidUpdateSelection(self)
+            needsDisplay = true
+        default:
+            if let draft = currentDraftAnnotation {
+                if draft.hasMinimumSize || draft.kind == .arrow {
+                    state.addAnnotation(draft)
+                    delegate?.overlayDidUpdateState(self)
+                } else {
+                    rollbackSnapshot()
+                }
+                currentDraftAnnotation = nil
+                needsDisplay = true
+            }
+        }
+        updateCursor()
     }
 
     override func mouseMoved(with event: NSEvent) {
-        panel?.onMouseMoved?(event, panel!.owningScreen)
+        guard isOwner else { return }
+        updateCursor()
     }
 
     // MARK: - Keyboard
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 {  // Esc
-            panel?.onCancel?()
-        } else {
-            super.keyDown(with: event)
+        if event.keyCode == 53 { // Esc
+            delegate?.overlayDidCancel(self); return
+        }
+        if event.keyCode == 36 || event.keyCode == 76 { // Return / numpad enter
+            if state.phase == .drafted {
+                delegate?.overlayDidConfirm(self); return
+            }
+        }
+        if event.keyCode == 51 || event.keyCode == 117 { // Delete / Forward delete
+            if state.selectedAnnotationID != nil {
+                snapshotIfNeeded()
+                state.removeSelectedAnnotation()
+                delegate?.overlayDidUpdateState(self)
+                needsDisplay = true
+                return
+            }
+        }
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "z" {
+            if event.modifierFlags.contains(.shift) {
+                canvasUndoManager.redo()
+            } else {
+                canvasUndoManager.undo()
+            }
+            delegate?.overlayDidUpdateState(self)
+            needsDisplay = true
+            return
+        }
+        super.keyDown(with: event)
+    }
+
+    // MARK: - Cursor
+
+    override func cursorUpdate(with event: NSEvent) {
+        updateCursor()
+    }
+
+    private func updateCursor() {
+        guard isOwner else { NSCursor.arrow.set(); return }
+        let mouseInWindow = window?.mouseLocationOutsideOfEventStream ?? .zero
+        let p = convert(mouseInWindow, from: nil)
+        switch state.phase {
+        case .idle, .drafting:
+            NSCursor.crosshair.set()
+        case .drafted, .resizing, .moving:
+            if let h = ResizeHandle.handle(at: p, in: state.selection) {
+                h.cursor.set()
+            } else if state.selection.contains(p) {
+                NSCursor.openHand.set()
+            } else {
+                NSCursor.arrow.set()
+            }
+        case .annotating:
+            NSCursor.crosshair.set()
         }
     }
 
-    override func cursorUpdate(with event: NSEvent) {
-        NSCursor.crosshair.set()
+    // MARK: - Text editing
+
+    private func spawnTextField(atScreenPoint p: NSPoint) {
+        let field = NSTextField()
+        field.delegate = self
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.textColor = state.currentColor
+        field.font = NSFont.systemFont(ofSize: state.currentFontSize, weight: .semibold)
+        field.frame = NSRect(x: p.x, y: p.y - 8, width: 200, height: state.currentFontSize + 8)
+        addSubview(field)
+        window?.makeFirstResponder(field)
+        activeTextField = field
+    }
+
+    private func cancelTextEditing() {
+        activeTextField?.removeFromSuperview()
+        activeTextField = nil
+    }
+
+    func controlTextDidEndEditing(_ obj: Notification) {
+        guard let field = activeTextField else { return }
+        let text = field.stringValue
+        let sel = state.selection
+        let local = NSPoint(x: field.frame.minX - sel.minX, y: field.frame.minY - sel.minY + 8)
+        if !text.isEmpty {
+            snapshotIfNeeded()
+            let ann = Annotation(
+                kind: .text,
+                startPoint: local,
+                color: state.currentColor,
+                text: text,
+                fontSize: state.currentFontSize
+            )
+            state.addAnnotation(ann)
+            delegate?.overlayDidUpdateState(self)
+            needsDisplay = true
+        }
+        cancelTextEditing()
+    }
+
+    // MARK: - Undo
+
+    private func snapshotIfNeeded() {
+        let snapshot = state.annotations.map { $0.copy() as! Annotation }
+        canvasUndoManager.registerUndo(withTarget: self) { target in
+            target.restoreSnapshot(snapshot)
+        }
+    }
+
+    private func rollbackSnapshot() {
+        canvasUndoManager.undo()
+        canvasUndoManager.removeAllActions(withTarget: self)
+    }
+
+    private func restoreSnapshot(_ snapshot: [Annotation]) {
+        let current = state.annotations.map { $0.copy() as! Annotation }
+        canvasUndoManager.registerUndo(withTarget: self) { target in
+            target.restoreSnapshot(current)
+        }
+        state.clearAnnotations()
+        for a in snapshot { state.addAnnotation(a) }
+        delegate?.overlayDidUpdateState(self)
+        needsDisplay = true
     }
 }
