@@ -4,7 +4,7 @@ import Cocoa
 ///
 /// Holds annotations (in selection-local coords) + selection rect + the active
 /// interaction. NSView/NSWindow code calls into this; this code does not import AppKit-UI.
-final class OverlayState {
+final class ScreenshotOverlayState {
 
     private(set) var selection: NSRect = .zero
     private(set) var annotations: [Annotation] = []
