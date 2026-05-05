@@ -28,6 +28,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Annota
     let canvas: AnnotationCanvasView
     let state: EditorState
     let exporter = ScreenshotExporter()
+    var onClose: (() -> Void)?
 
     var topBarHosting: NSHostingView<EditorTopBarView>!
     var sidebarHosting: NSHostingView<EditorToolSidebarView>!
@@ -291,6 +292,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Annota
         }
         // Cancel Combine subscriptions
         cancellables.removeAll()
+        onClose?()
     }
 
     // MARK: - AnnotationCanvasDelegate
