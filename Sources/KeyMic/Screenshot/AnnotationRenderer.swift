@@ -1,10 +1,24 @@
 import Cocoa
 
 enum AnnotationRenderer {
-    static func render(base: CGImage, annotations: [Annotation]) -> NSImage {
+    /// Renders annotations onto the base image at the base image's native pixel resolution.
+    ///
+    /// `pointSize` is the size of the canvas in points — annotations are stored in this
+    /// coordinate space. The renderer scales to map point coords into the pixel-resolution
+    /// output. If `pointSize == .zero`, falls back to treating the base image dimensions
+    /// as the point space (1x).
+    static func render(base: CGImage, annotations: [Annotation], pointSize: NSSize = .zero) -> NSImage {
         let effectRegions = annotations.compactMap { ann -> (CGRect, AnnotationTool)? in
             switch ann.kind {
-            case .mosaic, .blur: return (ann.rect, ann.kind)
+            case .mosaic, .blur:
+                let scale = effectiveScale(base: base, pointSize: pointSize)
+                let pxRect = CGRect(
+                    x: ann.rect.origin.x * scale,
+                    y: ann.rect.origin.y * scale,
+                    width: ann.rect.width * scale,
+                    height: ann.rect.height * scale
+                )
+                return (pxRect, ann.kind)
             default: return nil
             }
         }
@@ -18,23 +32,38 @@ enum AnnotationRenderer {
             baseImage = base
         }
 
-        let size = NSSize(width: baseImage.width, height: baseImage.height)
-        let rendered = NSImage(size: size, flipped: false) { drawRect in
-            NSImage(cgImage: baseImage, size: size).draw(in: drawRect)
+        let pixelSize = NSSize(width: baseImage.width, height: baseImage.height)
+        let renderPointSize: NSSize = (pointSize == .zero) ? pixelSize : pointSize
+        let scale = effectiveScale(base: base, pointSize: pointSize)
+
+        // Render at native pixel resolution but draw annotations in point space via CTM scale.
+        let rendered = NSImage(size: pixelSize, flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return true }
+            // Draw base at pixel size (fills entire image).
+            ctx.draw(baseImage, in: CGRect(origin: .zero, size: pixelSize))
+            // Scale CTM so annotation point coords map to pixel positions.
+            ctx.saveGState()
+            ctx.scaleBy(x: scale, y: scale)
             for ann in annotations {
                 switch ann.kind {
                 case .mosaic, .blur, .select: continue
                 case .rect: drawRectAnnotation(ann, in: ctx)
                 case .ellipse: drawEllipseAnnotation(ann, in: ctx)
                 case .arrow: drawArrowAnnotation(ann, in: ctx)
-                case .text: drawTextAnnotation(ann)
+                case .text: drawTextAnnotation(ann, scale: scale)
                 case .highlight: drawHighlightAnnotation(ann, in: ctx)
                 }
             }
+            ctx.restoreGState()
+            _ = renderPointSize  // keep capture for clarity
             return true
         }
         return rendered
+    }
+
+    private static func effectiveScale(base: CGImage, pointSize: NSSize) -> CGFloat {
+        guard pointSize.width > 0 else { return 1 }
+        return CGFloat(base.width) / pointSize.width
     }
 
     private static func drawRectAnnotation(_ ann: Annotation, in ctx: CGContext) {
@@ -84,7 +113,7 @@ enum AnnotationRenderer {
         ctx.fillPath()
     }
 
-    private static func drawTextAnnotation(_ ann: Annotation) {
+    private static func drawTextAnnotation(_ ann: Annotation, scale: CGFloat) {
         guard !ann.text.isEmpty else { return }
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
@@ -96,6 +125,7 @@ enum AnnotationRenderer {
             .backgroundColor: NSColor.white.withAlphaComponent(0.75),
             .shadow: shadow,
         ]
+        _ = scale  // CTM scale applied by caller; text draws in point space
         NSAttributedString(string: ann.text, attributes: attrs).draw(at: ann.startPoint)
     }
 
