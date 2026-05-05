@@ -4,7 +4,7 @@ import Cocoa
 ///
 /// Holds annotations (in selection-local coords) + selection rect + the active
 /// interaction. NSView/NSWindow code calls into this; this code does not import AppKit-UI.
-final class ScreenshotOverlayState {
+final class OverlayState {
 
     private(set) var selection: NSRect = .zero
     private(set) var annotations: [Annotation] = []
@@ -97,7 +97,7 @@ final class ScreenshotOverlayState {
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: a.fontSize, weight: .semibold)]
             let size = (a.text as NSString).size(withAttributes: attrs)
             return NSRect(origin: a.startPoint, size: size).insetBy(dx: -6, dy: -6).contains(point)
-        case .select, .ocr:
+        case .select:
             return false
         }
     }

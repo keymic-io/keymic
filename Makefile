@@ -2,7 +2,7 @@ APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner
+.PHONY: build clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state
 
 build:
 	swift build -c release
@@ -261,7 +261,16 @@ test-toolbar-positioner:
 	       -o .build/toolbar-positioner-tests
 	.build/toolbar-positioner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner
+test-overlay-state:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Screenshot/AnnotationModel.swift \
+	       Sources/KeyMic/Screenshot/SelectionHandle.swift \
+	       Sources/KeyMic/Screenshot/OverlayState.swift \
+	       Tests/OverlayStateTests.swift \
+	       -o .build/overlay-state-tests
+	.build/overlay-state-tests
+
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state
 	@echo "\n✅ All tests passed"
 
 clean:
