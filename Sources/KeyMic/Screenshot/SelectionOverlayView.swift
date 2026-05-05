@@ -342,7 +342,11 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
             spawnTextField(atScreenPoint: p)
             return
         }
-        snapshotIfNeeded()
+        // Note: undo snapshot is registered on commit (mouseUp), not here.
+        // Registering on draft-start and rolling back on a too-small draft would
+        // require popping a single entry off the undo stack, which UndoManager
+        // doesn't expose; previous attempts used removeAllActions(withTarget:),
+        // which wiped the user's earlier annotation history.
         let ann = Annotation(
             kind: state.selectedTool,
             startPoint: local,
@@ -399,11 +403,12 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         default:
             if let draft = currentDraftAnnotation {
                 if draft.hasMinimumSize || draft.kind == .arrow {
+                    snapshotIfNeeded()
                     state.addAnnotation(draft)
                     delegate?.overlayDidUpdateState(self)
-                } else {
-                    rollbackSnapshot()
                 }
+                // Discard too-small draft: simply drop currentDraftAnnotation.
+                // No undo entry was registered on draft-start, so nothing to roll back.
                 currentDraftAnnotation = nil
                 needsDisplay = true
             }
@@ -530,11 +535,6 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         canvasUndoManager.registerUndo(withTarget: self) { target in
             target.restoreSnapshot(snapshot)
         }
-    }
-
-    private func rollbackSnapshot() {
-        canvasUndoManager.undo()
-        canvasUndoManager.removeAllActions(withTarget: self)
     }
 
     private func restoreSnapshot(_ snapshot: [Annotation]) {
