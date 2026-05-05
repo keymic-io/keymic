@@ -1,20 +1,10 @@
 import Cocoa
 import SwiftUI
 
-/// Container view that accepts first-mouse so SwiftUI buttons in a non-key panel
-/// receive their click instead of having it swallowed for window activation.
-private final class FirstMouseHostContainer: NSView {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
-
-private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
-
 /// Floating panel that hosts the SwiftUI toolbar above the selection overlay.
 final class EditorToolbarPanel: NSPanel {
     private let state: EditorState
-    private var hostingView: FirstMouseHostingView<EditorToolbarView>!
+    private var hostingView: NSHostingView<EditorToolbarView>!
 
     init(state: EditorState) {
         self.state = state
@@ -33,9 +23,9 @@ final class EditorToolbarPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         isReleasedWhenClosed = false
 
-        let hosting = FirstMouseHostingView(rootView: EditorToolbarView(state: state))
+        let hosting = NSHostingView(rootView: EditorToolbarView(state: state))
         hosting.translatesAutoresizingMaskIntoConstraints = false
-        let container = FirstMouseHostContainer(frame: NSRect(origin: .zero, size: NSSize(width: 460, height: 80)))
+        let container = NSView(frame: NSRect(origin: .zero, size: NSSize(width: 460, height: 80)))
         container.addSubview(hosting)
         NSLayoutConstraint.activate([
             hosting.topAnchor.constraint(equalTo: container.topAnchor),
