@@ -1,18 +1,19 @@
 import Cocoa
-import Combine
 
 @MainActor
-final class ScreenshotController: SelectionOverlayViewDelegate {
+final class ScreenshotController {
     private let capturer = ScreenCapturer()
-    private let exporter = ScreenshotExporter()
     private var frozenFrames: [NSScreen: CGImage] = [:]
     private var overlayPanels: [SelectionOverlayPanel] = []
-    private var ownerPanel: SelectionOverlayPanel?
-    private var toolbarPanel: EditorToolbarPanel?
-    private let state = EditorState()
-    private var cancellables: Set<AnyCancellable> = []
+    private var editorController: EditorWindowController?
     private var isCapturing = false
 
+    // Drag state
+    private var dragOwningScreen: NSScreen? = nil
+    private var dragStartPoint: NSPoint? = nil
+    private var dragCurrentPoint: NSPoint? = nil
+
+    // Permission polling state
     private var permissionPollTimer: Timer?
     private var lastPermissionAlertAt: CFTimeInterval = 0
     private var permissionPollStartedAt: CFTimeInterval = 0
@@ -24,7 +25,7 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
         isCapturing = true
         Task { @MainActor in
             do {
-                let frames = try await capturer.captureAllScreens()
+                let frames = try await self.capturer.captureAllScreens()
                 self.frozenFrames = frames
                 self.showOverlays()
             } catch ScreenshotError.permissionDenied {
@@ -40,175 +41,119 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
     private func showOverlays() {
         overlayPanels = NSScreen.screens.map { screen in
             let panel = SelectionOverlayPanel(screen: screen)
-            panel.overlayView.delegate = self
-            panel.setFrozenFrame(frozenFrames[screen])
-            panel.setOwner(true)
+            panel.onMouseDown = { [weak self] event, screen in self?.handleMouseDown(event: event, screen: screen) }
+            panel.onMouseDragged = { [weak self] event, screen in self?.handleMouseDragged(event: event, screen: screen) }
+            panel.onMouseUp = { [weak self] event, screen in self?.handleMouseUp(event: event, screen: screen) }
+            panel.onMouseMoved = { [weak self] event, screen in self?.handleMouseMoved(event: event, screen: screen) }
+            panel.onCancel = { [weak self] in self?.cancel() }
             return panel
         }
         for panel in overlayPanels {
             panel.makeKeyAndOrderFront(nil)
         }
+        // Make the panel under the mouse key
         let mouseLoc = NSEvent.mouseLocation
         if let active = overlayPanels.first(where: { $0.owningScreen.frame.contains(mouseLoc) }) {
             active.makeKey()
         }
-        bindStateActions()
     }
 
-    private func bindStateActions() {
-        state.selectedTool = .select
-        state.selectedColor = .red
-        state.lineWidth = 3
-        state.fontSize = 18
-        state.dropShadowEnabled = false
-
-        cancellables.removeAll()
-        state.$selectedTool.sink { [weak self] t in self?.ownerPanel?.overlayView.updateTool(t) }.store(in: &cancellables)
-        state.$selectedColor.sink { [weak self] c in self?.ownerPanel?.overlayView.updateColor(NSColor(c)) }.store(in: &cancellables)
-        state.$lineWidth.sink { [weak self] w in self?.ownerPanel?.overlayView.updateLineWidth(w) }.store(in: &cancellables)
-        state.$fontSize.sink { [weak self] s in self?.ownerPanel?.overlayView.updateFontSize(s) }.store(in: &cancellables)
-        state.$dropShadowEnabled.sink { [weak self] on in self?.ownerPanel?.overlayView.updateDropShadow(on) }.store(in: &cancellables)
-
-        state.undoAction = { [weak self] in
-            self?.ownerPanel?.overlayView.undoManager?.undo()
-            self?.refreshUndoState()
+    private func handleMouseDown(event: NSEvent, screen: NSScreen) {
+        if dragOwningScreen != nil { return }  // already dragging
+        dragOwningScreen = screen
+        let p = event.locationInWindow  // in panel coords (panel == screen frame)
+        dragStartPoint = p
+        dragCurrentPoint = p
+        // Freeze other panels' crosshair
+        for panel in overlayPanels where panel.owningScreen !== screen {
+            panel.setCursorPosition(nil, frozen: true)
         }
-        state.redoAction = { [weak self] in
-            self?.ownerPanel?.overlayView.undoManager?.redo()
-            self?.refreshUndoState()
-        }
-        state.cancelAction = { [weak self] in self?.cancel() }
-        state.confirmAction = { [weak self] in self?.confirmAndCopy() }
-        state.saveAction = { [weak self] in self?.saveAndDismiss() }
     }
 
-    // MARK: - SelectionOverlayViewDelegate
-
-    func overlayDidEnterDrafted(_ view: SelectionOverlayView) {
-        guard let panel = overlayPanels.first(where: { $0.contentView === view }) else { return }
-        ownerPanel = panel
-        for p in overlayPanels where p !== panel {
-            p.setOwner(false)
-        }
-        showToolbar()
-    }
-
-    func overlayDidUpdateSelection(_ view: SelectionOverlayView) {
-        repositionToolbar()
-    }
-
-    func overlayDidUpdateState(_ view: SelectionOverlayView) {
-        refreshUndoState()
-    }
-
-    func overlayDidCancel(_ view: SelectionOverlayView) {
-        cancel()
-    }
-
-    func overlayDidConfirm(_ view: SelectionOverlayView) {
-        confirmAndCopy()
-    }
-
-    func overlayDidSave(_ view: SelectionOverlayView) {
-        saveAndDismiss()
-    }
-
-    // MARK: - Toolbar
-
-    private func showToolbar() {
-        guard toolbarPanel == nil else { repositionToolbar(); return }
-        let panel = EditorToolbarPanel(state: state)
-        toolbarPanel = panel
-        repositionToolbar()
-        panel.orderFront(nil)
-    }
-
-    private func repositionToolbar() {
-        guard let toolbar = toolbarPanel,
-              let owner = ownerPanel else { return }
-        toolbar.reposition(for: owner.overlayView.selection, on: owner.owningScreen)
-    }
-
-    private func refreshUndoState() {
-        guard let view = ownerPanel?.overlayView else { return }
-        state.canUndo = view.canvasUndoManager.canUndo
-        state.canRedo = view.canvasUndoManager.canRedo
-        state.hasAnnotation = !view.annotations.isEmpty
-    }
-
-    // MARK: - Export
-
-    private func renderFinalImage() -> NSImage? {
-        guard let owner = ownerPanel,
-              let frame = frozenFrames[owner.owningScreen] else { return nil }
-        let view = owner.overlayView
-        let sel = view.selection
-        let scaleX = CGFloat(frame.width) / view.bounds.width
-        let scaleY = CGFloat(frame.height) / view.bounds.height
-        let pxRect = CGRect(
-            x: sel.origin.x * scaleX,
-            y: (view.bounds.height - sel.maxY) * scaleY,
-            width: sel.width * scaleX,
-            height: sel.height * scaleY
+    private func handleMouseDragged(event: NSEvent, screen: NSScreen) {
+        guard dragOwningScreen === screen,
+              let start = dragStartPoint else { return }
+        let p = event.locationInWindow
+        dragCurrentPoint = p
+        let rect = NSRect(
+            x: min(start.x, p.x), y: min(start.y, p.y),
+            width: abs(p.x - start.x), height: abs(p.y - start.y)
         )
-        guard let cropped = frame.cropping(to: pxRect) else { return nil }
-        return AnnotationRenderer.render(base: cropped, annotations: view.annotations, pointSize: sel.size)
-    }
-
-    private func confirmAndCopy() {
-        guard let img = renderFinalImage() else { cancel(); return }
-        exporter.copyToPasteboard(img)
-        dismissAll()
-    }
-
-    private func saveAndDismiss() {
-        guard let img = renderFinalImage() else { cancel(); return }
-        exporter.saveWithFolderPicker(img, from: nil) { [weak self] ok in
-            if ok { self?.dismissAll() }
+        if let panel = overlayPanels.first(where: { $0.owningScreen === screen }) {
+            panel.setSelectionRect(rect)
+            panel.setCursorPosition(p, frozen: false)
         }
+    }
+
+    private func handleMouseUp(event: NSEvent, screen: NSScreen) {
+        guard dragOwningScreen === screen,
+              let start = dragStartPoint else {
+            cancel(); return
+        }
+        let p = event.locationInWindow
+        let rect = NSRect(
+            x: min(start.x, p.x), y: min(start.y, p.y),
+            width: abs(p.x - start.x), height: abs(p.y - start.y)
+        )
+        // Reset state
+        dragOwningScreen = nil
+        dragStartPoint = nil
+        dragCurrentPoint = nil
+        if rect.width < 5 || rect.height < 5 {
+            cancel()
+            return
+        }
+        handleSelection(screen: screen, rectInPanelCoords: rect)
+    }
+
+    private func handleMouseMoved(event: NSEvent, screen: NSScreen) {
+        if dragOwningScreen != nil { return }
+        if let panel = overlayPanels.first(where: { $0.owningScreen === screen }) {
+            panel.setCursorPosition(event.locationInWindow, frozen: false)
+        }
+    }
+
+    private func handleSelection(screen: NSScreen, rectInPanelCoords rect: NSRect) {
+        guard let frame = frozenFrames[screen] else { cancel(); return }
+        // Panel coords = screen coords with bottom-left origin. CGImage is top-left.
+        // Panel size matches screen frame in points; CGImage may be in pixels (Retina).
+        let scaleX = CGFloat(frame.width) / screen.frame.width
+        let scaleY = CGFloat(frame.height) / screen.frame.height
+        let pxRect = CGRect(
+            x: rect.origin.x * scaleX,
+            y: (screen.frame.height - rect.origin.y - rect.height) * scaleY,
+            width: rect.width * scaleX,
+            height: rect.height * scaleY
+        )
+        guard let cropped = frame.cropping(to: pxRect) else { cancel(); return }
+
+        dismissOverlays()
+        let nsImage = NSImage(cgImage: cropped, size: rect.size)
+        openEditor(with: nsImage)
+        isCapturing = false
+    }
+
+    private func openEditor(with image: NSImage) {
+        let controller = EditorWindowController(image: image)
+        editorController = controller
+        controller.showWindow()
+    }
+
+    private func dismissOverlays() {
+        for panel in overlayPanels { panel.dismiss() }
+        overlayPanels.removeAll()
     }
 
     func cancel() {
-        if let view = ownerPanel?.overlayView, !view.annotations.isEmpty {
-            // Overlay panels live at CGShieldingWindowLevel — above modal alerts.
-            // Temporarily drop them to .normal so the alert is interactive,
-            // then restore on dismiss.
-            let savedLevels: [(NSPanel, NSWindow.Level)] = overlayPanels.map { ($0, $0.level) }
-            let savedToolbarLevel = toolbarPanel?.level
-            for p in overlayPanels { p.level = .normal }
-            toolbarPanel?.level = .normal
-
-            let alert = NSAlert()
-            alert.messageText = "Discard annotations?"
-            alert.addButton(withTitle: "Discard")
-            alert.addButton(withTitle: "Cancel")
-            alert.window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 2)
-            let response = alert.runModal()
-
-            if response != .alertFirstButtonReturn {
-                // User cancelled — restore overlay panels and stay in editor.
-                for (p, lvl) in savedLevels { p.level = lvl }
-                if let lvl = savedToolbarLevel { toolbarPanel?.level = lvl }
-                return
-            }
-        }
-        dismissAll()
-    }
-
-    private func dismissAll() {
-        toolbarPanel?.dismiss()
-        toolbarPanel = nil
-        for p in overlayPanels { p.dismiss() }
-        overlayPanels.removeAll()
-        ownerPanel = nil
+        dismissOverlays()
         frozenFrames.removeAll()
-        cancellables.removeAll()
+        dragOwningScreen = nil
+        dragStartPoint = nil
+        dragCurrentPoint = nil
         isCapturing = false
-        permissionPollTimer?.invalidate()
-        permissionPollTimer = nil
     }
 
-    // MARK: - Permission
+    // MARK: Permission handling
 
     private func handlePermissionDenied() {
         let now = CACurrentMediaTime()
