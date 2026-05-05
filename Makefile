@@ -2,7 +2,7 @@ APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build clean install run test release test-annotation-model test-pixelator test-renderer
+.PHONY: build clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles
 
 build:
 	swift build -c release
@@ -247,7 +247,14 @@ test-renderer:
 	       -o .build/renderer-tests
 	.build/renderer-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer
+test-selection-handles:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Screenshot/SelectionHandle.swift \
+	       Tests/SelectionHandleTests.swift \
+	       -o .build/selection-handles-tests
+	.build/selection-handles-tests
+
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles
 	@echo "\n✅ All tests passed"
 
 clean:
