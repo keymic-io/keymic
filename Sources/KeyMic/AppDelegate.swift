@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
+    private var screenshotController: ScreenshotController?
 
     private var isRecording = false
     private var lastPartialResult = ""
@@ -118,6 +119,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onClipboardQuickPaste = { [weak self] index in self?.clipboardController.quickPaste(index: index) }
         keyMonitor.isClipboardPanelVisible = { [weak self] in self?.clipboardController.isPanelVisible == true }
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
+        screenshotController = ScreenshotController()
+        keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
         clipboardController.start()
         _ = UpdaterController.shared
 
