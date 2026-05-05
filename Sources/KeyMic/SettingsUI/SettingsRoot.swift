@@ -42,7 +42,7 @@ final class SwiftUISettingsWindow: NSPanel {
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, voice, llm, keyMapping, shortcuts, clipboard
+    case general, voice, llm, keyMapping, shortcuts, clipboard, screenshot
 
     var id: String { rawValue }
 
@@ -54,6 +54,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .keyMapping: "Key Mapping"
         case .shortcuts:  "Shortcuts"
         case .clipboard:  "Clipboard"
+        case .screenshot: "Screenshot"
         }
     }
 
@@ -65,6 +66,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .keyMapping: "keyboard"
         case .shortcuts:  "command.square"
         case .clipboard:  "doc.on.clipboard"
+        case .screenshot: "camera.on.rectangle"
         }
     }
 }
@@ -98,7 +100,29 @@ struct SettingsRootView: View {
         case .clipboard:  ClipboardSettingsView()
         case .keyMapping: KeyMappingSettingsSection()
         case .shortcuts:  ShortcutsSettingsSection()
+        case .screenshot: ScreenshotSettingsView()
         }
+    }
+}
+
+// MARK: - Screenshot
+
+private struct ScreenshotSettingsView: View {
+    @AppStorage("screenshotEnabled") private var screenshotEnabled: Bool = true
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enable screenshot hotkey ⌃⇧A", isOn: $screenshotEnabled)
+            } header: {
+                Text("Screenshot")
+            } footer: {
+                Text("Press ⌃⇧A to capture a region of the screen and open it in the annotation editor.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
