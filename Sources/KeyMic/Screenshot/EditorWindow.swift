@@ -220,7 +220,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Annota
         guard let cg = canvas.image.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return canvas.image
         }
-        return AnnotationRenderer.render(base: cg, annotations: canvas.annotations)
+        return AnnotationRenderer.render(base: cg, annotations: canvas.annotations, pointSize: canvas.image.size)
     }
 
     private func performCopy() {
