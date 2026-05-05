@@ -170,11 +170,27 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
 
     func cancel() {
         if let view = ownerPanel?.overlayView, !view.annotations.isEmpty {
+            // Overlay panels live at CGShieldingWindowLevel — above modal alerts.
+            // Temporarily drop them to .normal so the alert is interactive,
+            // then restore on dismiss.
+            let savedLevels: [(NSPanel, NSWindow.Level)] = overlayPanels.map { ($0, $0.level) }
+            let savedToolbarLevel = toolbarPanel?.level
+            for p in overlayPanels { p.level = .normal }
+            toolbarPanel?.level = .normal
+
             let alert = NSAlert()
             alert.messageText = "Discard annotations?"
             alert.addButton(withTitle: "Discard")
             alert.addButton(withTitle: "Cancel")
-            if alert.runModal() != .alertFirstButtonReturn { return }
+            alert.window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 2)
+            let response = alert.runModal()
+
+            if response != .alertFirstButtonReturn {
+                // User cancelled — restore overlay panels and stay in editor.
+                for (p, lvl) in savedLevels { p.level = lvl }
+                if let lvl = savedToolbarLevel { toolbarPanel?.level = lvl }
+                return
+            }
         }
         dismissAll()
     }
