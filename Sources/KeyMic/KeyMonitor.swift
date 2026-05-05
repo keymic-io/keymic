@@ -12,6 +12,7 @@ final class KeyMonitor {
     var onClipboardQuickPaste: ((Int) -> Void)?
     var isClipboardPanelVisible: (() -> Bool)?
     var onSettingsHotkey: (() -> Void)?
+    var onScreenshotHotkey: (() -> Void)?
     var onAction: (([HotkeyAction]) -> Void)?
     /// Synchronous, O(1) lookup of the bundle ID KeyMic believes is frontmost.
     /// MUST NOT call into LaunchServices — this runs in the event-tap callback on the
@@ -25,6 +26,7 @@ final class KeyMonitor {
     private var clipboardHotkey: HotkeyConfig?
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
+    private var screenshotHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
     private var heldModifiers = Set<CGKeyCode>()
@@ -109,6 +111,8 @@ final class KeyMonitor {
         vaultHotkey = HotkeyConfig.parse(vault)
         let settings = UserDefaults.standard.string(forKey: "settingsHotkey") ?? "cmd+shift+,"
         settingsHotkey = HotkeyConfig.parse(settings)
+        let screenshot = UserDefaults.standard.string(forKey: "screenshotHotkey") ?? "ctrl+shift+a"
+        screenshotHotkey = HotkeyConfig.parse(screenshot)
         let voice = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
         voiceTriggerHotkey = HotkeyConfig.parse(voice)
         actionBindings = HotkeyBindingsStore.shared.bindings.compactMap { b in
@@ -205,6 +209,15 @@ final class KeyMonitor {
                !cfg.isPureModifier,
                cfg.matches(keyCode: keyCode, flags: event.flags) {
                 DispatchQueue.main.async { [weak self] in self?.onSettingsHotkey?() }
+                return nil
+            }
+
+            // Screenshot hotkey
+            if let cfg = screenshotHotkey,
+               !cfg.isPureModifier,
+               cfg.matches(keyCode: keyCode, flags: event.flags),
+               UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
+                DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
                 return nil
             }
         }
