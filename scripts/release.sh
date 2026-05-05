@@ -6,8 +6,8 @@ APP_NAME="KeyMic"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_DIR="${PROJECT_DIR}/.release"
 SPARKLE_TOOLS_DIR="${HOME}/.sparkle-tools"
-KEYCHAIN_ACCOUNT="KeyMic"
-RELEASE_REPO_SLUG="keymic-io/KeyMic"
+KEYCHAIN_ACCOUNT="KeyMic"  # Sparkle EdDSA signing key — keep stable so we can sign the v0.1.x → v0.2.x transition with the same identity
+RELEASE_REPO_SLUG="keymic-io/keymic"
 
 VERSION="${1:-}"
 if [[ -z "$VERSION" ]]; then
@@ -26,7 +26,7 @@ echo "==> Updating Info.plist version to ${VERSION}"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" Info.plist
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION}" Info.plist
 
-echo "==> Building KeyMic ${VERSION}"
+echo "==> Building ${APP_NAME} ${VERSION}"
 make build
 
 echo "==> Preparing release assets"
