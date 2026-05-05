@@ -2,7 +2,7 @@ APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build clean install run test release test-annotation-model
+.PHONY: build clean install run test release test-annotation-model test-pixelator
 
 build:
 	swift build -c release
@@ -229,6 +229,14 @@ test-annotation-model:
 	       Tests/AnnotationModelTests.swift \
 	       -o .build/annotation-model-tests
 	.build/annotation-model-tests
+
+test-pixelator:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Screenshot/AnnotationModel.swift \
+	       Sources/KeyMic/Screenshot/Pixelator.swift \
+	       Tests/PixelatorTests.swift \
+	       -o .build/pixelator-tests
+	.build/pixelator-tests
 
 test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model
 	@echo "\n✅ All tests passed"
