@@ -2,7 +2,7 @@ APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles
+.PHONY: build clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner
 
 build:
 	swift build -c release
@@ -220,7 +220,14 @@ test-selection-handles:
 	       -o .build/selection-handles-tests
 	.build/selection-handles-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles
+test-toolbar-positioner:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Screenshot/ToolbarPositioner.swift \
+	       Tests/ToolbarPositionerTests.swift \
+	       -o .build/toolbar-positioner-tests
+	.build/toolbar-positioner-tests
+
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner
 	@echo "\n✅ All tests passed"
 
 clean:
