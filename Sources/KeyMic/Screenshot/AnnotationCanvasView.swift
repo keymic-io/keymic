@@ -85,8 +85,9 @@ final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     // MARK: - Base image
 
     private func deriveBaseCGImage() {
-        var rect = NSRect(origin: .zero, size: image.size)
-        baseCGImage = image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+        // Pass nil for proposedRect so AppKit returns the underlying full-resolution
+        // CGImage rather than downsampling to image.size (which is in points).
+        baseCGImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
     }
 
     // MARK: - Tracking area
