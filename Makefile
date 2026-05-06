@@ -2,7 +2,8 @@ APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state
+.PHONY: build build-arm64 build-x86_64 clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state
+
 
 build:
 	swift build -c release
@@ -23,6 +24,40 @@ build:
 	codesign --force --deep --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
 	codesign --force --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)
 	@echo "\n✅ Built $(APP_BUNDLE)"
+
+build-arm64:
+	swift build -c release --arch arm64
+	$(eval ARM64_BUILD := $(shell swift build -c release --arch arm64 --show-bin-path))
+	rm -rf $(APP_BUNDLE)
+	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(APP_BUNDLE)/Contents/Frameworks
+	cp $(ARM64_BUILD)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
+	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
+	cp Info.plist $(APP_BUNDLE)/Contents/
+	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
+	cp -R $(ARM64_BUILD)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
+	codesign --force --deep --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
+	codesign --force --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)
+	@echo "\n✅ Built $(APP_BUNDLE) (arm64)"
+
+build-x86_64:
+	swift build -c release --arch x86_64
+	$(eval X86_BUILD := $(shell swift build -c release --arch x86_64 --show-bin-path))
+	rm -rf $(APP_BUNDLE)
+	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(APP_BUNDLE)/Contents/Frameworks
+	cp $(X86_BUILD)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
+	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
+	cp Info.plist $(APP_BUNDLE)/Contents/
+	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
+	cp -R $(X86_BUILD)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
+	codesign --force --deep --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
+	codesign --force --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)
+	@echo "\n✅ Built $(APP_BUNDLE) (x86_64)"
 
 run: build
 	open $(APP_BUNDLE)
