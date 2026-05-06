@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-KeyMic is a single macOS menu-bar app (`LSUIElement`) that bundles three productivity layers inspired by Maccy (clipboard history), Karabiner (key remap), and skhd (shortcut hotkeys):
+KeyMic is a single macOS menu-bar app (`LSUIElement`) that bundles several productivity layers inspired by Maccy (clipboard history), Karabiner (key remap), and skhd (shortcut hotkeys):
 
 - **Voice input** — hold a trigger key (Fn or Right Option), speak, transcribed text is pasted into the focused field via simulated `Cmd+V`. Optional LLM refinement (OpenAI-compatible chat-completions endpoint).
 - **Clipboard history** — text-only background monitor, SwiftData-backed storage, hotkey panel (`⌥V`) with search, arrow navigation, `⌥1`–`⌥0` quick paste.
@@ -21,7 +21,9 @@ All keyboard pillars share a single `CGEventTap` (`KeyMonitor`) and a single `Ap
 No Xcode project — SwiftPM + a Makefile that wraps `swift build` and assembles a `.app` bundle:
 
 ```bash
-make build                    # release build → ./KeyMic.app (codesigned ad-hoc)
+make build                    # release build (host arch) → ./KeyMic.app, codesigned with local identity "${CODESIGN_IDENTITY}"
+make build-arm64              # arm64-only build
+make build-x86_64             # x86_64-only build
 make run                      # build then `open KeyMic.app`
 make install                  # copy bundle to /Applications
 make clean                    # swift package clean + rm -rf KeyMic.app
@@ -112,12 +114,13 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 `Info.plist` declares `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`, and `NSScreenCaptureUsageDescription`. Bundle id `io.keymic.app`. The build is **codesigned with a local self-signed identity** (`codesign --sign ${CODESIGN_IDENTITY}`, `--identifier io.keymic.app`); the Sparkle framework is signed deeply with the same identity. Important consequences:
 
 - **Accessibility** must be granted to `KeyMic.app` for the event tap to receive events. The app shows a setup alert and quits if `CGEvent.tapCreate` returns `nil`.
-- After every `make build`, macOS treats the bundle as a new identity — Accessibility permission must be re-granted (re-toggle in System Settings, or re-add the binary).
+- The signing identity is local; cdhash changes whenever the binary is rebuilt, so TCC permission may invalidate. After significant rebuilds, run `tccutil reset Accessibility io.keymic.app` (and Microphone/SpeechRecognition/ScreenCapture) and re-grant.
+- `Info.plist` is hand-edited — keep it `plutil -lint`-clean. A malformed plist silently breaks LaunchServices icon registration **and** TCC bundle recognition (symptom: app icon missing, Privacy toggle has no effect).
 
 ## Conventions
 
 - Swift 5.9, target macOS 14. Source root: `Sources/KeyMic/`.
-- No third-party dependencies (`Package.swift` has only the executable target).
+- One SwiftPM dependency: Sparkle 2 (`2.6.0..<3.0.0`).
 - Logging: `os.Logger` with subsystem `io.keymic.app`. `LLMRefiner` additionally writes to `~/Library/Logs/KeyMic.log` for offline debugging.
 - Singletons (`KeyMappingManager.shared`, `LLMRefiner.shared`) for cross-cutting state; everything else is owned by `AppDelegate`.
 - Persistent locations: SwiftData store + lock file under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.
