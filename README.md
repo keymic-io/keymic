@@ -1,14 +1,14 @@
 # KeyMic
 
-**KeyMic = Mac's Keyboard + Voice + Clipboard.** A macOS menu-bar utility (`LSUIElement`) bundling three productivity layers in one app:
+**KeyMic = Mac's Keyboard + Voice + Clipboard.** A macOS menu-bar utility (`LSUIElement`) bundling several productivity layers in one app:
 
-- **Keyboard remap** — Karabiner-style modifier remaps applied through a session-level `CGEvent` tap (e.g. Right Cmd → Forward Delete, Caps Lock → Left Control).
+- **Keyboard remap** — Karabiner-style modifier remaps through a session-level `CGEvent` tap (e.g. Right Cmd → Forward Delete, Caps Lock → Left Control).
 - **Voice input** — hold a trigger key (Fn or Right Option), speak, transcribed text is pasted into the focused field. Optional LLM refinement via any OpenAI-compatible chat-completions endpoint.
 - **Clipboard history** — text-only background monitor with SwiftData storage. Hotkey `⌥V` opens a search panel; arrow keys navigate, `⌥1`–`⌥0` quick-paste.
-
-All three pillars share a single event tap and a single menu-bar process.
-
-https://github.com/user-attachments/assets/3228f78a-f035-447d-98ef-8826798a122c
+- **Hotkey actions** — user-configurable shortcuts bound to actions (toggle clipboard panel, take screenshot, etc.).
+- **Vault** — secret-aware clipboard escalation. Incoming clipboard text is scanned for secrets (API keys, tokens, etc.); matches are stored in macOS Keychain rather than plain clipboard history.
+- **Screenshot annotation** — selection capture with annotation and pixelation tools, export to file or clipboard.
+- **Auto-update** — Sparkle 2 EdDSA-signed updates.
 
 ## Requirements
 
@@ -18,10 +18,12 @@ https://github.com/user-attachments/assets/3228f78a-f035-447d-98ef-8826798a122c
 ## Build & Run
 
 ```bash
-make build   # release build → ./KeyMic.app (ad-hoc codesigned)
-make run     # build then launch
-make install # copy bundle to /Applications
-make clean   # swift package clean + remove .app
+make build        # release build (host arch) → ./KeyMic.app
+make build-arm64  # arm64 only
+make build-x86_64 # x86_64 only
+make run          # build then launch
+make install      # copy bundle to /Applications
+make clean        # swift package clean + remove .app
 ```
 
 ## Tests
@@ -29,32 +31,41 @@ make clean   # swift package clean + remove .app
 Tests are standalone `swiftc` runners, not XCTest. Run via Make:
 
 ```bash
-make test                     # KeyMappingManager
-make test-clipboard-store     # ClipboardStore
-make test-clipboard-monitor   # ClipboardMonitor
+make test-all               # run every test suite
+make test                   # KeyMappingManager
+make test-clipboard-store   # ClipboardStore
+make test-clipboard-monitor # ClipboardMonitor
 ```
 
 `swift test` will not work — there is no test target in `Package.swift`.
 
 ## Permissions
 
-The app needs **Accessibility** access for its event tap (voice trigger, clipboard hotkey, key remap). Microphone + Speech Recognition prompts appear on first voice use.
+| Permission | Required for |
+|---|---|
+| Accessibility | Event tap (voice trigger, clipboard hotkey, key remap) |
+| Microphone | Voice input |
+| Speech Recognition | Voice-to-text transcription |
+| Screen Recording | Screenshot capture |
 
-Because the build is ad-hoc codesigned, every fresh `make build` is treated as a new identity by macOS — you must re-grant Accessibility after rebuilding.
+After rebuilding, macOS may invalidate the previous authorization because the binary's cdhash changes. Re-grant in **System Settings → Privacy & Security** or run:
 
-## Source & Reproducibility
+```bash
+tccutil reset Accessibility io.keymic.app
+```
 
-The full source lives in this repository.
+## Release
 
-> **Reproducibility guarantee:** this repository contains every file needed to produce **exactly** the distributed artifact. Clone it, run `make build`, get an identical `KeyMic.app` bundle.
+```bash
+scripts/release.sh 1.2.3        # build universal binary, generate appcast, tag, publish
+scripts/release.sh -f 1.2.3     # overwrite existing release/tag
+```
 
-A complete, unedited terminal recording of a build from source:
-
-[![asciicast](https://asciinema.org/a/cHD6XaaNvomCuysh.svg)](https://asciinema.org/a/cHD6XaaNvomCuysh)
+Requires `~/.sparkle-tools/generate_appcast` (from Sparkle distribution) and a `gh` CLI authenticated to `keymic-io/keymic`.
 
 ## Architecture
 
-See [`CLAUDE.md`](CLAUDE.md) for component layout and [`AGENTS.md`](AGENTS.md) for the macOS HID / event-tap gotchas.
+See [`CLAUDE.md`](CLAUDE.md) for component layout and [`AGENTS.md`](AGENTS.md) for macOS HID / event-tap gotchas.
 
 ## License
 
