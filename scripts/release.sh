@@ -87,6 +87,10 @@ git commit -m "release: v${VERSION}"
 git push
 echo "==> appcast.xml committed and pushed"
 
+git tag -a "v${VERSION}" -m "Release v${VERSION}"
+git push origin "v${VERSION}"
+echo "==> Tag v${VERSION} pushed"
+
 gh release create "v${VERSION}" \
     --repo "${RELEASE_REPO_SLUG}" \
     --title "${APP_NAME} v${VERSION}" \
