@@ -6,7 +6,7 @@ APP_NAME="KeyMic"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_DIR="${PROJECT_DIR}/.release"
 SPARKLE_TOOLS_DIR="${HOME}/.sparkle-tools"
-KEYCHAIN_ACCOUNT="KeyMic"  # Sparkle EdDSA signing key — keep stable so we can sign the v0.1.x → v0.2.x transition with the same identity
+KEYCHAIN_ACCOUNT="ed25519"  # Sparkle EdDSA signing key
 RELEASE_REPO_SLUG="keymic-io/keymic"
 
 VERSION="${1:-}"
