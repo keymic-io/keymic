@@ -220,6 +220,22 @@ final class KeyMonitor {
                 DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
                 return nil
             }
+
+            // Persona hotkeys: switch active persona on keyDown.
+            // Swallow the event to prevent dead-key side effects (e.g. ⌥E → ´).
+            if !isAutoRepeat {
+                for persona in PersonaStore.shared.personas {
+                    guard let raw = persona.hotkey,
+                          let cfg = HotkeyConfig.parse(raw),
+                          !cfg.isPureModifier,
+                          cfg.matches(keyCode: keyCode, flags: event.flags) else { continue }
+                    DispatchQueue.main.async {
+                        PersonaStore.shared.setActive(persona.id)
+                        NSSound(named: .init("Pop"))?.play()
+                    }
+                    return nil
+                }
+            }
         }
 
         let nowActive = computeTriggerActive(type: type, event: event)
