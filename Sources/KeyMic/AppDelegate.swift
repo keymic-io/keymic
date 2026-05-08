@@ -287,8 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // Stage 1: contextMode is ignored here; stage 3 wires selectionAndClipboard.
-        let userText = text
+        let userText = buildUserText(transcript: text, contextMode: persona.contextMode)
 
         overlayPanel.showRefining()
         refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
@@ -328,6 +327,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             self.lastPartialResult = ""
         }
+    }
+
+    /// Builds the LLM user prompt, injecting selected text + clipboard as context
+    /// when the persona's contextMode is `.selectionAndClipboard`.
+    private func buildUserText(transcript: String, contextMode: ContextMode) -> String {
+        guard contextMode == .selectionAndClipboard else { return transcript }
+
+        let selection = SelectionTextProvider.currentSelection()?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let clipboard = NSPasteboard.general.string(forType: .string)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        var sections: [String] = []
+        if !selection.isEmpty {
+            sections.append("[Selected text]\n\(selection)")
+        }
+        // Omit clipboard if identical to selection (avoid redundancy).
+        if !clipboard.isEmpty && clipboard != selection {
+            sections.append("[Recent clipboard]\n\(clipboard)")
+        }
+        sections.append("[User said]\n\(transcript)")
+        return sections.joined(separator: "\n\n")
     }
 
     // MARK: - Main Menu
