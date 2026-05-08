@@ -26,10 +26,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedFrontBundleID: String?
 
     private let voiceEnabledKey = "voiceEnabled"
+    private let voiceEnabledMenuTitle = "Voice Enabled"
     private(set) var isVoiceEnabled: Bool = UserDefaults.standard.object(forKey: "voiceEnabled") as? Bool ?? true
 
     private var voiceEnabledMenuItem: NSMenuItem!
-    private var llmMenuItem: NSMenuItem!
+    private var personasRootMenuItem: NSMenuItem!
+    private var personasMenu: NSMenu?
     private var keyMappingMenuItem: NSMenuItem!
     private var clipboardMenuItem: NSMenuItem!
     private var shortcutsMenuItem: NSMenuItem!
@@ -336,15 +338,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         var sections: [String] = []
+        var includeTranscript = true
+
         if !selection.isEmpty {
             sections.append("[Selected text]\n\(selection)")
+            // Omit [User said] if transcript equals selected text (redundant).
+            if transcript == selection {
+                includeTranscript = false
+            }
+            // Omit [User said] if selected text exceeds 2000 UTF-16 units.
+            if selection.utf16.count > 2000 {
+                includeTranscript = false
+            }
         }
         // Omit clipboard if identical to selection (avoid redundancy).
         if !clipboard.isEmpty && clipboard != selection {
             sections.append("[Recent clipboard]\n\(clipboard)")
         }
-        sections.append("[User said]\n\(transcript)")
-        return sections.joined(separator: "\n\n")
+        if includeTranscript {
+            sections.append("[User said]\n\(transcript)")
+        }
+
+        var result = sections.joined(separator: "\n\n")
+        // Cap total output at 7500 UTF-16 units, truncating from end.
+        if result.utf16.count > 7500 {
+            let units = result.utf16
+            let cutIdx = units.index(units.startIndex, offsetBy: 7500)
+            let truncated = String(units[units.startIndex..<cutIdx])!
+            result = truncated
+        }
+        return result
     }
 
     // MARK: - Main Menu
@@ -374,25 +397,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Group 1: Voice + LLM
-        voiceEnabledMenuItem = NSMenuItem(title: "Voice Enabled", action: #selector(toggleVoiceEnabled), keyEquivalent: "")
+        // Group 1: Voice + Personas
+        voiceEnabledMenuItem = NSMenuItem(title: voiceEnabledMenuTitle, action: #selector(toggleVoiceEnabled), keyEquivalent: "")
         voiceEnabledMenuItem.target = self
         voiceEnabledMenuItem.state = isVoiceEnabled ? .on : .off
         voiceEnabledMenuItem.image = symbolImage("mic.fill")
+        applyVoiceShortcut(to: voiceEnabledMenuItem)
         menu.addItem(voiceEnabledMenuItem)
 
-        let llmItem = NSMenuItem(title: "LLM Refinement", action: nil, keyEquivalent: "")
-        llmItem.image = symbolImage("sparkles")
-        let llmMenu = NSMenu()
-
-        llmMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleLLM), keyEquivalent: "")
-        llmMenuItem.target = self
-        llmMenuItem.state = PersonaStore.shared.activePersonaId != nil ? .on : .off
-        llmMenuItem.image = symbolImage("checkmark.circle")
-        llmMenu.addItem(llmMenuItem)
-
-        llmItem.submenu = llmMenu
-        menu.addItem(llmItem)
+        personasRootMenuItem = NSMenuItem(title: "Personas", action: nil, keyEquivalent: "")
+        personasRootMenuItem.image = symbolImage("person.crop.circle.badge.checkmark")
+        let personasMenu = NSMenu()
+        personasRootMenuItem.submenu = personasMenu
+        self.personasMenu = personasMenu
+        rebuildPersonasMenu()
+        menu.addItem(personasRootMenuItem)
 
         menu.addItem(.separator())
 
@@ -500,16 +519,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMappingMenuItem.state = manager.isEnabled ? .on : .off
     }
 
-    @objc private func toggleLLM() {
-        let store = PersonaStore.shared
-        if store.activePersonaId == nil {
-            store.setActive("builtin-default")
-        } else {
-            store.setActive(nil)
-        }
-        llmMenuItem.state = store.activePersonaId != nil ? .on : .off
-    }
-
     @objc private func toggleClipboard() {
         let newValue = !ClipboardPreferences.enabled
         UserDefaults.standard.set(newValue, forKey: ClipboardPreferences.enabledKey)
@@ -533,7 +542,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
         shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
         keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
-        llmMenuItem.state = PersonaStore.shared.activePersonaId != nil ? .on : .off
         applySettingsShortcut(to: settingsMenuItem)
 
         let defaultsVoice = UserDefaults.standard.object(forKey: voiceEnabledKey) as? Bool ?? true
@@ -547,8 +555,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             speechEngine.locale = newLocale
         }
 
+        applyVoiceShortcut(to: voiceEnabledMenuItem)
+        rebuildPersonasMenu()
+
         // Voice trigger key may have changed — clear any stuck trigger state.
         keyMonitor.resetTriggerState()
+    }
+
+    private func applyVoiceShortcut(to item: NSMenuItem) {
+        let raw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
+        guard let cfg = HotkeyConfig.parse(raw) else {
+            item.title = voiceEnabledMenuTitle
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
+            return
+        }
+
+        let rep = cfg.menuRepresentation
+        if rep.key.isEmpty {
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
+            item.title = "\(voiceEnabledMenuTitle)\t\(cfg.displayString())"
+            return
+        }
+
+        item.title = voiceEnabledMenuTitle
+        item.keyEquivalent = rep.key
+        item.keyEquivalentModifierMask = rep.modifiers
+    }
+
+    private func rebuildPersonasMenu() {
+        guard let personasMenu else { return }
+        personasMenu.removeAllItems()
+
+        for persona in PersonaStore.shared.personas {
+            let item = NSMenuItem(title: persona.name, action: #selector(selectPersona(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = persona.id
+            item.state = persona.id == PersonaStore.shared.activePersonaId ? .on : .off
+            if let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) {
+                let rep = cfg.menuRepresentation
+                item.keyEquivalent = rep.key
+                item.keyEquivalentModifierMask = rep.modifiers
+            }
+            personasMenu.addItem(item)
+        }
+    }
+
+    @objc private func selectPersona(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        PersonaStore.shared.setActive(id)
+        rebuildPersonasMenu()
     }
 
     private func applySettingsShortcut(to item: NSMenuItem) {
