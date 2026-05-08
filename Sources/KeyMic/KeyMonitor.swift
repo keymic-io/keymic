@@ -157,6 +157,14 @@ final class KeyMonitor {
             return remapped
         }
 
+        // Bypass app-level hotkey dispatch while a HotkeyRecorder is capturing input.
+        // The session CGEventTap runs before NSEvent local monitors; without this,
+        // recording a hotkey would be intercepted by existing voice/clipboard/persona
+        // bindings and never reach the recorder.
+        if HotkeyRecorder.isAnyRecording {
+            return Unmanaged.passRetained(event)
+        }
+
         if type == .keyDown {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) == 1

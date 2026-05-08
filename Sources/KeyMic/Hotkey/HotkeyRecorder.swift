@@ -6,6 +6,12 @@ final class HotkeyRecorder: NSButton {
 
     typealias Validator = (HotkeyConfig) -> String?  // nil = ok, non-nil = error message
 
+    /// Tracks how many recorders are currently capturing input. KeyMonitor reads this
+    /// to bypass app-level hotkey dispatch while the user is recording, so the session
+    /// CGEventTap doesn't swallow the keystroke before our local NSEvent monitor sees it.
+    private static var activeRecordingCount: Int = 0
+    static var isAnyRecording: Bool { activeRecordingCount > 0 }
+
     private var current: HotkeyConfig?
     private let validator: Validator
     private let mode: Mode
@@ -38,8 +44,12 @@ final class HotkeyRecorder: NSButton {
     }
 
     private func removeMonitors() {
+        let wasRecording = (localMonitor != nil) || (globalMonitor != nil)
         if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
         if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
+        if wasRecording {
+            Self.activeRecordingCount = max(0, Self.activeRecordingCount - 1)
+        }
     }
 
     func updateValue(_ cfg: HotkeyConfig?) {
@@ -84,6 +94,7 @@ final class HotkeyRecorder: NSButton {
     private func startRecording() {
         renderRecording()
         window?.makeFirstResponder(self)
+        Self.activeRecordingCount += 1
         let mask: NSEvent.EventTypeMask
         switch mode {
         case .pureModifier: mask = .flagsChanged
