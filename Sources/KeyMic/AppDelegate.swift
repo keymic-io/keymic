@@ -364,8 +364,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if result.utf16.count > 7500 {
             let units = result.utf16
             let cutIdx = units.index(units.startIndex, offsetBy: 7500)
-            let truncated = String(units[units.startIndex..<cutIdx])!
-            result = truncated
+            result = String(units[units.startIndex..<cutIdx]) ?? String(result[..<result.unicodeScalars.index(result.startIndex, offsetBy: 7500)])
         }
         return result
     }
