@@ -5,6 +5,7 @@ import Foundation
 /// Does NOT dispatch events — KeyMonitor remains the single dispatcher.
 final class HotkeyRegistry {
     static let shared = HotkeyRegistry()
+    private init() {}
 
     enum Owner: Hashable {
         case voiceTrigger
