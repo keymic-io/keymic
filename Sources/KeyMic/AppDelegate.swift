@@ -124,12 +124,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardController.start()
         _ = UpdaterController.shared
 
+        // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
+        let registry = HotkeyRegistry.shared
+        if let raw = UserDefaults.standard.string(forKey: "voiceTriggerKey"),
+           let cfg = HotkeyConfig.parse(raw) {
+            registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
+        } else {
+            // Default: right option
+            if let cfg = HotkeyConfig.parse("rightalt") {
+                registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
+            }
+        }
+        if let clipCfg = HotkeyConfig.parse("alt+v") {
+            registry.register(clipCfg, owner: .clipboardPanel, purpose: "Clipboard panel (⌥V)")
+        }
+        AppDelegate.syncPersonaHotkeysToRegistry()
+        NotificationCenter.default.addObserver(
+            forName: PersonaStore.didChangeNotification, object: nil, queue: .main
+        ) { _ in AppDelegate.syncPersonaHotkeysToRegistry() }
+
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(syncMenuStates),
             name: UserDefaults.didChangeNotification,
             object: nil
         )
+    }
+
+    static func syncPersonaHotkeysToRegistry() {
+        let registry = HotkeyRegistry.shared
+        for entry in registry.all() {
+            if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
+        }
+        for persona in PersonaStore.shared.personas {
+            guard let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) else { continue }
+            registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
