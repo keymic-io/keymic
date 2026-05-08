@@ -126,16 +126,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
         let registry = HotkeyRegistry.shared
-        if let raw = UserDefaults.standard.string(forKey: "voiceTriggerKey"),
-           let cfg = HotkeyConfig.parse(raw) {
+        let triggerRaw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
+        if let cfg = HotkeyConfig.parse(triggerRaw) {
             registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
-        } else {
-            // Default: right option
-            if let cfg = HotkeyConfig.parse("rightalt") {
-                registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
-            }
         }
-        if let clipCfg = HotkeyConfig.parse("alt+v") {
+        let clipRaw = UserDefaults.standard.string(forKey: "clipboardHotkey") ?? "alt+v"
+        if let clipCfg = HotkeyConfig.parse(clipRaw) {
             registry.register(clipCfg, owner: .clipboardPanel, purpose: "Clipboard panel (⌥V)")
         }
         AppDelegate.syncPersonaHotkeysToRegistry()
