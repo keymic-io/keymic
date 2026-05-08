@@ -9,8 +9,14 @@ enum AnnotationTool: String, CaseIterable {
     case highlight = "Highlight"
     case mosaic = "Mosaic"
     case blur = "Blur"
+    case ocr = "OCR"
 
-    var isDrawingTool: Bool { self != .select }
+    var isDrawingTool: Bool {
+        switch self {
+        case .select, .ocr: return false
+        default: return true
+        }
+    }
 
     var iconName: String {
         switch self {
@@ -22,6 +28,7 @@ enum AnnotationTool: String, CaseIterable {
         case .highlight: return "highlighter"
         case .mosaic: return "mosaic"
         case .blur: return "circle.dashed"
+        case .ocr: return "text.viewfinder"
         }
     }
 

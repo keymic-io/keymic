@@ -30,6 +30,8 @@ struct EditorToolbarView: View {
                 toolButton(tool)
             }
             Divider().frame(height: 22)
+            toolButton(.ocr)
+            Divider().frame(height: 22)
             iconButton("arrow.uturn.backward", help: "Undo (⌘Z)", enabled: state.canUndo) { state.undoAction?() }
             iconButton("xmark", help: "Cancel (Esc)") { state.cancelAction?() }
             iconButton("square.and.arrow.down", help: "Save") { state.saveAction?() }

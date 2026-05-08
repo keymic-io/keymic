@@ -1,4 +1,5 @@
 import Cocoa
+import VisionKit
 
 protocol SelectionOverlayViewDelegate: AnyObject {
     func overlayDidEnterDrafted(_ view: SelectionOverlayView)
@@ -29,6 +30,11 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     func updateTool(_ tool: AnnotationTool) {
         cancelTextEditing()
         state.setSelectedTool(tool)
+        if tool == .ocr {
+            installOCROverlay()
+        } else {
+            removeOCROverlay()
+        }
         updateCursor()
         needsDisplay = true
         delegate?.overlayDidUpdateState(self)
@@ -36,6 +42,8 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     private var currentDraftAnnotation: Annotation?
     private var activeTextField: NSTextField?
+    private var ocrOverlay: ImageAnalysisOverlayView?
+    private var ocrAnalyzeTask: Task<Void, Never>?
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
@@ -118,7 +126,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
             case .arrow: drawArrowAnnotation(ann, ctx: ctx)
             case .text: drawTextAnnotation(ann)
             case .highlight: drawHighlightAnnotation(ann, ctx: ctx)
-            case .select: continue
+            case .select, .ocr: continue
             }
         }
         if let draft = currentDraftAnnotation {
@@ -295,6 +303,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseDown(with event: NSEvent) {
         guard isOwner else { return }
+        if state.selectedTool == .ocr { return }
         let p = convert(event.locationInWindow, from: nil)
         cancelTextEditing()
         switch state.phase {
@@ -363,6 +372,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseDragged(with event: NSEvent) {
         guard isOwner else { return }
+        if state.selectedTool == .ocr { return }
         let p = convert(event.locationInWindow, from: nil)
         switch state.phase {
         case .drafting:
@@ -388,6 +398,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         guard isOwner else { return }
+        if state.selectedTool == .ocr { return }
         switch state.phase {
         case .drafting:
             if state.finishDrafting() {
@@ -464,6 +475,14 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         guard isOwner else { NSCursor.arrow.set(); return }
         let mouseInWindow = window?.mouseLocationOutsideOfEventStream ?? .zero
         let p = convert(mouseInWindow, from: nil)
+        
+        if state.selectedTool == .ocr {
+            if !state.selection.contains(p) {
+                NSCursor.arrow.set()
+            }
+            return
+        }
+        
         switch state.phase {
         case .idle, .drafting:
             NSCursor.crosshair.set()
@@ -546,5 +565,64 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         for a in snapshot { state.addAnnotation(a) }
         delegate?.overlayDidUpdateState(self)
         needsDisplay = true
+    }
+
+    // MARK: - OCR (VisionKit Live Text)
+
+    private func installOCROverlay() {
+        removeOCROverlay()
+        guard let frame = frozenFrame else { return }
+        let sel = state.selection
+        guard sel.width > 1, sel.height > 1 else { return }
+
+        let scaleX = CGFloat(frame.width) / bounds.width
+        let scaleY = CGFloat(frame.height) / bounds.height
+        let pxRect = CGRect(
+            x: sel.origin.x * scaleX,
+            y: (bounds.height - sel.maxY) * scaleY,
+            width: sel.width * scaleX,
+            height: sel.height * scaleY
+        )
+        guard let cropped = frame.cropping(to: pxRect) else { return }
+
+        let overlay = ImageAnalysisOverlayView()
+        overlay.preferredInteractionTypes = .textSelection
+        overlay.frame = sel
+        overlay.autoresizingMask = []
+        addSubview(overlay)
+        ocrOverlay = overlay
+
+        let analyzer = ImageAnalyzer()
+        let config = ImageAnalyzer.Configuration([.text])
+        // No `locales` set — VisionKit defaults to all supported languages.
+
+        ocrAnalyzeTask = Task { [weak self, weak overlay] in
+            do {
+                let analysis = try await analyzer.analyze(
+                    cropped,
+                    orientation: .up,
+                    configuration: config
+                )
+                await MainActor.run {
+                    guard let overlay = overlay else { return }
+                    overlay.analysis = analysis
+                    self?.window?.makeFirstResponder(overlay)
+                }
+            } catch {
+                NSLog("[Screenshot] OCR analyze failed: \(error)")
+            }
+        }
+    }
+
+    private func removeOCROverlay() {
+        ocrAnalyzeTask?.cancel()
+        ocrAnalyzeTask = nil
+        if let overlay = ocrOverlay {
+            if let firstResp = window?.firstResponder as? NSView, firstResp.isDescendant(of: overlay) || firstResp === overlay {
+                window?.makeFirstResponder(self)
+            }
+            overlay.removeFromSuperview()
+        }
+        ocrOverlay = nil
     }
 }
