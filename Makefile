@@ -212,6 +212,8 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyConfig.swift \
 	       Sources/KeyMic/Hotkey/HotkeyPreferences.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorClipboardPanelTests.swift \
 	       -o .build/keymonitor-clipboard-panel-tests
