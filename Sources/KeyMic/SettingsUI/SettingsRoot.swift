@@ -381,9 +381,17 @@ private struct LLMSettingsView: View {
     var body: some View {
         Form {
             Section {
-                TextField("API Base URL:", text: $apiBaseURL, prompt: Text("https://api.openai.com/v1"))
-                SecureField("API Key:", text: $apiKey, prompt: Text("sk-…"))
-                TextField("Model:", text: $model, prompt: Text("gpt-4o-mini"))
+                llmFieldRow("API Base URL") {
+                    TextField("", text: $apiBaseURL, prompt: Text("https://api.openai.com/v1"))
+                }
+
+                llmFieldRow("API Key") {
+                    SecureField("", text: $apiKey, prompt: Text("sk-…"))
+                }
+
+                llmFieldRow("Model") {
+                    TextField("", text: $model, prompt: Text("gpt-4o-mini"))
+                }
             }
 
             Section {
@@ -399,6 +407,22 @@ private struct LLMSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func llmFieldRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("\(label):")
+                .fontWeight(.semibold)
+                .frame(width: 160, alignment: .leading)
+
+            content()
+                .textFieldStyle(.plain)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .multilineTextAlignment(.leading)
+        }
     }
 
     private var isBusy: Bool {

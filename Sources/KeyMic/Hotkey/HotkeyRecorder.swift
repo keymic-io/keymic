@@ -10,8 +10,12 @@ final class HotkeyRecorder: NSButton {
     private let validator: Validator
     private let mode: Mode
     private let onCommit: (HotkeyConfig) -> Void
-    private var monitor: Any?
+    private var localMonitor: Any?
+    private var globalMonitor: Any?
     private var errorTimer: Timer?
+
+    override var canBecomeKeyView: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
 
     init(initial: HotkeyConfig?, mode: Mode, validator: @escaping Validator, onCommit: @escaping (HotkeyConfig) -> Void) {
         self.current = initial
@@ -29,8 +33,13 @@ final class HotkeyRecorder: NSButton {
     required init?(coder: NSCoder) { fatalError() }
 
     deinit {
-        if let m = monitor { NSEvent.removeMonitor(m) }
+        removeMonitors()
         errorTimer?.invalidate()
+    }
+
+    private func removeMonitors() {
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
+        if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
     }
 
     func updateValue(_ cfg: HotkeyConfig?) {
@@ -65,7 +74,7 @@ final class HotkeyRecorder: NSButton {
     }
 
     @objc private func toggleRecording() {
-        if monitor == nil {
+        if !isRecording {
             startRecording()
         } else {
             cancelRecording()
@@ -74,19 +83,31 @@ final class HotkeyRecorder: NSButton {
 
     private func startRecording() {
         renderRecording()
+        window?.makeFirstResponder(self)
         let mask: NSEvent.EventTypeMask
         switch mode {
         case .pureModifier: mask = .flagsChanged
         case .combo, .singleKey: mask = [.keyDown, .flagsChanged]
         }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            self?.handle(event) ?? event
+        // Local monitor: intercepts and swallows events before they reach any responder.
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self, self.isRecording else { return event }
+            return self.handle(event)
+        }
+        // Global monitor: observes events meant for *other* apps so we can react when
+        // the user's keypress goes outside our window.  Global monitors cannot swallow
+        // events — they are read-only — so we still rely on the local monitor for that.
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            guard let self, self.isRecording else { return }
+            // Cancel recording if the user interacted with a different app.
+            self.cancelRecording()
         }
     }
 
+    private var isRecording: Bool { localMonitor != nil }
+
     private func cancelRecording() {
-        if let m = monitor { NSEvent.removeMonitor(m) }
-        monitor = nil
+        removeMonitors()
         renderIdle()
     }
 
