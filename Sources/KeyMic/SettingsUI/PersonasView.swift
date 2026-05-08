@@ -45,7 +45,7 @@ struct PersonasView: View {
                 }
                 .padding(8)
             }
-            .frame(minWidth: 180, idealWidth: 200, maxWidth: 240)
+            .frame(minWidth: 140, idealWidth: 160, maxWidth: 185)
 
             // Right: detail form
             Group {
@@ -94,7 +94,7 @@ private struct PersonaDetailForm: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
 
                 // Active controls
                 HStack(spacing: 8) {
@@ -112,23 +112,25 @@ private struct PersonaDetailForm: View {
 
                 Divider()
 
-                // Name (locked for built-ins)
+                // Name + Icon (same row)
                 FieldLabel("Name") {
-                    HStack {
+                    HStack(spacing: 10) {
+                        PersonaIconPicker(
+                            selection: model.binding(\.icon, for: persona),
+                            showText: false
+                        )
+
                         TextField("", text: model.binding(\.name, for: persona))
                             .disabled(persona.builtIn)
                             .textFieldStyle(.roundedBorder)
+                            .lineLimit(1)
+
                         if persona.builtIn {
                             Image(systemName: "lock.fill")
                                 .foregroundStyle(.secondary)
                                 .imageScale(.small)
                         }
                     }
-                }
-
-                // Icon
-                FieldLabel("Icon") {
-                    PersonaIconPicker(selection: model.binding(\.icon, for: persona))
                 }
 
                 // Hotkey
@@ -143,8 +145,16 @@ private struct PersonaDetailForm: View {
                 FieldLabel("Style Prompt") {
                     TextEditor(text: model.binding(\.stylePrompt, for: persona))
                         .font(.system(.body, design: .default))
-                        .frame(minHeight: 130)
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.gray.opacity(0.3)))
+                        .frame(minHeight: 150)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(nsColor: .textBackgroundColor).opacity(0.35))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.gray.opacity(0.25))
+                        )
                 }
 
                 // Temperature
@@ -191,7 +201,9 @@ private struct PersonaDetailForm: View {
 
                 Spacer(minLength: 16)
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.top, 2)
+            .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -220,6 +232,8 @@ private struct FieldLabel<Content: View>: View {
 
 struct PersonaIconPicker: View {
     @Binding var selection: String
+    var showText: Bool = true
+    @State private var showingGrid = false
 
     private let icons = [
         "sparkles", "globe", "terminal", "briefcase", "flame", "bolt",
@@ -228,24 +242,55 @@ struct PersonaIconPicker: View {
         "leaf", "star", "text.quote"
     ]
 
+    private let columns = Array(repeating: GridItem(.fixed(34), spacing: 10), count: 5)
+
     var body: some View {
-        Menu {
-            ForEach(icons, id: \.self) { icon in
-                Button {
-                    selection = icon
-                } label: {
-                    Label(icon, systemImage: icon)
-                }
-            }
+        Button {
+            showingGrid.toggle()
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: selection)
-                Text(selection)
-                    .font(.system(.body, design: .monospaced))
+                    .font(.system(size: showText ? 14 : 17, weight: .medium))
+                    .frame(width: 20, height: 20)
+                if showText {
+                    Text(selection)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, showText ? 0 : 8)
+            .frame(height: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(nsColor: .controlBackgroundColor).opacity(showText ? 0 : 0.9))
+            )
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .popover(isPresented: $showingGrid, arrowEdge: .bottom) {
+            LazyVGrid(columns: columns, spacing: 10) {
+                ForEach(icons, id: \.self) { icon in
+                    Button {
+                        selection = icon
+                        showingGrid = false
+                    } label: {
+                        Image(systemName: icon)
+                            .font(.system(size: 18, weight: .medium))
+                            .frame(width: 34, height: 34)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(icon == selection ? Color.accentColor.opacity(0.2) : Color.clear)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help(icon)
+                }
+            }
+            .padding(12)
+            .frame(width: 230)
+        }
         .fixedSize()
     }
 }
