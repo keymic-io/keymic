@@ -319,7 +319,10 @@ private struct PersonaHotkeyRecorder: NSViewRepresentable {
     @Binding var hotkeyRaw: String?
     let personaId: String
 
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
     func makeNSView(context: Context) -> HotkeyRecorder {
+        let coord = context.coordinator
         let initial = hotkeyRaw.flatMap { HotkeyConfig.parse($0) }
         let recorder = HotkeyRecorder(
             initial: initial,
@@ -339,15 +342,26 @@ private struct PersonaHotkeyRecorder: NSViewRepresentable {
                 return nil
             },
             onCommit: { cfg in
-                hotkeyRaw = cfg.encode()
+                DispatchQueue.main.async {
+                    coord.parent.hotkeyRaw = cfg.encode()
+                }
             }
         )
+        coord.recorder = recorder
         return recorder
     }
 
     func updateNSView(_ recorder: HotkeyRecorder, context: Context) {
+        context.coordinator.parent = self
+        context.coordinator.recorder = recorder
         let cfg = hotkeyRaw.flatMap { HotkeyConfig.parse($0) }
         recorder.updateValue(cfg)
+    }
+
+    final class Coordinator {
+        var parent: PersonaHotkeyRecorder
+        weak var recorder: HotkeyRecorder?
+        init(parent: PersonaHotkeyRecorder) { self.parent = parent }
     }
 }
 
