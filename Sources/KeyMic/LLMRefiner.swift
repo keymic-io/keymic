@@ -92,9 +92,6 @@ final class LLMRefiner {
                 DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
                 return
             }
-            if let raw = String(data: data, encoding: .utf8) {
-                logToFile("Response: \(raw)")
-            }
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let choices = json["choices"] as? [[String: Any]],
                   let message = choices.first?["message"] as? [String: Any],
@@ -104,7 +101,7 @@ final class LLMRefiner {
                 return
             }
             let refined = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            logToFile("Refined: '\(userText)' -> '\(refined)'")
+            logToFile("Refined response received (\(refined.count) chars)")
             DispatchQueue.main.async { completion(.success(refined)) }
         }
         currentTask?.resume()
