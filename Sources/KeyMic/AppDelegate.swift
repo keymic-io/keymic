@@ -234,60 +234,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         finalResultTimer = nil
 
         let text = lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines)
-
         guard !text.isEmpty else {
             overlayPanel.dismiss()
             lastPartialResult = ""
             return
         }
 
+        let persona = PersonaStore.shared.activePersona
         let refiner = LLMRefiner.shared
-        if refiner.isEnabled && refiner.isConfigured {
-            overlayPanel.showRefining()
-            refiner.refine(text) { [weak self] result in
-                guard let self else { return }
-                let finalText: String
-                switch result {
-                case .success(let refined):
-                    finalText = refined.isEmpty ? text : refined
-                    let wasRefined = finalText != text
-                    if wasRefined {
-                        self.overlayPanel.updateText("✨ \(finalText)")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            self.overlayPanel.dismiss()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                                self.textInjector.inject(finalText)
-                                NSSound(named: .init("Pop"))?.play()
-                            }
-                        }
-                    } else {
-                        self.overlayPanel.dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            self.textInjector.inject(finalText)
-                            NSSound(named: .init("Pop"))?.play()
-                        }
-                    }
-                case .failure(let error):
-                    NSLog("[LLMRefiner] Refine failed: %@", error.localizedDescription)
-                    finalText = text
-                    self.overlayPanel.updateText("Refine failed: \(error.localizedDescription)")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        self.overlayPanel.dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            self.textInjector.inject(finalText)
-                            NSSound(named: .init("Pop"))?.play()
-                        }
-                    }
-                }
-                self.lastPartialResult = ""
+
+        // Passthrough: no active persona, or LLM endpoint not configured (silent, no toast).
+        guard let persona, refiner.isReady else {
+            if persona != nil {
+                NSLog("[Persona] LLM not ready; passthrough")
             }
-        } else {
             overlayPanel.dismiss()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.textInjector.inject(text)
                 NSSound(named: .init("Pop"))?.play()
             }
             lastPartialResult = ""
+            return
+        }
+
+        // Stage 1: contextMode is ignored here; stage 3 wires selectionAndClipboard.
+        let userText = text
+
+        overlayPanel.showRefining()
+        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
+            guard let self else { return }
+            let finalText: String
+            switch result {
+            case .success(let refined):
+                finalText = refined.isEmpty ? text : refined
+                let wasRefined = finalText != text
+                if wasRefined {
+                    self.overlayPanel.updateText("✨ \(finalText)")
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.overlayPanel.dismiss()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                            self.textInjector.inject(finalText)
+                            NSSound(named: .init("Pop"))?.play()
+                        }
+                    }
+                } else {
+                    self.overlayPanel.dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.textInjector.inject(finalText)
+                        NSSound(named: .init("Pop"))?.play()
+                    }
+                }
+            case .failure(let error):
+                NSLog("[LLMRefiner] Refine failed: %@", error.localizedDescription)
+                finalText = text
+                self.overlayPanel.updateText("Refine failed: \(error.localizedDescription)")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    self.overlayPanel.dismiss()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        self.textInjector.inject(finalText)
+                        NSSound(named: .init("Pop"))?.play()
+                    }
+                }
+            }
+            self.lastPartialResult = ""
         }
     }
 
@@ -331,7 +340,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         llmMenuItem = NSMenuItem(title: "Enabled", action: #selector(toggleLLM), keyEquivalent: "")
         llmMenuItem.target = self
-        llmMenuItem.state = LLMRefiner.shared.isEnabled ? .on : .off
+        llmMenuItem.state = PersonaStore.shared.activePersonaId != nil ? .on : .off
         llmMenuItem.image = symbolImage("checkmark.circle")
         llmMenu.addItem(llmMenuItem)
 
@@ -445,9 +454,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleLLM() {
-        let refiner = LLMRefiner.shared
-        refiner.isEnabled.toggle()
-        llmMenuItem.state = refiner.isEnabled ? .on : .off
+        let store = PersonaStore.shared
+        if store.activePersonaId == nil {
+            store.setActive("builtin-default")
+        } else {
+            store.setActive(nil)
+        }
+        llmMenuItem.state = store.activePersonaId != nil ? .on : .off
     }
 
     @objc private func toggleClipboard() {
@@ -473,7 +486,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
         shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
         keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
-        llmMenuItem.state = LLMRefiner.shared.isEnabled ? .on : .off
+        llmMenuItem.state = PersonaStore.shared.activePersonaId != nil ? .on : .off
         applySettingsShortcut(to: settingsMenuItem)
 
         let defaultsVoice = UserDefaults.standard.object(forKey: voiceEnabledKey) as? Bool ?? true
