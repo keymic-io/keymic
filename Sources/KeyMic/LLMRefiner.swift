@@ -101,7 +101,7 @@ final class LLMRefiner {
                 return
             }
             let refined = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            logToFile("Refined response received (\(refined.count) chars)")
+            logToFile("Refined: '\(userText)' -> '\(refined)'")
             DispatchQueue.main.async { completion(.success(refined)) }
         }
         currentTask?.resume()
