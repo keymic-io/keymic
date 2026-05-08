@@ -42,7 +42,7 @@ final class SwiftUISettingsWindow: NSPanel {
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, voice, llm, keyMapping, shortcuts, clipboard, screenshot
+    case general, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot
 
     var id: String { rawValue }
 
@@ -51,6 +51,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general:    "General"
         case .voice:      "Voice"
         case .llm:        "LLM"
+        case .personas:   "Personas"
         case .keyMapping: "Key Mapping"
         case .shortcuts:  "Shortcuts"
         case .clipboard:  "Clipboard"
@@ -63,6 +64,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general:    "gearshape"
         case .voice:      "mic"
         case .llm:        "sparkles"
+        case .personas:   "person.crop.circle.badge.checkmark"
         case .keyMapping: "keyboard"
         case .shortcuts:  "command.square"
         case .clipboard:  "doc.on.clipboard"
@@ -97,6 +99,7 @@ struct SettingsRootView: View {
         case .general:    GeneralSettingsView()
         case .voice:      VoiceSettingsView()
         case .llm:        LLMSettingsView()
+        case .personas:   PersonasView()
         case .clipboard:  ClipboardSettingsView()
         case .keyMapping: KeyMappingSettingsSection()
         case .shortcuts:  ShortcutsSettingsSection()
