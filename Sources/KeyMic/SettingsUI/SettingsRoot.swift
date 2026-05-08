@@ -405,12 +405,16 @@ private struct LLMSettingsView: View {
 
     private func runTest() {
         let refiner = LLMRefiner.shared
-        guard refiner.isConfigured else {
+        guard refiner.isReady else {
             status = .fail("API key is empty")
             return
         }
         status = .testing
-        refiner.refine("Hello, this is a test.", force: true) { result in
+        refiner.refine(
+            "Hello, this is a test.",
+            systemPrompt: "Return the input exactly as-is.",
+            temperature: 0.0
+        ) { result in
             DispatchQueue.main.async {
                 switch result {
                 case .success(let text): status = .ok(text)
