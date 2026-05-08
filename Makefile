@@ -2,7 +2,7 @@ APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build build-arm64 build-x86_64 clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state
+.PHONY: build build-arm64 build-x86_64 clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
 
 
 build:
@@ -271,7 +271,30 @@ test-overlay-state:
 	       -o .build/overlay-state-tests
 	.build/overlay-state-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state
+test-persona:
+	mkdir -p .build
+	swiftc Sources/KeyMic/LLM/Persona.swift \
+	       Tests/PersonaTests.swift \
+	       -o .build/persona-tests
+	.build/persona-tests
+
+test-persona-store:
+	mkdir -p .build
+	swiftc Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Tests/PersonaStoreTests.swift \
+	       -o .build/persona-store-tests
+	.build/persona-store-tests
+
+test-hotkey-registry:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
+	       Tests/HotkeyRegistryTests.swift \
+	       -o .build/hotkey-registry-tests
+	.build/hotkey-registry-tests
+
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
 	@echo "\n✅ All tests passed"
 
 clean:
