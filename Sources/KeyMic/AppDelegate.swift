@@ -4,7 +4,18 @@ import Speech
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
-    private let speechEngine = SpeechEngine()
+    private let speechEngine: SpeechEngine = {
+        let saved = UserDefaults.standard.string(forKey: "selectedLocaleCode")
+        let code: String
+        if let saved, !saved.isEmpty {
+            code = saved
+        } else {
+            // First launch: derive from system language and persist it.
+            code = AppDelegate.defaultSpeechLocaleCode()
+            UserDefaults.standard.set(code, forKey: "selectedLocaleCode")
+        }
+        return SpeechEngine(locale: Locale(identifier: code))
+    }()
     private let textInjector = TextInjector()
     private lazy var actionRunner = HotkeyActionRunner(
         typeText: { [weak self] text in self?.textInjector.inject(text) }
@@ -71,11 +82,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         AppScreen.refresh()
 
-        if UserDefaults.standard.string(forKey: "selectedLocaleCode") == nil {
-            selectedLocaleCode = Self.defaultSpeechLocaleCode()
-        }
         let savedCode = selectedLocaleCode
-        speechEngine.locale = savedCode.isEmpty ? Locale.current : Locale(identifier: savedCode)
+        speechEngine.locale = savedCode.isEmpty ? Locale(identifier: Self.defaultSpeechLocaleCode()) : Locale(identifier: savedCode)
 
         setupMainMenu()
         setupStatusBar()
