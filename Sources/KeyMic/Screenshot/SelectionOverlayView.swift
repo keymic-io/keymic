@@ -44,6 +44,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     private var activeTextField: NSTextField?
     private var ocrOverlay: ImageAnalysisOverlayView?
     private var ocrAnalyzeTask: Task<Void, Never>?
+    private let ocrAnalyzer = ImageAnalyzer()
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
@@ -592,11 +593,10 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         addSubview(overlay)
         ocrOverlay = overlay
 
-        let analyzer = ImageAnalyzer()
         let config = ImageAnalyzer.Configuration([.text])
         // No `locales` set — VisionKit defaults to all supported languages.
 
-        ocrAnalyzeTask = Task { [weak self, weak overlay] in
+        ocrAnalyzeTask = Task { [weak self, weak overlay, analyzer = ocrAnalyzer] in
             do {
                 let analysis = try await analyzer.analyze(
                     cropped,
