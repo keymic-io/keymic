@@ -75,7 +75,7 @@ cp Resources/TrayIconTemplate.png "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate@2x.png "${BUNDLE}/Contents/Resources/"
 cp -R "${ARM64_SPARKLE}" "${BUNDLE}/Contents/Frameworks/"
 codesign --force --deep --sign "${CODESIGN_IDENTITY}" "${BUNDLE}/Contents/Frameworks/Sparkle.framework"
-codesign --force --sign "${CODESIGN_IDENTITY}" "${BUNDLE}"
+codesign --force --sign "${CODESIGN_IDENTITY}" --entitlements "${PROJECT_DIR}/${APP_NAME}.entitlements" "${BUNDLE}"
 
 APP_ZIP="${APP_NAME}-${VERSION}.zip"
 ditto -c -k --sequesterRsrc --keepParent "${BUNDLE}" "${RELEASE_DIR}/${APP_ZIP}"
