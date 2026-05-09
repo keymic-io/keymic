@@ -59,14 +59,153 @@ tccutil reset SpeechRecognition io.keymic.app
 tccutil reset ScreenCapture io.keymic.app
 ```
 
-## Release
+## Code Signing
+
+Both `make build` and `scripts/release.sh` read the `CODESIGN_IDENTITY` environment variable. If it is not set, they fall back to `"-"` (ad-hoc signing).
+
+### Option A — Ad-hoc signing (default, no certificate needed)
+
+Ad-hoc signing works for local development and open-source contributors who don't have an Apple Developer account. The app runs fine on your own machine but **cannot be notarized** and Gatekeeper will block it on other machines unless the user right-clicks → Open.
 
 ```bash
-scripts/release.sh 1.2.3        # build universal binary, generate appcast, tag, publish
-scripts/release.sh -f 1.2.3     # overwrite existing release/tag
+# Nothing to set — "-" is the default.
+make build
 ```
 
-Requires `~/.sparkle-tools/generate_appcast` (from Sparkle distribution) and a `gh` CLI authenticated to `keymic-io/keymic`.
+### Option B — Self-signed certificate (local use, no Apple account)
+
+A self-signed certificate lets you use a stable identity across rebuilds so macOS doesn't invalidate TCC permissions (Accessibility, Microphone, etc.) every time you rebuild.
+
+**Create the certificate (one-time):**
+
+1. Open **Keychain Access** → menu **Keychain Access → Certificate Assistant → Create a Certificate…**
+2. Fill in:
+   - Name: `KeyMic Dev` (or any name you like)
+   - Identity Type: **Self Signed Root**
+   - Certificate Type: **Code Signing**
+   - Check **Let me override defaults** → keep clicking Continue with defaults → Done
+3. The certificate is saved in your login keychain.
+
+Or create it from the terminal:
+
+```bash
+# Creates a self-signed code-signing cert named "KeyMic Dev" in the login keychain
+security create-certificate \
+  -k ~/Library/Keychains/login.keychain-db \
+  -n "KeyMic Dev" \
+  -t codesigning \
+  -s "KeyMic Dev"
+```
+
+> **Note:** Keychain Access GUI is more reliable for this. The `security` CLI path for cert creation is limited on modern macOS — use the GUI if the command above fails.
+
+**Verify the certificate is visible:**
+
+```bash
+security find-identity -v -p codesigning
+# Should list: "KeyMic Dev"
+```
+
+**Use it:**
+
+```bash
+export CODESIGN_IDENTITY="KeyMic Dev"
+make build
+# or for release:
+CODESIGN_IDENTITY="KeyMic Dev" make release VERSION=0.1.0
+```
+
+### Option C — Apple Developer ID (distribution / notarization)
+
+Required if you want to distribute outside the Mac App Store and pass Gatekeeper on other machines without user override.
+
+**Prerequisites:** An [Apple Developer Program](https://developer.apple.com/programs/) membership ($99/year).
+
+**Create the certificate:**
+
+1. Open **Xcode → Settings → Accounts** → select your Apple ID → **Manage Certificates…**
+2. Click **+** → **Developer ID Application**
+3. Xcode downloads and installs the certificate into your login keychain automatically.
+
+Or via the [Apple Developer portal](https://developer.apple.com/account/resources/certificates/list):
+1. Create a **Developer ID Application** certificate, download the `.cer` file, double-click to install.
+
+**Find the exact identity string:**
+
+```bash
+security find-identity -v -p codesigning
+# Example output:
+#   1) A1B2C3D4... "Developer ID Application: Your Name (TEAMID)"
+```
+
+**Use it:**
+
+```bash
+export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+make release VERSION=0.1.0
+```
+
+For notarization after signing, add a `notarize` step to `scripts/release.sh` using `xcrun notarytool`.
+
+### Persisting the identity
+
+Add the export to your shell profile so you don't have to set it every session:
+
+```bash
+# ~/.zshrc or ~/.zprofile
+export CODESIGN_IDENTITY="KeyMic Dev"   # replace with your identity string
+```
+
+### Summary
+
+| Scenario | `CODESIGN_IDENTITY` value | Runs on other Macs |
+|---|---|---|
+| Local dev / CI | `"-"` (default) | Only with user override |
+| Self-signed cert | `"KeyMic Dev"` (your cert name) | Only with user override |
+| Developer ID | `"Developer ID Application: …"` | Yes (after notarization) |
+
+## Release
+
+**Prerequisites (one-time setup):**
+
+```bash
+# 1. Install Sparkle tools
+curl -L https://github.com/sparkle-project/Sparkle/releases/download/2.9.1/Sparkle-2.9.1.tar.xz \
+  -o /tmp/sparkle.tar.xz
+mkdir -p ~/.sparkle-tools
+tar -xf /tmp/sparkle.tar.xz -C /tmp/sparkle-extracted
+cp /tmp/sparkle-extracted/bin/{generate_appcast,generate_keys,sign_update,BinaryDelta} ~/.sparkle-tools/
+
+# 2. Generate EdDSA key pair (stored in Keychain, public key printed to stdout)
+~/.sparkle-tools/generate_keys
+# Paste the printed SUPublicEDKey value into Info.plist
+
+# 3. Authenticate gh CLI
+gh auth login
+
+# 4. Set your signing identity (see Code Signing section above)
+export CODESIGN_IDENTITY="KeyMic Dev"   # or "-" for ad-hoc
+```
+
+**Run a release:**
+
+```bash
+make release VERSION=0.1.0          # build universal binary, sign, generate appcast, tag, publish
+make release VERSION=0.1.0 FORCE=1  # overwrite existing release/tag
+# or directly:
+scripts/release.sh 0.1.0
+scripts/release.sh -f 0.1.0         # force overwrite
+```
+
+The script:
+1. Bumps `CFBundleShortVersionString` + `CFBundleVersion` in `Info.plist`
+2. Builds arm64 + x86_64, merges with `lipo` into a universal binary
+3. Assembles and signs `KeyMic.app`
+4. Zips to `.release/KeyMic-<version>.zip`
+5. Runs `generate_appcast` to produce an EdDSA-signed `appcast.xml`
+6. Commits `Info.plist`, pushes to current branch
+7. Deploys `appcast.xml` to the `gh-pages` branch (Sparkle auto-update feed)
+8. Tags `v<version>` and creates a GitHub release with the zip attached
 
 ## Architecture
 

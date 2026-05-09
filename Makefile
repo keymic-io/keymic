@@ -330,5 +330,9 @@ install: build
 	@echo "✅ Installed to /Applications/$(APP_BUNDLE)"
 
 release:
-	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=1.1.0"; exit 1; fi
-	./scripts/release.sh $(VERSION)
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=1.1.0 [FORCE=1]"; exit 1; fi
+	@if [ "$(FORCE)" = "1" ]; then \
+		./scripts/release.sh -f $(VERSION); \
+	else \
+		./scripts/release.sh $(VERSION); \
+	fi
