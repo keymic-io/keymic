@@ -531,14 +531,14 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     // MARK: - Undo
 
     private func snapshotIfNeeded() {
-        let snapshot = state.annotations.map { $0.copy() as! Annotation }
+        let snapshot = state.annotations.compactMap { $0.copy() as? Annotation }
         canvasUndoManager.registerUndo(withTarget: self) { target in
             target.restoreSnapshot(snapshot)
         }
     }
 
     private func restoreSnapshot(_ snapshot: [Annotation]) {
-        let current = state.annotations.map { $0.copy() as! Annotation }
+        let current = state.annotations.compactMap { $0.copy() as? Annotation }
         canvasUndoManager.registerUndo(withTarget: self) { target in
             target.restoreSnapshot(current)
         }

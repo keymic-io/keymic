@@ -9,9 +9,14 @@ enum SelectionTextProvider {
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             systemWide, kAXFocusedUIElementAttribute as CFString, &focused
-        ) == .success, let any = focused else { return nil }
+        ) == .success,
+              let any = focused,
+              CFGetTypeID(any) == AXUIElementGetTypeID() else { return nil }
 
+        // Safe: guarded by CFGetTypeID check above. AXUIElement is a CF type,
+        // Swift's `as?` bridge does not accept it, so a checked force-cast is required.
         let element = any as! AXUIElement
+
         var selected: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             element, kAXSelectedTextAttribute as CFString, &selected
