@@ -7,7 +7,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_DIR="${PROJECT_DIR}/.release"
 SPARKLE_TOOLS_DIR="${HOME}/.sparkle-tools"
 KEYCHAIN_ACCOUNT="ed25519"  # Sparkle EdDSA signing key
-RELEASE_REPO_SLUG="keymic-io/keymic"
+RELEASE_REPO_SLUG="${RELEASE_REPO_SLUG:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "keymic-io/keymic")}"
 
 FORCE=0
 VERSION=""
@@ -74,6 +74,7 @@ cp Resources/AppIcon.icns "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate.png "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate@2x.png "${BUNDLE}/Contents/Resources/"
 cp -R "${ARM64_SPARKLE}" "${BUNDLE}/Contents/Frameworks/"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 codesign --force --deep --sign "${CODESIGN_IDENTITY}" "${BUNDLE}/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign "${CODESIGN_IDENTITY}" --entitlements "${PROJECT_DIR}/${APP_NAME}.entitlements" "${BUNDLE}"
 

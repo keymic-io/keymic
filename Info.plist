@@ -31,7 +31,7 @@
 	<key>SUFeedURL</key>
 	<string>https://keymic-io.github.io/keymic/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>MBFeXtExU0kl7o9YRrYb3TCNeI1qQ5qX5IeSmLNvaNs=</string>
+	<string>ETSPhgEiWB+ZL2wZjM7o25iIwBVTYWFOnxoGIAb8A6A=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>0</integer>
 </dict>
