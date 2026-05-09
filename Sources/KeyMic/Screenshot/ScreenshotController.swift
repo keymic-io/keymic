@@ -1,8 +1,10 @@
 import Cocoa
 import Combine
+import os.log
 
 @MainActor
 final class ScreenshotController: SelectionOverlayViewDelegate {
+    private static let logger = Logger(subsystem: "io.keymic.app", category: "Screenshot")
     private let capturer = ScreenCapturer()
     private let exporter = ScreenshotExporter()
     private var frozenFrames: [NSScreen: CGImage] = [:]
@@ -32,7 +34,7 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
                 self.handlePermissionDenied()
             } catch {
                 self.isCapturing = false
-                NSLog("[Screenshot] capture failed: \(error)")
+                Self.logger.error("capture failed: \(error.localizedDescription, privacy: .public)")
             }
         }
     }

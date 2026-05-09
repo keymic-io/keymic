@@ -12,7 +12,7 @@ final class HotkeyActionRunner {
     private let keyPress: KeyPressFn
     private let shell: ShellFn
     private let queue = DispatchQueue(label: "io.keymic.app.hotkey-action-runner", qos: .userInitiated)
-    private let logger = Logger(subsystem: "io.keymic.app", category: "HotkeyActionRunner")
+    private static let logger = Logger(subsystem: "io.keymic.app", category: "HotkeyActionRunner")
 
     /// Wait after a `.typeText` step to let `Cmd+V` settle in the target app.
     private let pasteSettleSeconds: TimeInterval = 0.15
@@ -46,7 +46,7 @@ final class HotkeyActionRunner {
         case .shell(let cmd):
             let code = shell(cmd)
             if code != 0 {
-                logger.warning("shell exit \(code): \(cmd, privacy: .public)")
+                Self.logger.warning("shell exit \(code): \(cmd, privacy: .public)")
             }
         }
     }
@@ -74,7 +74,7 @@ final class HotkeyActionRunner {
         do {
             try p.run()
         } catch {
-            NSLog("HotkeyActionRunner.defaultShell failed to launch: \(error)")
+            Self.logger.error("defaultShell failed to launch: \(error.localizedDescription, privacy: .public)")
             return -1
         }
         p.waitUntilExit()
