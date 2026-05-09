@@ -3,7 +3,7 @@ APP_BUNDLE := $(APP_NAME).app
 ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 
-.PHONY: build build-arm64 build-x86_64 clean install run test release test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
+.PHONY: build build-arm64 build-x86_64 clean install run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
 
 
 build:
@@ -299,6 +299,26 @@ test-hotkey-registry:
 
 test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
 	@echo "\n✅ All tests passed"
+
+## Format all Swift sources in-place using swift-format (brew install swift-format)
+format:
+	@command -v swift-format >/dev/null 2>&1 || { echo "swift-format not found. Install with: brew install swift-format"; exit 1; }
+	swift-format format --in-place --recursive Sources Tests
+
+## Check formatting without modifying files (useful in CI)
+format-check:
+	@command -v swift-format >/dev/null 2>&1 || { echo "swift-format not found. Install with: brew install swift-format"; exit 1; }
+	swift-format lint --recursive Sources Tests
+
+## Lint Swift sources using SwiftLint (brew install swiftlint)
+lint:
+	@command -v swiftlint >/dev/null 2>&1 || { echo "swiftlint not found. Install with: brew install swiftlint"; exit 1; }
+	swiftlint lint --strict
+
+## Auto-fix SwiftLint violations where possible
+lint-fix:
+	@command -v swiftlint >/dev/null 2>&1 || { echo "swiftlint not found. Install with: brew install swiftlint"; exit 1; }
+	swiftlint --fix
 
 clean:
 	swift package clean
