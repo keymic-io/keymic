@@ -97,15 +97,28 @@ fi
 echo "==> appcast.xml generated"
 
 cd "$PROJECT_DIR"
-cp "${RELEASE_DIR}/appcast.xml" "${PROJECT_DIR}/appcast.xml"
-git add appcast.xml Info.plist
+git add Info.plist
 if git diff --cached --quiet; then
-    echo "==> No appcast/Info.plist changes to commit"
+    echo "==> No Info.plist changes to commit"
 else
     git commit -m "release: v${VERSION}"
     git push
-    echo "==> appcast.xml committed and pushed"
+    echo "==> Info.plist committed and pushed"
 fi
+
+# Deploy appcast.xml to gh-pages branch for Sparkle auto-update.
+# The main source branch does NOT track appcast.xml — it lives exclusively
+# on the gh-pages branch, served via GitHub Pages.
+GH_PAGES_DIR=$(mktemp -d)
+git worktree add "$GH_PAGES_DIR" gh-pages
+cp "${RELEASE_DIR}/appcast.xml" "${GH_PAGES_DIR}/appcast.xml"
+cd "$GH_PAGES_DIR"
+git add appcast.xml
+git commit -m "appcast: v${VERSION}"
+git push origin gh-pages
+cd "$PROJECT_DIR"
+git worktree remove "$GH_PAGES_DIR"
+echo "==> appcast.xml deployed to gh-pages"
 
 git tag -a "v${VERSION}" -m "Release v${VERSION}"
 git push origin "v${VERSION}"

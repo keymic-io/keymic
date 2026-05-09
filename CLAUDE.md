@@ -37,7 +37,7 @@ make release VERSION=1.2.3    # delegates to scripts/release.sh
 scripts/release.sh -f 1.2.3   # `-f` overwrites existing v<VERSION> release + tag (local + remote)
 ```
 
-`scripts/release.sh` builds both arches, merges via `lipo` into a universal binary, codesigns, packages with `ditto`, generates a Sparkle appcast (EdDSA via `~/.sparkle-tools/generate_appcast`, keychain account `ed25519`), commits + pushes `appcast.xml`/`Info.plist`, creates an annotated `v<VERSION>` git tag, and publishes a GitHub release on `keymic-io/keymic`.
+`scripts/release.sh` builds both arches, merges via `lipo` into a universal binary, codesigns, packages with `ditto`, generates a Sparkle appcast (EdDSA via `~/.sparkle-tools/generate_appcast`, keychain account `ed25519`), deploys appcast.xml to the `gh-pages` branch (served via GitHub Pages), commits + pushes `Info.plist`, creates an annotated `v<VERSION>` git tag, and publishes a GitHub release on `keymic-io/keymic`.
 
 **Tests are standalone `swiftc` runners**, not XCTest and not part of the Swift package. Each test file declares `@main` and prints `… passed` on success or exits non-zero. To add a new test target, add a `test-<name>:` rule to the `Makefile` listing every source file the test depends on.
 
@@ -103,7 +103,7 @@ Single `.cgSessionEventTap` watching `flagsChanged` + `keyDown` + `keyUp`. The c
 
 ### Updater (`Sources/KeyMic/Updater/UpdaterController.swift`)
 
-Wraps `SPUStandardUpdaterController` from Sparkle 2. Reads `SUFeedURL` and `SUPublicEDKey` from `Info.plist`. Update artifacts are signed by `scripts/release.sh` using the EdDSA private key in `scripts/keys/` (or whatever the `~/.sparkle-tools/generate_appcast --account` resolves).
+Wraps `SPUStandardUpdaterController` from Sparkle 2. Reads `SUFeedURL` and `SUPublicEDKey` from `Info.plist`. The appcast is hosted on GitHub Pages (`gh-pages` branch), NOT in the main source tree. `Info.plist`/`SUFeedURL` points to `https://keymic-io.github.io/keymic/appcast.xml`. Update artifacts are signed by `scripts/release.sh` using the EdDSA private key in `scripts/keys/` (or whatever the `~/.sparkle-tools/generate_appcast --account` resolves). The release script deploys appcast.xml to the `gh-pages` branch via a temporary git worktree.
 
 ### Settings (`SettingsWindow`)
 
