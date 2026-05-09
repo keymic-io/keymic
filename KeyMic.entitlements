@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  KeyMic runs as a system utility, not a sandboxed app. It needs a
+	  session-level CGEvent tap (Accessibility), the microphone, the Speech
+	  framework, and screen capture. None of these work inside the App
+	  Sandbox, so `com.apple.security.app-sandbox` is intentionally absent.
+
+	  The TCC-gated privacy permissions (Accessibility, Microphone, Speech
+	  Recognition, Screen Recording) are declared in Info.plist via their
+	  Usage Description keys and granted by the user on first use.
+	-->
+
+	<!--
+	  Allow access to the microphone. Required when the binary is signed
+	  with the Hardened Runtime (Developer ID + notarization path). Harmless
+	  for ad-hoc signed builds.
+	-->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+
+	<!--
+	  Allow loading the bundled Sparkle.framework (and its XPC helpers)
+	  under the Hardened Runtime. Sparkle ships its own signed binaries
+	  inside the framework; without this entitlement, hardened-runtime
+	  launch of the updater fails with a library-validation error.
+	-->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

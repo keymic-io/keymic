@@ -111,7 +111,7 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 
 ## Permissions & entitlements
 
-`Info.plist` declares `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`, and `NSScreenCaptureUsageDescription`. Bundle id `io.keymic.app`. The build is **codesigned with a local self-signed identity** (`codesign --sign ${CODESIGN_IDENTITY}`, `--identifier io.keymic.app`); the Sparkle framework is signed deeply with the same identity. Important consequences:
+`Info.plist` declares `NSMicrophoneUsageDescription`, `NSSpeechRecognitionUsageDescription`, and `NSScreenCaptureUsageDescription`. Bundle id `io.keymic.app`. The `KeyMic.entitlements` file at repo root is embedded at codesign time and grants `com.apple.security.device.audio-input` plus `com.apple.security.cs.disable-library-validation` (the latter for Sparkle's bundled helpers under the Hardened Runtime). KeyMic is **not** sandboxed — the session-level `CGEvent` tap is incompatible with `com.apple.security.app-sandbox`. The build is **codesigned with a local self-signed identity** (`codesign --sign ${CODESIGN_IDENTITY} --entitlements KeyMic.entitlements`, `--identifier io.keymic.app`); the Sparkle framework is signed deeply with the same identity but without the entitlements file. Important consequences:
 
 - **Accessibility** must be granted to `KeyMic.app` for the event tap to receive events. The app shows a setup alert and quits if `CGEvent.tapCreate` returns `nil`.
 - The signing identity is local; cdhash changes whenever the binary is rebuilt, so TCC permission may invalidate. After significant rebuilds, run `tccutil reset Accessibility io.keymic.app` (and Microphone/SpeechRecognition/ScreenCapture) and re-grant.

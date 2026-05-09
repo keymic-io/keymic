@@ -48,10 +48,15 @@ make test-clipboard-monitor # ClipboardMonitor
 | Speech Recognition | Voice-to-text transcription |
 | Screen Recording | Screenshot capture |
 
+These are TCC-gated privacy permissions (declared in `Info.plist` via the matching `NS*UsageDescription` keys) and must be granted in **System Settings → Privacy & Security** on first use. The build also embeds [`KeyMic.entitlements`](KeyMic.entitlements), which grants microphone audio-input and disables library validation so Sparkle can load its bundled helpers under the Hardened Runtime. KeyMic is intentionally **not** sandboxed — a global `CGEvent` tap is incompatible with the App Sandbox.
+
 After rebuilding, macOS may invalidate the previous authorization because the binary's cdhash changes. Re-grant in **System Settings → Privacy & Security** or run:
 
 ```bash
 tccutil reset Accessibility io.keymic.app
+tccutil reset Microphone io.keymic.app
+tccutil reset SpeechRecognition io.keymic.app
+tccutil reset ScreenCapture io.keymic.app
 ```
 
 ## Release
@@ -69,4 +74,4 @@ See [`CLAUDE.md`](CLAUDE.md) for component layout and [`AGENTS.md`](AGENTS.md) f
 
 ## License
 
-See the source repository for license details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
