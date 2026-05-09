@@ -13,7 +13,7 @@ logs/
 # Claude Code / AI tools
 .claude/
 .agents/
-skills-lock.json
+.kiro/
 
 # Internal docs
 docs/superpowers/

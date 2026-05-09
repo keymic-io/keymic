@@ -3,19 +3,6 @@ import os.log
 
 private let logger = Logger(subsystem: "io.keymic.app", category: "LLMRefiner")
 
-private func logToFile(_ message: String) {
-    let msg = "[\(ISO8601DateFormatter().string(from: Date()))] \(message)\n"
-    let logURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Logs/KeyMic.log")
-    if let handle = try? FileHandle(forWritingTo: logURL) {
-        handle.seekToEndOfFile()
-        handle.write(msg.data(using: .utf8)!)
-        handle.closeFile()
-    } else {
-        FileManager.default.createFile(atPath: logURL.path, contents: msg.data(using: .utf8))
-    }
-}
-
 /// Stateless LLM endpoint config + per-call refinement.
 /// Persona-specific prompt + temperature are passed in by the caller.
 final class LLMRefiner {
@@ -79,16 +66,17 @@ final class LLMRefiner {
             "temperature": temperature,
         ]
 
-        logToFile("Request: \(url.absoluteString) model=\(model) temp=\(temperature)")
+        logger.info("request — host=\(url.host ?? "?", privacy: .public) model=\(self.model, privacy: .public) temp=\(temperature, privacy: .public) userTextLen=\(userText.count, privacy: .public)")
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        currentTask = URLSession.shared.dataTask(with: request) { data, _, error in
+        currentTask = URLSession.shared.dataTask(with: request) { data, response, error in
             if let error {
-                logToFile("Network error: \(error.localizedDescription)")
+                logger.error("network error: \(error.localizedDescription, privacy: .public)")
                 DispatchQueue.main.async { completion(.failure(error)) }
                 return
             }
             guard let data else {
+                logger.error("invalid response — no data")
                 DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
                 return
             }
@@ -97,11 +85,13 @@ final class LLMRefiner {
                   let message = choices.first?["message"] as? [String: Any],
                   let content = message["content"] as? String
             else {
+                let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+                logger.error("invalid response — status=\(status, privacy: .public) bytes=\(data.count, privacy: .public)")
                 DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
                 return
             }
             let refined = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            logToFile("Refined response received (\(refined.count) chars)")
+            logger.info("response — len=\(refined.count, privacy: .public)")
             DispatchQueue.main.async { completion(.success(refined)) }
         }
         currentTask?.resume()
