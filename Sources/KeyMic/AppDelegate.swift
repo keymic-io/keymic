@@ -1,5 +1,8 @@
 import AppKit
 import Speech
+import os.log
+
+private let logger = Logger(subsystem: "io.keymic.app", category: "AppDelegate")
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
@@ -282,7 +285,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Passthrough: no active persona, or LLM endpoint not configured (silent, no toast).
         guard let persona, refiner.isReady else {
             if persona != nil {
-                NSLog("[Persona] LLM not ready; passthrough")
+                logger.info("LLM not ready; passthrough")
             }
             overlayPanel.dismiss()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
@@ -320,7 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             case .failure(let error):
-                NSLog("[LLMRefiner] Refine failed: %@", error.localizedDescription)
+                logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
                 finalText = text
                 self.overlayPanel.updateText("Refine failed: \(error.localizedDescription)")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
