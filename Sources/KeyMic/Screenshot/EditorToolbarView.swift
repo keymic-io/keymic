@@ -43,7 +43,8 @@ struct EditorToolbarView: View {
         let selected = state.selectedTool == tool
         return Button(action: { state.selectedTool = tool }) {
             Image(systemName: tool.iconName)
-                .frame(width: 24, height: 24)
+                .font(.system(size: 14))
+                .frame(width: 28, height: 28)
                 .background(selected ? Color.accentColor.opacity(0.25) : Color.clear)
                 .clipShape(RoundedRectangle(cornerRadius: 4))
         }
@@ -54,7 +55,8 @@ struct EditorToolbarView: View {
     private func iconButton(_ symbol: String, help: String, enabled: Bool = true, tint: Color = .primary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .frame(width: 24, height: 24)
+                .font(.system(size: 14))
+                .frame(width: 28, height: 28)
                 .foregroundStyle(enabled ? tint : .secondary)
         }
         .buttonStyle(.plain)
@@ -70,7 +72,7 @@ struct EditorToolbarView: View {
                     Button(action: { state.selectedColor = c }) {
                         Circle()
                             .fill(c)
-                            .frame(width: 18, height: 18)
+                            .frame(width: 20, height: 20)
                             .overlay(Circle().stroke(state.selectedColor == c ? Color.accentColor : .gray.opacity(0.3), lineWidth: state.selectedColor == c ? 2 : 1))
                     }
                     .buttonStyle(.plain)
