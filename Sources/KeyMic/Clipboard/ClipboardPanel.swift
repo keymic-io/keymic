@@ -114,7 +114,9 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         let system = AXUIElementCreateSystemWide()
         var focused: AnyObject?
         guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let raw = focused else { return nil }
+              let raw = focused,
+              CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+        // Safe: guarded by CFGetTypeID. AXUIElement is a CF type which Swift's `as?` does not bridge.
         let element = raw as! AXUIElement
 
         var rangeRef: AnyObject?
@@ -127,9 +129,11 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
             kAXBoundsForRangeParameterizedAttribute as CFString,
             rangeValue,
             &boundsRef
-        ) == .success, let boundsValue = boundsRef else { return nil }
+        ) == .success, let boundsValue = boundsRef,
+              CFGetTypeID(boundsValue) == AXValueGetTypeID() else { return nil }
 
         var rect = CGRect.zero
+        // Safe: guarded by CFGetTypeID above.
         guard AXValueGetValue(boundsValue as! AXValue, .cgRect, &rect),
               rect.width.isFinite, rect.height.isFinite,
               !(rect.origin.x == 0 && rect.origin.y == 0 && rect.size == .zero) else { return nil }
