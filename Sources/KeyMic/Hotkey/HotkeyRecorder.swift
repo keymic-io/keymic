@@ -151,9 +151,8 @@ final class HotkeyRecorder: NSButton {
             cfg = HotkeyConfig(modifiers: [], keyCode: CGKeyCode(event.keyCode))
 
         case (.singleKey, .flagsChanged):
-            let modifierKeyCodes: Set<CGKeyCode> = [0x36, 0x37, 0x38, 0x3C, 0x39, 0x3A, 0x3D, 0x3B, 0x3E, 0x3F]
             let kc = CGKeyCode(event.keyCode)
-            guard modifierKeyCodes.contains(kc) else { return nil }
+            guard HotkeyConfig.modifierKeyCodes.contains(kc) else { return nil }
             // Caps Lock is a toggle: emits one flagsChanged per physical press, but
             // .capsLock is asserted only on toggle-on. Accept either edge for it.
             if kc != 0x39 {

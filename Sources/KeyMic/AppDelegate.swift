@@ -630,8 +630,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applySettingsShortcut(to item: NSMenuItem) {
-        let cfg = HotkeySettingsStore.shared.hotkey(for: .settingsWindow)
-            ?? HotkeyConfig(modifiers: [.maskCommand, .maskShift], keyCode: 0x2B)
+        guard let cfg = HotkeySettingsStore.shared.hotkey(for: .settingsWindow) else {
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
+            return
+        }
         let rep = cfg.menuRepresentation
         item.keyEquivalent = rep.key
         item.keyEquivalentModifierMask = rep.modifiers
@@ -689,7 +692,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Accessibility Permission Required"
         alert.informativeText = """
-            KeyMic needs Accessibility permission to monitor the Fn key and apply key mappings.
+            KeyMic needs Accessibility permission to monitor configured hotkeys and apply key mappings.
 
             1. Open System Settings → Privacy & Security → Accessibility
             2. Add and enable KeyMic
