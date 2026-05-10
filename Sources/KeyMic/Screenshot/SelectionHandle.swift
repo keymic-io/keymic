@@ -64,8 +64,20 @@ enum ResizeHandle: CaseIterable {
         switch self {
         case .top, .bottom: return .resizeUpDown
         case .left, .right: return .resizeLeftRight
-        case .topLeft, .topRight, .bottomLeft, .bottomRight: return .crosshair
+        case .topLeft, .bottomRight: return ResizeHandle.diagonalNWSE
+        case .topRight, .bottomLeft: return ResizeHandle.diagonalNESW
         }
+    }
+
+    /// `\` diagonal cursor (top-left ↔ bottom-right). Uses private AppKit selector if available.
+    private static let diagonalNWSE: NSCursor = privateCursor("_windowResizeNorthWestSouthEastCursor") ?? .crosshair
+    /// `/` diagonal cursor (top-right ↔ bottom-left).
+    private static let diagonalNESW: NSCursor = privateCursor("_windowResizeNorthEastSouthWestCursor") ?? .crosshair
+
+    private static func privateCursor(_ name: String) -> NSCursor? {
+        let sel = NSSelectorFromString(name)
+        guard NSCursor.responds(to: sel) else { return nil }
+        return NSCursor.perform(sel)?.takeUnretainedValue() as? NSCursor
     }
 
     /// Resize the rect by moving this handle to `newPoint` while keeping the opposite anchor fixed.

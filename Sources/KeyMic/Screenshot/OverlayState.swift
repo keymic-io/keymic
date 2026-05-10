@@ -10,6 +10,8 @@ final class ScreenshotOverlayState {
     private(set) var annotations: [Annotation] = []
     private(set) var phase: Phase = .idle
     private(set) var selectedTool: AnnotationTool = .select
+    /// View-local bounds used to clamp the selection rect. `.zero` disables clamping.
+    var screenBounds: NSRect = .zero
     var currentColor: NSColor = .systemRed
     var currentLineWidth: CGFloat = 3
     var currentFontSize: CGFloat = 18
@@ -46,6 +48,27 @@ final class ScreenshotOverlayState {
             y: min(start.y, point.y),
             width: abs(point.x - start.x),
             height: abs(point.y - start.y)
+        )
+    }
+
+    /// Directly sets the selection to a known rect (e.g. a detected window) and enters drafted state.
+    func commitWindowSelection(_ rect: NSRect) {
+        selection = clampToScreen(rect)
+        phase = .drafted
+    }
+
+    private func clampToScreen(_ rect: NSRect) -> NSRect {
+        guard screenBounds != .zero else { return rect }
+        return rect.intersection(screenBounds)
+    }
+
+    private func clampOrigin(_ origin: NSPoint, size: NSSize) -> NSPoint {
+        guard screenBounds != .zero else { return origin }
+        let maxX = max(screenBounds.minX, screenBounds.maxX - size.width)
+        let maxY = max(screenBounds.minY, screenBounds.maxY - size.height)
+        return NSPoint(
+            x: min(maxX, max(screenBounds.minX, origin.x)),
+            y: min(maxY, max(screenBounds.minY, origin.y))
         )
     }
 
@@ -97,6 +120,12 @@ final class ScreenshotOverlayState {
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: a.fontSize, weight: .semibold)]
             let size = (a.text as NSString).size(withAttributes: attrs)
             return NSRect(origin: a.startPoint, size: size).insetBy(dx: -6, dy: -6).contains(point)
+        case .pen:
+            let threshold = max(8, a.lineWidth + 4)
+            for i in 1..<a.points.count {
+                if distance(point, segment: a.points[i-1], to: a.points[i]) < threshold { return true }
+            }
+            return false
         case .select, .ocr:
             return false
         }
@@ -119,7 +148,7 @@ final class ScreenshotOverlayState {
 
     func updateResizing(to point: NSPoint) {
         guard case .resizing(let h) = phase else { return }
-        selection = h.resize(rect: selection, to: point)
+        selection = clampToScreen(h.resize(rect: selection, to: point))
     }
 
     func beginMoving(at point: NSPoint) {
@@ -130,7 +159,8 @@ final class ScreenshotOverlayState {
         guard case .moving(let originalOrigin, let dragStart) = phase else { return }
         let dx = point.x - dragStart.x
         let dy = point.y - dragStart.y
-        selection.origin = NSPoint(x: originalOrigin.x + dx, y: originalOrigin.y + dy)
+        let candidate = NSPoint(x: originalOrigin.x + dx, y: originalOrigin.y + dy)
+        selection.origin = clampOrigin(candidate, size: selection.size)
     }
 
     func finishGesture() {
