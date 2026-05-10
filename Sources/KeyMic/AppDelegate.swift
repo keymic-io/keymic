@@ -137,15 +137,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardController.start()
         _ = UpdaterController.shared
 
+        HotkeySettingsStore.shared.ensureInitialized()
+
         // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
         let registry = HotkeyRegistry.shared
-        let triggerRaw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        if let cfg = HotkeyConfig.parse(triggerRaw) {
+        let hotkeys = HotkeySettingsStore.shared
+        if let cfg = hotkeys.hotkey(for: .voiceTrigger) {
             registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
         }
-        let clipRaw = UserDefaults.standard.string(forKey: "clipboardHotkey") ?? "alt+v"
-        if let clipCfg = HotkeyConfig.parse(clipRaw) {
-            registry.register(clipCfg, owner: .clipboardPanel, purpose: "Clipboard panel (⌥V)")
+        if let cfg = hotkeys.hotkey(for: .clipboardPanel) {
+            registry.register(cfg, owner: .clipboardPanel, purpose: "Clipboard panel")
+        }
+        if let cfg = hotkeys.hotkey(for: .vaultPanel) {
+            registry.register(cfg, owner: .vaultPanel, purpose: "Vault panel")
+        }
+        if let cfg = hotkeys.hotkey(for: .settingsWindow) {
+            registry.register(cfg, owner: .settingsWindow, purpose: "Settings window")
+        }
+        if let cfg = hotkeys.hotkey(for: .screenshot) {
+            registry.register(cfg, owner: .screenshot, purpose: "Screenshot")
         }
         AppDelegate.syncPersonaHotkeysToRegistry()
         NotificationCenter.default.addObserver(
@@ -162,11 +172,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static func syncPersonaHotkeysToRegistry() {
         let registry = HotkeyRegistry.shared
+        let hotkeys = HotkeySettingsStore.shared
+        hotkeys.ensureInitialized()
         for entry in registry.all() {
             if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
         }
         for persona in PersonaStore.shared.personas {
-            guard let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) else { continue }
+            guard let cfg = hotkeys.personaHotkey(personaId: persona.id) else { continue }
             registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
         }
     }
@@ -573,8 +585,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyVoiceShortcut(to item: NSMenuItem) {
-        let raw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        guard let cfg = HotkeyConfig.parse(raw) else {
+        guard let cfg = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger) else {
             item.title = voiceEnabledMenuTitle
             item.keyEquivalent = ""
             item.keyEquivalentModifierMask = []
@@ -603,7 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             item.target = self
             item.representedObject = persona.id
             item.state = persona.id == PersonaStore.shared.activePersonaId ? .on : .off
-            if let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) {
+            if let cfg = HotkeySettingsStore.shared.personaHotkey(personaId: persona.id) {
                 let rep = cfg.menuRepresentation
                 item.keyEquivalent = rep.key
                 item.keyEquivalentModifierMask = rep.modifiers
@@ -619,8 +630,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applySettingsShortcut(to item: NSMenuItem) {
-        let raw = UserDefaults.standard.string(forKey: "settingsHotkey") ?? "cmd+shift+,"
-        let cfg = HotkeyConfig.parse(raw) ?? HotkeyConfig(modifiers: [.maskCommand, .maskShift], keyCode: 0x2B)
+        let cfg = HotkeySettingsStore.shared.hotkey(for: .settingsWindow)
+            ?? HotkeyConfig(modifiers: [.maskCommand, .maskShift], keyCode: 0x2B)
         let rep = cfg.menuRepresentation
         item.keyEquivalent = rep.key
         item.keyEquivalentModifierMask = rep.modifiers
