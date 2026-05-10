@@ -12,6 +12,7 @@ final class EditorState: ObservableObject {
     @Published var canUndo: Bool = false
     @Published var canRedo: Bool = false
     @Published var hasAnnotation: Bool = false
+    @Published var isOCRAnalyzing: Bool = false
 
     var undoAction: (() -> Void)?
     var redoAction: (() -> Void)?
