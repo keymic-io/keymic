@@ -26,7 +26,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.voiceTrigger.rawValue: "fn",                  // Press and hold to start voice input.
         HotkeyFeature.clipboardPanel.rawValue: "alt+v",             // Open the clipboard history panel.
         HotkeyFeature.vaultPanel.rawValue: "alt+b",                 // Open the Vault panel.
-        HotkeyFeature.settingsWindow.rawValue: "cmd+shift+comma",   // Open the Settings window.
+        HotkeyFeature.settingsWindow.rawValue: "cmd+shift+,",       // Open the Settings window.
         HotkeyFeature.screenshot.rawValue: "cmd+shift+a",           // Open screenshot selection and annotation.
     ]
 }
@@ -70,7 +70,9 @@ final class HotkeySettingsStore {
 
     func rawHotkey(for feature: HotkeyFeature) -> String {
         let raw = snapshot.featureHotkeys[feature.rawValue] ?? Self.defaultRawHotkey(for: feature)
-        guard HotkeyConfig.parse(raw) != nil else { return Self.defaultRawHotkey(for: feature) }
+        guard let config = HotkeyConfig.parse(raw), Self.isValidStored(config, owner: .feature(feature)) else {
+            return Self.defaultRawHotkey(for: feature)
+        }
         return raw
     }
 
@@ -85,14 +87,19 @@ final class HotkeySettingsStore {
         snapshot = next
     }
 
-    func resetHotkey(for feature: HotkeyFeature) {
+    func resetHotkey(for feature: HotkeyFeature) throws {
+        let raw = Self.defaultRawHotkey(for: feature)
+        let config = HotkeyConfig.parse(raw)!
+        try validate(config, owner: .feature(feature))
         var next = snapshot
-        next.featureHotkeys[feature.rawValue] = Self.defaultRawHotkey(for: feature)
+        next.featureHotkeys[feature.rawValue] = raw
         snapshot = next
     }
 
     func rawPersonaHotkey(personaId: String) -> String? {
-        guard let raw = snapshot.personaHotkeys[personaId], HotkeyConfig.parse(raw) != nil else { return nil }
+        guard let raw = snapshot.personaHotkeys[personaId],
+              let config = HotkeyConfig.parse(raw),
+              Self.isValidStored(config, owner: .persona(personaId)) else { return nil }
         return raw
     }
 
@@ -130,9 +137,7 @@ final class HotkeySettingsStore {
     }
 
     private func validate(_ config: HotkeyConfig, owner: Owner) throws {
-        if config.isSystemReserved {
-            throw ValidationError(message: "\(config.displayString()) is reserved by macOS")
-        }
+        try Self.validateStored(config, owner: owner)
 
         for feature in HotkeyFeature.allCases {
             guard owner != .feature(feature), let existing = hotkey(for: feature), existing == config else { continue }
@@ -161,7 +166,9 @@ final class HotkeySettingsStore {
             featureHotkeys: HotkeyFeature.defaults,
             personaHotkeys: Dictionary(
                 uniqueKeysWithValues: personas.compactMap { persona in
-                    guard let raw = persona.hotkey, HotkeyConfig.parse(raw) != nil else { return nil }
+                    guard let raw = persona.hotkey,
+                          let config = HotkeyConfig.parse(raw),
+                          isValidStored(config, owner: .persona(persona.id)) else { return nil }
                     return (persona.id, raw)
                 }
             )
@@ -173,12 +180,41 @@ final class HotkeySettingsStore {
     private static func sanitize(_ snapshot: HotkeySettingsSnapshot) -> HotkeySettingsSnapshot {
         var featureHotkeys = HotkeyFeature.defaults
         for feature in HotkeyFeature.allCases {
-            if let raw = snapshot.featureHotkeys[feature.rawValue], HotkeyConfig.parse(raw) != nil {
+            if let raw = snapshot.featureHotkeys[feature.rawValue],
+               let config = HotkeyConfig.parse(raw),
+               isValidStored(config, owner: .feature(feature)) {
                 featureHotkeys[feature.rawValue] = raw
             }
         }
-        let personaHotkeys = snapshot.personaHotkeys.filter { HotkeyConfig.parse($0.value) != nil }
+        let personaHotkeys = snapshot.personaHotkeys.filter { personaId, raw in
+            guard let config = HotkeyConfig.parse(raw) else { return false }
+            return isValidStored(config, owner: .persona(personaId))
+        }
         return HotkeySettingsSnapshot(version: currentVersion, featureHotkeys: featureHotkeys, personaHotkeys: personaHotkeys)
+    }
+
+    private static func isValidStored(_ config: HotkeyConfig, owner: Owner) -> Bool {
+        (try? validateStored(config, owner: owner)) != nil
+    }
+
+    private static func validateStored(_ config: HotkeyConfig, owner: Owner) throws {
+        switch owner {
+        case .feature(.voiceTrigger):
+            if !config.isPureModifier {
+                throw ValidationError(message: "Use a modifier key for voice trigger")
+            }
+        case .feature, .persona:
+            if config.isPureModifier {
+                throw ValidationError(message: "Need a key, not just modifiers")
+            }
+            if config.modifiers.isEmpty {
+                throw ValidationError(message: "Need at least one modifier")
+            }
+        }
+
+        if config.isSystemReserved {
+            throw ValidationError(message: "\(config.displayString()) is reserved by macOS")
+        }
     }
 
     private static func defaultRawHotkey(for feature: HotkeyFeature) -> String {
