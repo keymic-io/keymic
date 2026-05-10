@@ -105,16 +105,12 @@ final class KeyMonitor {
     }
 
     private func reloadHotkeys() {
-        let clip = UserDefaults.standard.string(forKey: "clipboardHotkey") ?? "alt+v"
-        clipboardHotkey = HotkeyConfig.parse(clip)
-        let vault = UserDefaults.standard.string(forKey: "vaultHotkey") ?? "alt+b"
-        vaultHotkey = HotkeyConfig.parse(vault)
-        let settings = UserDefaults.standard.string(forKey: "settingsHotkey") ?? "cmd+shift+,"
-        settingsHotkey = HotkeyConfig.parse(settings)
-        let screenshot = UserDefaults.standard.string(forKey: "screenshotHotkey") ?? "cmd+shift+a"
-        screenshotHotkey = HotkeyConfig.parse(screenshot)
-        let voice = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        voiceTriggerHotkey = HotkeyConfig.parse(voice)
+        let hotkeys = HotkeySettingsStore.shared
+        clipboardHotkey = hotkeys.hotkey(for: .clipboardPanel)
+        vaultHotkey = hotkeys.hotkey(for: .vaultPanel)
+        settingsHotkey = hotkeys.hotkey(for: .settingsWindow)
+        screenshotHotkey = hotkeys.hotkey(for: .screenshot)
+        voiceTriggerHotkey = hotkeys.hotkey(for: .voiceTrigger)
         actionBindings = HotkeyBindingsStore.shared.bindings.compactMap { b in
             guard b.enabled,
                   let cfg = HotkeyConfig.parse(b.trigger),
@@ -232,9 +228,9 @@ final class KeyMonitor {
             // Persona hotkeys: switch active persona on keyDown.
             // Swallow the event to prevent dead-key side effects (e.g. ⌥E → ´).
             if !isAutoRepeat {
+                let hotkeys = HotkeySettingsStore.shared
                 for persona in PersonaStore.shared.personas {
-                    guard let raw = persona.hotkey,
-                          let cfg = HotkeyConfig.parse(raw),
+                    guard let cfg = hotkeys.personaHotkey(personaId: persona.id),
                           !cfg.isPureModifier,
                           cfg.matches(keyCode: keyCode, flags: event.flags) else { continue }
                     DispatchQueue.main.async {
