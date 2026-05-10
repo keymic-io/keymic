@@ -643,4 +643,63 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         delegate?.overlayDidUpdateState(self)
         needsDisplay = true
     }
+
+    // MARK: - OCR (VisionKit Live Text)
+
+    private func installOCROverlay() {
+        removeOCROverlay()
+        guard let frame = frozenFrame else { return }
+        let sel = state.selection
+        guard sel.width > 1, sel.height > 1 else { return }
+
+        let scaleX = CGFloat(frame.width) / bounds.width
+        let scaleY = CGFloat(frame.height) / bounds.height
+        let pxRect = CGRect(
+            x: sel.origin.x * scaleX,
+            y: (bounds.height - sel.maxY) * scaleY,
+            width: sel.width * scaleX,
+            height: sel.height * scaleY
+        )
+        guard let cropped = frame.cropping(to: pxRect) else { return }
+
+        let overlay = ImageAnalysisOverlayView()
+        overlay.preferredInteractionTypes = .textSelection
+        overlay.frame = sel
+        overlay.autoresizingMask = []
+        addSubview(overlay)
+        ocrOverlay = overlay
+
+        let config = ImageAnalyzer.Configuration([.text])
+
+        ocrAnalyzeTask = Task { [weak self, weak overlay, analyzer = ocrAnalyzer] in
+            do {
+                let analysis = try await analyzer.analyze(
+                    cropped,
+                    orientation: .up,
+                    configuration: config
+                )
+                await MainActor.run {
+                    guard let overlay = overlay else { return }
+                    overlay.analysis = analysis
+                    self?.window?.makeFirstResponder(overlay)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                NSLog("[Screenshot] OCR analyze failed: \(error)")
+            }
+        }
+    }
+
+    private func removeOCROverlay() {
+        ocrAnalyzeTask?.cancel()
+        ocrAnalyzeTask = nil
+        if let overlay = ocrOverlay {
+            if let firstResp = window?.firstResponder as? NSView, firstResp.isDescendant(of: overlay) || firstResp === overlay {
+                window?.makeFirstResponder(self)
+            }
+            overlay.removeFromSuperview()
+        }
+        ocrOverlay = nil
+    }
 }
