@@ -10,6 +10,9 @@ final class HotkeyRegistry {
     enum Owner: Hashable {
         case voiceTrigger
         case clipboardPanel
+        case vaultPanel
+        case settingsWindow
+        case screenshot
         case keyMapping(id: String)
         case hotkeyBinding(id: UUID)
         case persona(id: String)
@@ -32,7 +35,7 @@ final class HotkeyRegistry {
     }
 
     func unregister(owner: Owner) {
-        lock.withLock { entries.removeValue(forKey: owner) }
+        _ = lock.withLock { entries.removeValue(forKey: owner) }
     }
 
     /// All entries that match this config exactly, optionally excluding one owner
