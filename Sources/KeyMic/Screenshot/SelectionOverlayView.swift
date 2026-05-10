@@ -698,6 +698,8 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
                     overlay.analysis = analysis
                     self?.window?.makeFirstResponder(overlay)
                 }
+            } catch is CancellationError {
+                return
             } catch {
                 NSLog("[Screenshot] OCR analyze failed: \(error)")
             }
