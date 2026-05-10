@@ -88,6 +88,10 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        if let frame = frozenFrame {
+            ctx.draw(frame, in: bounds)
+        }
+
         let maskAlpha: CGFloat = isOwner ? 0.25 : 0.45
         NSColor.black.withAlphaComponent(maskAlpha).setFill()
         bounds.fill()
