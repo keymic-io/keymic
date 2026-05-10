@@ -39,6 +39,19 @@ final class SwiftUISettingsWindow: NSPanel {
     }
 }
 
+// MARK: - Default hotkey strings
+
+/// Single source of truth for hotkey defaults. Values match the fallbacks
+/// used in `KeyMonitor`, `AppDelegate`, and the `@AppStorage` initializers
+/// below — keep them in sync.
+enum HotkeyDefaults {
+    static let settings      = "cmd+shift+,"
+    static let voiceTrigger  = "fn"
+    static let clipboard     = "alt+v"
+    static let vault         = "alt+b"
+    static let screenshot    = "ctrl+shift+a"
+}
+
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
@@ -181,12 +194,13 @@ private struct GeneralSettingsView: View {
 
             Section {
                 LabeledContent("Open Settings:") {
-                    HotkeyRecorderField(
+                    HotkeyRecorderWithClear(
                         encoded: $settingsHotkey,
+                        defaultEncoded: HotkeyDefaults.settings,
                         mode: .combo,
-                        validator: settingsValidator
+                        validator: settingsValidator,
+                        recorderWidth: 200
                     )
-                    .frame(width: 200, height: 24)
                 }
             } header: {
                 Text("Hotkey")
@@ -316,12 +330,13 @@ private struct VoiceSettingsView: View {
 
             Section {
                 LabeledContent("Trigger Key:") {
-                    HotkeyRecorderField(
+                    HotkeyRecorderWithClear(
                         encoded: $triggerKey,
+                        defaultEncoded: HotkeyDefaults.voiceTrigger,
                         mode: .pureModifier,
-                        validator: HotkeyRecorder.voiceValidator
+                        validator: HotkeyRecorder.voiceValidator,
+                        recorderWidth: 220
                     )
-                    .frame(width: 220, height: 24)
                 }
             } footer: {
                 Text("Hold the trigger key to dictate.")
@@ -488,20 +503,22 @@ private struct ClipboardSettingsView: View {
 
             Section {
                 LabeledContent("Open panel:") {
-                    HotkeyRecorderField(
+                    HotkeyRecorderWithClear(
                         encoded: $hotkey,
+                        defaultEncoded: HotkeyDefaults.clipboard,
                         mode: .combo,
-                        validator: clipboardHotkeyValidator
+                        validator: clipboardHotkeyValidator,
+                        recorderWidth: 160
                     )
-                    .frame(width: 160, height: 24)
                 }
                 LabeledContent("Open Vault:") {
-                    HotkeyRecorderField(
+                    HotkeyRecorderWithClear(
                         encoded: $vaultHotkey,
+                        defaultEncoded: HotkeyDefaults.vault,
                         mode: .combo,
-                        validator: vaultHotkeyValidator
+                        validator: vaultHotkeyValidator,
+                        recorderWidth: 160
                     )
-                    .frame(width: 160, height: 24)
                 }
             } header: {
                 Text("Hotkeys")
@@ -649,6 +666,107 @@ struct HotkeyRecorderField: NSViewRepresentable {
     }
 }
 
+// MARK: - HotkeyRecorder with clear / restore-default button
+
+/// Recorder bound to a UserDefaults-backed encoded string, with a trailing "×"
+/// button that restores the default (or clears, when no default is provided).
+struct HotkeyRecorderWithClear: View {
+    @Binding var encoded: String
+    let defaultEncoded: String?
+    let mode: HotkeyRecorder.Mode
+    let validator: HotkeyRecorder.Validator
+    let recorderWidth: CGFloat
+
+    private var canReset: Bool {
+        if let defaultEncoded { return encoded != defaultEncoded }
+        return !encoded.isEmpty
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            HotkeyRecorderField(encoded: $encoded, mode: mode, validator: validator)
+                .frame(width: recorderWidth, height: 24)
+
+            ClearHotkeyButton(
+                hasDefault: defaultEncoded != nil,
+                isEnabled: canReset,
+                action: { encoded = defaultEncoded ?? "" }
+            )
+        }
+    }
+}
+
+/// Recorder bound to a `HotkeyConfig?`, with a trailing "×" button that
+/// restores the default (or clears the value, when no default is provided).
+struct HotkeyRecorderConfigWithClear: View {
+    @Binding var config: HotkeyConfig?
+    let defaultConfig: HotkeyConfig?
+    let mode: HotkeyRecorder.Mode
+    let validator: HotkeyRecorder.Validator
+    let displayName: HotkeyRecorderField.DisplayName?
+    let recorderWidth: CGFloat
+
+    init(
+        config: Binding<HotkeyConfig?>,
+        defaultConfig: HotkeyConfig? = nil,
+        mode: HotkeyRecorder.Mode,
+        validator: @escaping HotkeyRecorder.Validator,
+        displayName: HotkeyRecorderField.DisplayName? = nil,
+        recorderWidth: CGFloat
+    ) {
+        self._config = config
+        self.defaultConfig = defaultConfig
+        self.mode = mode
+        self.validator = validator
+        self.displayName = displayName
+        self.recorderWidth = recorderWidth
+    }
+
+    private var canReset: Bool {
+        if let defaultConfig { return config != defaultConfig }
+        return config != nil
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            HotkeyRecorderField(
+                config: $config,
+                mode: mode,
+                validator: validator,
+                displayName: displayName
+            )
+            .frame(width: recorderWidth, height: 24)
+
+            ClearHotkeyButton(
+                hasDefault: defaultConfig != nil,
+                isEnabled: canReset,
+                action: { config = defaultConfig }
+            )
+        }
+    }
+}
+
+/// Compact "×" button shared by both recorder wrappers. Keeps layout stable
+/// by reserving space via `.opacity` rather than removing the view.
+private struct ClearHotkeyButton: View {
+    let hasDefault: Bool
+    let isEnabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark.circle.fill")
+                .imageScale(.medium)
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.borderless)
+        .opacity(isEnabled ? 1 : 0)
+        .disabled(!isEnabled)
+        .accessibilityLabel(hasDefault ? "Restore default hotkey" : "Clear hotkey")
+        .help(hasDefault ? "Restore default" : "Clear")
+    }
+}
+
 // MARK: - Key Mapping
 
 private struct KeyMappingSettingsSection: View {
@@ -716,25 +834,27 @@ private struct KeyMappingRow: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            HotkeyRecorderField(
+            HotkeyRecorderConfigWithClear(
                 config: keyCodeBinding(for: \.fromKeyCode),
                 mode: .singleKey,
                 validator: validateFrom,
-                displayName: { KeyMapping.displayName(for: $0.keyCode) }
+                displayName: { KeyMapping.displayName(for: $0.keyCode) },
+                recorderWidth: 130
             )
-            .frame(width: 150, height: 24)
+            .frame(width: 150)
 
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
                 .frame(width: 24)
 
-            HotkeyRecorderField(
+            HotkeyRecorderConfigWithClear(
                 config: keyCodeBinding(for: \.toKeyCode),
                 mode: .singleKey,
                 validator: validateTo,
-                displayName: { KeyMapping.displayName(for: $0.keyCode) }
+                displayName: { KeyMapping.displayName(for: $0.keyCode) },
+                recorderWidth: 130
             )
-            .frame(width: 150, height: 24)
+            .frame(width: 150)
 
             Spacer(minLength: 8)
 
@@ -965,12 +1085,12 @@ private struct BindingEditorSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     LabeledRow("Hotkey:") {
-                        HotkeyRecorderField(
+                        HotkeyRecorderConfigWithClear(
                             config: $trigger,
                             mode: .combo,
-                            validator: validator
+                            validator: validator,
+                            recorderWidth: 220
                         )
-                        .frame(width: 220, height: 24)
                     }
 
                     LabeledRow(
