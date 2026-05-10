@@ -302,15 +302,22 @@ struct PersonaHotkeyField: View {
     let personaId: String
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 4) {
             PersonaHotkeyRecorder(hotkeyRaw: $hotkeyRaw, personaId: personaId)
                 .frame(height: 24)
 
-            if hotkeyRaw != nil {
-                Button("Clear") { hotkeyRaw = nil }
-                    .buttonStyle(.borderless)
+            Button {
+                hotkeyRaw = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .imageScale(.medium)
                     .foregroundStyle(.secondary)
             }
+            .buttonStyle(.borderless)
+            .opacity(hotkeyRaw != nil ? 1 : 0)
+            .disabled(hotkeyRaw == nil)
+            .accessibilityLabel("Clear hotkey")
+            .help("Clear")
         }
     }
 }
