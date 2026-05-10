@@ -125,15 +125,37 @@ struct SettingsRootView: View {
 
 private struct ScreenshotSettingsView: View {
     @AppStorage("screenshotEnabled") private var screenshotEnabled: Bool = true
+    @AppStorage("screenshotHotkey") private var screenshotHotkey: String = "cmd+shift+a"
+
+    private static let defaultHotkey = "cmd+shift+a"
+
+    private var hotkeyDisplayString: String {
+        HotkeyConfig.parse(screenshotHotkey)?.displayString() ?? "⌘⇧A"
+    }
 
     var body: some View {
         Form {
             Section {
-                Toggle("Enable screenshot hotkey ⌃⇧A", isOn: $screenshotEnabled)
+                Toggle("Enable screenshot", isOn: $screenshotEnabled)
+                LabeledContent("Hotkey:") {
+                    HStack(spacing: 8) {
+                        HotkeyRecorderField(
+                            encoded: $screenshotHotkey,
+                            mode: .combo,
+                            validator: { _ in nil }
+                        )
+                        .frame(width: 160, height: 24)
+                        Button("Reset") {
+                            screenshotHotkey = Self.defaultHotkey
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                .disabled(!screenshotEnabled)
             } header: {
                 Text("Screenshot")
             } footer: {
-                Text("Press ⌃⇧A to capture a region of the screen and open it in the annotation editor.")
+                Text("Press \(hotkeyDisplayString) to capture a region of the screen and open it in the annotation editor.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -583,7 +605,7 @@ private struct ClipboardSettingsView: View {
 
 // MARK: - HotkeyRecorder bridge
 
-struct HotkeyRecorderField: NSViewRepresentable {
+struct HotkeyRecorderField: View {
     typealias DisplayName = (HotkeyConfig) -> String
 
     @Binding var config: HotkeyConfig?
@@ -620,6 +642,34 @@ struct HotkeyRecorderField: NSViewRepresentable {
         )
     }
 
+    var body: some View {
+        HStack(spacing: 4) {
+            HotkeyRecorderButton(
+                config: $config,
+                mode: mode,
+                validator: validator,
+                displayName: displayName
+            )
+            if config != nil {
+                Button {
+                    config = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Clear shortcut")
+            }
+        }
+    }
+}
+
+private struct HotkeyRecorderButton: NSViewRepresentable {
+    @Binding var config: HotkeyConfig?
+    let mode: HotkeyRecorder.Mode
+    let validator: HotkeyRecorder.Validator
+    let displayName: HotkeyRecorderField.DisplayName?
+
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeNSView(context: Context) -> HotkeyRecorder {
@@ -654,10 +704,10 @@ struct HotkeyRecorderField: NSViewRepresentable {
     }
 
     final class Coordinator {
-        var parent: HotkeyRecorderField
+        var parent: HotkeyRecorderButton
         weak var recorder: HotkeyRecorder?
         var lastConfig: HotkeyConfig?
-        init(parent: HotkeyRecorderField) { self.parent = parent }
+        init(parent: HotkeyRecorderButton) { self.parent = parent }
 
         func refreshTitle() {
             guard let recorder, let name = parent.displayName, let cfg = parent.config else { return }

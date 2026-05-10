@@ -36,6 +36,11 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     private var currentDraftAnnotation: Annotation?
     private var activeTextField: NSTextField?
+    private var highlightedWindowRect: NSRect?  // view-local rect of detected window in idle phase
+    private var pendingClickWindow: NSRect?     // captured at mouseDown; consumed on mouseUp if user didn't drag
+    private var ocrOverlay: ImageAnalysisOverlayView?
+    private var ocrAnalyzeTask: Task<Void, Never>?
+    private let ocrAnalyzer = ImageAnalyzer()
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
@@ -46,7 +51,13 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
+        state.screenBounds = NSRect(origin: .zero, size: frame.size)
         rebuildTrackingArea()
+    }
+
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        state.screenBounds = NSRect(origin: .zero, size: newSize)
     }
     required init?(coder: NSCoder) { fatalError() }
 
@@ -84,6 +95,9 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
             drawSelectedAnnotationChrome(ctx: ctx)
             drawDimensionsHUD()
         } else if isOwner && state.phase == .idle {
+            if let winRect = highlightedWindowRect {
+                drawWindowHighlight(winRect)
+            }
             drawHint()
         }
     }
@@ -118,7 +132,8 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
             case .arrow: drawArrowAnnotation(ann, ctx: ctx)
             case .text: drawTextAnnotation(ann)
             case .highlight: drawHighlightAnnotation(ann, ctx: ctx)
-            case .select: continue
+            case .pen: drawPenAnnotation(ann, ctx: ctx)
+            case .select, .ocr: continue
             }
         }
         if let draft = currentDraftAnnotation {
@@ -128,6 +143,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
             case .arrow: drawArrowAnnotation(draft, ctx: ctx)
             case .highlight: drawHighlightAnnotation(draft, ctx: ctx)
             case .mosaic, .blur: drawEffectAnnotation(draft, ctx: ctx, selection: sel)
+            case .pen: drawPenAnnotation(draft, ctx: ctx)
             default: break
             }
         }
@@ -200,14 +216,47 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         ctx.fillPath()
     }
 
+    private func drawPenAnnotation(_ ann: Annotation, ctx: CGContext) {
+        guard ann.points.count >= 2 else { return }
+        ctx.saveGState(); defer { ctx.restoreGState() }
+        ctx.setStrokeColor(ann.color.cgColor)
+        ctx.setLineWidth(ann.lineWidth)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        AnnotationRenderer.strokeSmooth(ann.points, in: ctx)
+    }
+
+    private func drawWindowHighlight(_ rect: NSRect) {
+        let clipped = rect.intersection(bounds)
+        guard !clipped.isNull, clipped.width > 0, clipped.height > 0 else { return }
+        let border = NSBezierPath(roundedRect: clipped.insetBy(dx: 1, dy: 1), xRadius: 4, yRadius: 4)
+        border.lineWidth = 2.5
+        NSColor.systemGreen.setStroke()
+        border.stroke()
+    }
+
     private func drawTextAnnotation(_ ann: Annotation) {
         guard !ann.text.isEmpty else { return }
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: ann.fontSize, weight: .semibold),
+        var attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: ann.color,
             .backgroundColor: NSColor.white.withAlphaComponent(0.75),
         ]
+        if let font = SelectionOverlayView.safeSystemFont(ofSize: ann.fontSize, weight: .semibold) {
+            attrs[.font] = font
+        }
         NSAttributedString(string: ann.text, attributes: attrs).draw(at: ann.startPoint)
+    }
+
+    private static func safeSystemFont(ofSize size: CGFloat, weight: NSFont.Weight) -> NSFont? {
+        if let f = NSFont.systemFont(ofSize: size, weight: weight) as NSFont? { return f }
+        if let f = NSFont.systemFont(ofSize: size) as NSFont? { return f }
+        return NSFont(name: "Helvetica", size: size)
+    }
+
+    private static func safeMonospacedFont(ofSize size: CGFloat, weight: NSFont.Weight) -> NSFont? {
+        if let f = NSFont.monospacedSystemFont(ofSize: size, weight: weight) as NSFont? { return f }
+        if let f = NSFont.userFixedPitchFont(ofSize: size) { return f }
+        return safeSystemFont(ofSize: size, weight: weight)
     }
 
     private func drawHighlightAnnotation(_ ann: Annotation, ctx: CGContext) {
@@ -255,10 +304,12 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         let sel = state.selection
         guard sel.width >= 1, sel.height >= 1 else { return }
         let str = String(format: "%d × %d", Int(sel.width), Int(sel.height))
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .medium),
+        var attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.white,
         ]
+        if let font = SelectionOverlayView.safeMonospacedFont(ofSize: 11, weight: .medium) {
+            attrs[.font] = font
+        }
         let textSize = (str as NSString).size(withAttributes: attrs)
         let pad: CGFloat = 4
         var hudRect = NSRect(
@@ -279,11 +330,13 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
         shadow.shadowBlurRadius = 4
         shadow.shadowOffset = .zero
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13),
+        var attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: NSColor.white,
             .shadow: shadow,
         ]
+        if let font = SelectionOverlayView.safeSystemFont(ofSize: 13, weight: .regular) {
+            attrs[.font] = font
+        }
         let size = (hint as NSString).size(withAttributes: attrs)
         (hint as NSString).draw(
             at: NSPoint(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2),
@@ -299,6 +352,9 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         cancelTextEditing()
         switch state.phase {
         case .idle:
+            // Remember any detected window so a clean click (no drag) can commit it on mouseUp.
+            pendingClickWindow = highlightedWindowRect
+            highlightedWindowRect = nil
             state.beginDrafting(at: p)
             needsDisplay = true
         case .drafted:
@@ -380,7 +436,12 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         default:
             if let draft = currentDraftAnnotation {
                 let sel = state.selection
-                draft.endPoint = NSPoint(x: p.x - sel.minX, y: p.y - sel.minY)
+                let local = NSPoint(x: p.x - sel.minX, y: p.y - sel.minY)
+                if draft.kind == .pen {
+                    draft.points.append(local)
+                } else {
+                    draft.endPoint = local
+                }
                 needsDisplay = true
             }
         }
@@ -390,6 +451,16 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         guard isOwner else { return }
         switch state.phase {
         case .drafting:
+            // Clean click on a detected window (no real drag) → use the window rect.
+            if let winRect = pendingClickWindow,
+               state.selection.width < 5, state.selection.height < 5 {
+                pendingClickWindow = nil
+                state.commitWindowSelection(winRect.intersection(bounds))
+                delegate?.overlayDidEnterDrafted(self)
+                needsDisplay = true
+                return
+            }
+            pendingClickWindow = nil
             if state.finishDrafting() {
                 delegate?.overlayDidEnterDrafted(self)
             } else {
@@ -418,7 +489,32 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseMoved(with event: NSEvent) {
         guard isOwner else { return }
+        if state.phase == .idle {
+            let viewPt = convert(event.locationInWindow, from: nil)
+            let panelOrigin = window?.frame.origin ?? .zero
+            let screenPt = NSPoint(x: panelOrigin.x + viewPt.x, y: panelOrigin.y + viewPt.y)
+            let found = WindowFinder.windowRect(atScreenPoint: screenPt)
+            let viewRect = found.map {
+                NSRect(x: $0.minX - panelOrigin.x, y: $0.minY - panelOrigin.y,
+                       width: $0.width, height: $0.height)
+            }
+            if viewRect != highlightedWindowRect {
+                highlightedWindowRect = viewRect
+                needsDisplay = true
+            }
+        } else if highlightedWindowRect != nil {
+            highlightedWindowRect = nil
+            needsDisplay = true
+        }
         updateCursor()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard isOwner else { return }
+        if highlightedWindowRect != nil {
+            highlightedWindowRect = nil
+            needsDisplay = true
+        }
     }
 
     // MARK: - Keyboard

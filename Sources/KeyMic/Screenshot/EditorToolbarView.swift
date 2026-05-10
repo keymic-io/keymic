@@ -5,7 +5,7 @@ import AppKit
 struct EditorToolbarView: View {
     @ObservedObject var state: EditorState
 
-    private let drawingTools: [AnnotationTool] = [.rect, .ellipse, .arrow, .text, .highlight, .mosaic, .blur]
+    private let drawingTools: [AnnotationTool] = [.pen, .rect, .ellipse, .arrow, .text, .highlight, .mosaic, .blur]
     private let swatches: [Color] = [.red, .orange, .yellow, .green, .blue, .black, .white]
 
     var body: some View {
@@ -68,7 +68,7 @@ struct EditorToolbarView: View {
                     Button(action: { state.selectedColor = c }) {
                         Circle()
                             .fill(c)
-                            .frame(width: 18, height: 18)
+                            .frame(width: 24, height: 24)
                             .overlay(Circle().stroke(state.selectedColor == c ? Color.accentColor : .gray.opacity(0.3), lineWidth: state.selectedColor == c ? 2 : 1))
                     }
                     .buttonStyle(.plain)

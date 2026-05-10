@@ -111,7 +111,7 @@ final class KeyMonitor {
         vaultHotkey = HotkeyConfig.parse(vault)
         let settings = UserDefaults.standard.string(forKey: "settingsHotkey") ?? "cmd+shift+,"
         settingsHotkey = HotkeyConfig.parse(settings)
-        let screenshot = UserDefaults.standard.string(forKey: "screenshotHotkey") ?? "ctrl+shift+a"
+        let screenshot = UserDefaults.standard.string(forKey: "screenshotHotkey") ?? "cmd+shift+a"
         screenshotHotkey = HotkeyConfig.parse(screenshot)
         let voice = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
         voiceTriggerHotkey = HotkeyConfig.parse(voice)

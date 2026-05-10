@@ -52,6 +52,7 @@ enum AnnotationRenderer {
                 case .arrow: drawArrowAnnotation(ann, in: ctx)
                 case .text: drawTextAnnotation(ann, scale: scale)
                 case .highlight: drawHighlightAnnotation(ann, in: ctx)
+                case .pen: drawPenAnnotation(ann, in: ctx)
                 }
             }
             ctx.restoreGState()
@@ -134,5 +135,33 @@ enum AnnotationRenderer {
         defer { ctx.restoreGState() }
         ctx.setFillColor(ann.color.withAlphaComponent(0.35).cgColor)
         ctx.fill(ann.rect)
+    }
+
+    private static func drawPenAnnotation(_ ann: Annotation, in ctx: CGContext) {
+        guard ann.points.count >= 2 else { return }
+        ctx.saveGState(); defer { ctx.restoreGState() }
+        ctx.setStrokeColor(ann.color.cgColor)
+        ctx.setLineWidth(ann.lineWidth)
+        ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+        strokeSmooth(ann.points, in: ctx)
+    }
+
+    /// Midpoint quadratic Bézier smoothing. Also called from SelectionOverlayView for live preview.
+    static func strokeSmooth(_ pts: [CGPoint], in ctx: CGContext) {
+        guard pts.count >= 2 else { return }
+        ctx.beginPath()
+        ctx.move(to: pts[0])
+        if pts.count == 2 {
+            ctx.addLine(to: pts[1])
+        } else {
+            for i in 1..<pts.count - 1 {
+                let mid = CGPoint(x: (pts[i].x + pts[i+1].x) / 2,
+                                  y: (pts[i].y + pts[i+1].y) / 2)
+                ctx.addQuadCurve(to: mid, control: pts[i])
+            }
+            ctx.addLine(to: pts[pts.count - 1])
+        }
+        ctx.strokePath()
     }
 }

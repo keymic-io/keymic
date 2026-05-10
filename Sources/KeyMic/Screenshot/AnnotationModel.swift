@@ -2,6 +2,7 @@ import Cocoa
 
 enum AnnotationTool: String, CaseIterable {
     case select = "Select"
+    case pen = "Pen"
     case rect = "Rectangle"
     case ellipse = "Ellipse"
     case arrow = "Arrow"
@@ -15,6 +16,7 @@ enum AnnotationTool: String, CaseIterable {
     var iconName: String {
         switch self {
         case .select: return "cursorarrow"
+        case .pen: return "scribble"
         case .arrow: return "arrow.up.right"
         case .rect: return "rectangle"
         case .ellipse: return "circle"
@@ -38,12 +40,19 @@ class Annotation: NSCopying {
     var text: String
     var fontSize: CGFloat
     var hasDropShadow: Bool
+    var points: [CGPoint] = []  // freehand pen path points (selection-local coords)
 
     var cachedEffectImage: CGImage?
     var cachedEffectRect: CGRect?
 
     var rect: CGRect {
-        CGRect(
+        if kind == .pen, !points.isEmpty {
+            let xs = points.map(\.x), ys = points.map(\.y)
+            let minX = xs.min()!, maxX = xs.max()!
+            let minY = ys.min()!, maxY = ys.max()!
+            return CGRect(x: minX, y: minY, width: max(1, maxX - minX), height: max(1, maxY - minY))
+        }
+        return CGRect(
             x: min(startPoint.x, endPoint.x),
             y: min(startPoint.y, endPoint.y),
             width: abs(endPoint.x - startPoint.x),
@@ -51,7 +60,10 @@ class Annotation: NSCopying {
         )
     }
 
-    var hasMinimumSize: Bool { rect.width > 3 || rect.height > 3 }
+    var hasMinimumSize: Bool {
+        if kind == .pen { return points.count >= 2 }
+        return rect.width > 3 || rect.height > 3
+    }
 
     init(
         kind: AnnotationTool,
@@ -85,6 +97,7 @@ class Annotation: NSCopying {
             fontSize: fontSize,
             hasDropShadow: hasDropShadow
         )
+        copy.points = points
         return copy
     }
 
