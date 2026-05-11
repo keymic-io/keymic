@@ -2,6 +2,9 @@ import Cocoa
 import IOKit
 import IOKit.hid
 import IOKit.hidsystem
+import os.log
+
+private let log = Logger(subsystem: "io.keymic.app", category: "KeyMonitor")
 
 final class KeyMonitor {
     var onTriggerDown: (() -> Void)?
@@ -22,15 +25,13 @@ final class KeyMonitor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var triggerActive = false
+    private var state = InputState()
     private var clipboardHotkey: HotkeyConfig?
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
-    private var heldModifiers = Set<CGKeyCode>()
-    private var remappedKeysDown = Set<CGKeyCode>()
     private var repeatTimers: [CGKeyCode: DispatchSourceTimer] = [:]
     private let keyMappingManager: KeyMappingManager
 
@@ -90,14 +91,22 @@ final class KeyMonitor {
         NotificationCenter.default.removeObserver(self, name: UserDefaults.didChangeNotification, object: nil)
         runLoopSource = nil
         eventTap = nil
-        cancelAllRepeatTimers()
-        triggerActive = false
-        heldModifiers.removeAll()
+        resetAllInputState(reason: .stop)
     }
 
-    func resetTriggerState() {
-        triggerActive = false
-        heldModifiers.removeAll()
+    /// Central reset for every piece of mutable input state owned by `KeyMonitor`.
+    /// MUST be called whenever the event tap may have lost events (timeout, user
+    /// input, Secure Input enter, settings reload, stop). Idempotent.
+    func resetAllInputState(reason: InputResetReason) {
+        let priorTimerCount = repeatTimers.count
+        let prior = state.resetTransient()
+        cancelAllRepeatTimers()
+
+        if prior.triggerActive {
+            DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
+        }
+
+        log.info("resetAllInputState reason=\(reason.rawValue, privacy: .public) trigger=\(prior.triggerActive, privacy: .public) heldMods=\(prior.heldModifiers.count, privacy: .public) remappedDown=\(prior.remappedKeysDown.count, privacy: .public) timers=\(priorTimerCount, privacy: .public)")
     }
 
     @objc private func userDefaultsChanged() {
@@ -169,7 +178,7 @@ final class KeyMonitor {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) == 1
 
-            if triggerActive && !isAutoRepeat {
+            if state.triggerActive && !isAutoRepeat {
                 DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
             }
 
@@ -247,12 +256,12 @@ final class KeyMonitor {
         }
 
         let nowActive = computeTriggerActive(type: type, event: event)
-        if nowActive && !triggerActive {
-            triggerActive = true
+        if nowActive && !state.triggerActive {
+            state.triggerActive = true
             DispatchQueue.main.async { [weak self] in self?.onTriggerDown?() }
             return nil
-        } else if !nowActive && triggerActive {
-            triggerActive = false
+        } else if !nowActive && state.triggerActive {
+            state.triggerActive = false
             DispatchQueue.main.async { [weak self] in self?.onTriggerUp?() }
             return nil
         }
@@ -266,22 +275,22 @@ final class KeyMonitor {
             if HotkeyConfig.modifierKeyCodes.contains(keyCode) {
                 if keyCode == 0x3F {
                     if event.flags.contains(.maskSecondaryFn) {
-                        heldModifiers.insert(keyCode)
+                        state.heldModifiers.insert(keyCode)
                     } else {
-                        heldModifiers.remove(keyCode)
+                        state.heldModifiers.remove(keyCode)
                     }
                 } else {
-                    if heldModifiers.contains(keyCode) {
-                        heldModifiers.remove(keyCode)
+                    if state.heldModifiers.contains(keyCode) {
+                        state.heldModifiers.remove(keyCode)
                     } else {
-                        heldModifiers.insert(keyCode)
+                        state.heldModifiers.insert(keyCode)
                     }
                 }
             }
         }
 
         guard let voice = voiceTriggerHotkey, voice.isPureModifier else { return false }
-        return heldModifiers.contains(voice.keyCode)
+        return state.heldModifiers.contains(voice.keyCode)
     }
 
     private func remapIfNeeded(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>?? {
@@ -336,12 +345,12 @@ final class KeyMonitor {
         case .keyUp:
             return false
         case .flagsChanged:
-            let wasDown = remappedKeysDown.contains(keyCode)
+            let wasDown = state.remappedKeysDown.contains(keyCode)
             let isDown = !wasDown
             if isDown {
-                remappedKeysDown.insert(keyCode)
+                state.remappedKeysDown.insert(keyCode)
             } else {
-                remappedKeysDown.remove(keyCode)
+                state.remappedKeysDown.remove(keyCode)
             }
             return isDown
         default:

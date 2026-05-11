@@ -569,7 +569,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildPersonasMenu()
 
         // Voice trigger key may have changed — clear any stuck trigger state.
-        keyMonitor.resetTriggerState()
+        keyMonitor.resetAllInputState(reason: .settingsReload)
     }
 
     private func applyVoiceShortcut(to item: NSMenuItem) {
