@@ -205,15 +205,20 @@ final class KeyMonitor {
             return Unmanaged.passRetained(event)
         }
 
-        // Persona push-to-talk release: when the primary key of an active persona
-        // hotkey (e.g. 'z' in alt+z) is released, stop the voice session. Modifier
-        // state at this point doesn't have to match the originally-recorded combo —
-        // tracking by keyCode is enough.
-        if type == .keyUp, let downKey = state.personaHotkeyKeyDown {
+        // Persona push-to-talk: while a persona hotkey is held, every event for
+        // its primary key (auto-repeat keyDowns and the final keyUp) must be
+        // swallowed. Passing auto-repeats through causes a system beep on every
+        // repeat tick because the focused app has no binding for the combo and
+        // treats the event as unhandled. Modifier state at release time doesn't
+        // have to match the original combo — tracking by primary keyCode is enough.
+        if let downKey = state.personaHotkeyKeyDown,
+           type == .keyDown || type == .keyUp {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             if keyCode == downKey {
-                state.personaHotkeyKeyDown = nil
-                DispatchQueue.main.async { [weak self] in self?.onTriggerUp?() }
+                if type == .keyUp {
+                    state.personaHotkeyKeyDown = nil
+                    DispatchQueue.main.async { [weak self] in self?.onTriggerUp?() }
+                }
                 return nil
             }
         }
