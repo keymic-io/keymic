@@ -106,11 +106,14 @@ final class KeyMonitor {
         let prior = state.resetTransient()
         cancelAllRepeatTimers()
 
-        if prior.triggerActive {
+        // Interrupt any active voice session — fn-held trigger OR persona-hotkey
+        // push-to-talk. AppDelegate's cancelRecording is idempotent so a single
+        // notification covers both sources.
+        if prior.triggerActive || prior.personaHotkeyKeyDown != nil {
             DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
         }
 
-        log.info("resetAllInputState reason=\(reason.rawValue, privacy: .public) trigger=\(prior.triggerActive, privacy: .public) heldMods=\(prior.heldModifiers.count, privacy: .public) remappedDown=\(prior.remappedKeysDown.count, privacy: .public) timers=\(priorTimerCount, privacy: .public)")
+        log.info("resetAllInputState reason=\(reason.rawValue, privacy: .public) trigger=\(prior.triggerActive, privacy: .public) heldMods=\(prior.heldModifiers.count, privacy: .public) remappedDown=\(prior.remappedKeysDown.count, privacy: .public) timers=\(priorTimerCount, privacy: .public) personaHotkey=\(prior.personaHotkeyKeyDown != nil, privacy: .public)")
     }
 
     func onSecureInputEnter() {
@@ -202,6 +205,19 @@ final class KeyMonitor {
             return Unmanaged.passRetained(event)
         }
 
+        // Persona push-to-talk release: when the primary key of an active persona
+        // hotkey (e.g. 'z' in alt+z) is released, stop the voice session. Modifier
+        // state at this point doesn't have to match the originally-recorded combo —
+        // tracking by keyCode is enough.
+        if type == .keyUp, let downKey = state.personaHotkeyKeyDown {
+            let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            if keyCode == downKey {
+                state.personaHotkeyKeyDown = nil
+                DispatchQueue.main.async { [weak self] in self?.onTriggerUp?() }
+                return nil
+            }
+        }
+
         if type == .keyDown {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) == 1
@@ -266,24 +282,39 @@ final class KeyMonitor {
                 return nil
             }
 
-            // Persona hotkeys: switch active persona on keyDown.
-            // Swallow the event to prevent dead-key side effects (e.g. ⌥E → ´).
-            if !isAutoRepeat {
+            // Persona hotkeys: push-to-talk per persona. Activate the persona and
+            // start a voice session; the matching keyUp ends it. Swallow the event
+            // to prevent dead-key side effects (e.g. ⌥E → ´). Gate on no other
+            // voice session being active so fn-trigger and persona-trigger don't
+            // overlap.
+            if !isAutoRepeat,
+               state.personaHotkeyKeyDown == nil,
+               !state.triggerActive {
                 for persona in PersonaStore.shared.personas {
                     guard let raw = persona.hotkey,
                           let cfg = HotkeyConfig.parse(raw),
                           !cfg.isPureModifier,
                           cfg.matches(keyCode: keyCode, flags: event.flags) else { continue }
-                    DispatchQueue.main.async {
-                        PersonaStore.shared.setActive(persona.id)
-                        NSSound(named: .init("Pop"))?.play()
+                    let id = persona.id
+                    state.personaHotkeyKeyDown = keyCode
+                    DispatchQueue.main.async { [weak self] in
+                        PersonaStore.shared.setActive(id)
+                        self?.onTriggerDown?()
                     }
                     return nil
                 }
             }
         }
 
+        // Always call computeTriggerActive so heldModifiers stays in sync, but
+        // suppress fn voice trigger callbacks while a persona push-to-talk owns
+        // the recording session. Without this guard, pressing fn during a persona
+        // hotkey would start a second voice session AppDelegate doesn't gate, and
+        // its release would prematurely stop the persona recording.
         let nowActive = computeTriggerActive(type: type, event: event)
+        if state.personaHotkeyKeyDown != nil {
+            return Unmanaged.passRetained(event)
+        }
         if nowActive && !state.triggerActive {
             state.triggerActive = true
             DispatchQueue.main.async { [weak self] in self?.onTriggerDown?() }

@@ -8,6 +8,10 @@ struct InputState {
     var triggerActive: Bool = false
     var heldModifiers: Set<CGKeyCode> = []
     var remappedKeysDown: Set<CGKeyCode> = []
+    /// Non-nil while a persona hotkey is held down as a push-to-talk trigger.
+    /// Stores the primary keyCode (e.g. 'z' for alt+z) so its matching keyUp
+    /// can release the synthetic voice trigger.
+    var personaHotkeyKeyDown: CGKeyCode? = nil
 
     /// Idempotent. Returns the previous state for logging.
     @discardableResult
@@ -16,6 +20,7 @@ struct InputState {
         triggerActive = false
         heldModifiers.removeAll()
         remappedKeysDown.removeAll()
+        personaHotkeyKeyDown = nil
         return prior
     }
 }
