@@ -26,6 +26,10 @@ final class KeyMonitor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var state = InputState()
+    /// When `true`, app-level hotkey dispatch (clipboard/vault/settings/screenshot/persona/action/voice trigger)
+    /// is bypassed. Set on Secure Input enter, cleared on Secure Input exit.
+    /// Physical events still pass through unchanged.
+    private var secureInputSuspended = false
     private var clipboardHotkey: HotkeyConfig?
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
@@ -109,6 +113,17 @@ final class KeyMonitor {
         log.info("resetAllInputState reason=\(reason.rawValue, privacy: .public) trigger=\(prior.triggerActive, privacy: .public) heldMods=\(prior.heldModifiers.count, privacy: .public) remappedDown=\(prior.remappedKeysDown.count, privacy: .public) timers=\(priorTimerCount, privacy: .public)")
     }
 
+    func onSecureInputEnter() {
+        log.info("Secure Input active — suspending hotkey dispatch and resetting state")
+        secureInputSuspended = true
+        resetAllInputState(reason: .secureInputEnter)
+    }
+
+    func onSecureInputExit() {
+        log.info("Secure Input inactive — resuming hotkey dispatch")
+        secureInputSuspended = false
+    }
+
     @objc private func userDefaultsChanged() {
         reloadHotkeys()
     }
@@ -171,6 +186,12 @@ final class KeyMonitor {
 
         if let remapped = remapIfNeeded(type: type, event: event) {
             return remapped
+        }
+
+        // While Secure Input is active, key-up events can be missed. Pass events through
+        // unchanged and skip hotkey dispatch entirely until Secure Input exits.
+        if secureInputSuspended {
+            return Unmanaged.passRetained(event)
         }
 
         // Bypass app-level hotkey dispatch while a HotkeyRecorder is capturing input.

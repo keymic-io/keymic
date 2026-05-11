@@ -7,6 +7,7 @@ private let logger = Logger(subsystem: "io.keymic.app", category: "AppDelegate")
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
+    private let secureInputMonitor = SecureInputMonitor()
     private let speechEngine: SpeechEngine = {
         let saved = UserDefaults.standard.string(forKey: "selectedLocaleCode")
         let code: String
@@ -134,6 +135,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
+        secureInputMonitor.onEnter = { [weak self] in self?.keyMonitor.onSecureInputEnter() }
+        secureInputMonitor.onExit = { [weak self] in self?.keyMonitor.onSecureInputExit() }
+        secureInputMonitor.start()
         clipboardController.start()
         _ = UpdaterController.shared
 
@@ -664,6 +668,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func quit() {
+        secureInputMonitor.stop()
         keyMonitor.stop()
         NSApp.terminate(nil)
     }
