@@ -156,8 +156,15 @@ final class KeyMonitor {
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            let reason: InputResetReason = (type == .tapDisabledByTimeout)
+                ? .tapDisabledByTimeout
+                : .tapDisabledByUserInput
+            log.error("event tap disabled reason=\(reason.rawValue, privacy: .public) — resetting state and re-enabling")
+            resetAllInputState(reason: reason)
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
+                let stillEnabled = CGEvent.tapIsEnabled(tap: tap)
+                log.info("event tap re-enable result enabled=\(stillEnabled, privacy: .public)")
             }
             return Unmanaged.passRetained(event)
         }
