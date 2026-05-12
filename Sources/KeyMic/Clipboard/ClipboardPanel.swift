@@ -9,6 +9,7 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
 
     init(
         modelContainer: ModelContainer,
+        clipboardCacheURL: URL,
         onPaste: @escaping (ClipboardItem) -> Void,
         onDelete: @escaping (UUID) -> Void,
         onTogglePin: @escaping (UUID) -> Void,
@@ -18,6 +19,7 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
     ) {
         let view = ClipboardHistoryView(
             focus: focus,
+            clipboardCacheURL: clipboardCacheURL,
             onPaste: onPaste,
             onDelete: onDelete,
             onTogglePin: onTogglePin,
@@ -80,7 +82,8 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         if position == .followCursor, let caret = ClipboardPanel.caretScreenRect() {
             // Place panel just below the caret, AppKit coords (bottom-left origin). +118 nudges up.
             anchorPoint = NSPoint(x: caret.minX + xOffset, y: caret.minY - size.height - 6 + 118)
-            screen = NSScreen.screens.first(where: { NSMouseInRect(NSPoint(x: caret.midX, y: caret.midY), $0.frame, false) })
+            screen =
+                NSScreen.screens.first(where: { NSMouseInRect(NSPoint(x: caret.midX, y: caret.midY), $0.frame, false) })
                 ?? NSScreen.main
         } else {
             let mouse = NSEvent.mouseLocation
@@ -114,29 +117,34 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         let system = AXUIElementCreateSystemWide()
         var focused: AnyObject?
         guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let raw = focused,
-              CFGetTypeID(raw) == AXUIElementGetTypeID() else { return nil }
+            let raw = focused,
+            CFGetTypeID(raw) == AXUIElementGetTypeID()
+        else { return nil }
         // Safe: guarded by CFGetTypeID. AXUIElement is a CF type which Swift's `as?` does not bridge.
         let element = raw as! AXUIElement
 
         var rangeRef: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &rangeRef) == .success,
-              let rangeValue = rangeRef else { return nil }
+            let rangeValue = rangeRef
+        else { return nil }
 
         var boundsRef: AnyObject?
-        guard AXUIElementCopyParameterizedAttributeValue(
-            element,
-            kAXBoundsForRangeParameterizedAttribute as CFString,
-            rangeValue,
-            &boundsRef
-        ) == .success, let boundsValue = boundsRef,
-              CFGetTypeID(boundsValue) == AXValueGetTypeID() else { return nil }
+        guard
+            AXUIElementCopyParameterizedAttributeValue(
+                element,
+                kAXBoundsForRangeParameterizedAttribute as CFString,
+                rangeValue,
+                &boundsRef
+            ) == .success, let boundsValue = boundsRef,
+            CFGetTypeID(boundsValue) == AXValueGetTypeID()
+        else { return nil }
 
         var rect = CGRect.zero
         // Safe: guarded by CFGetTypeID above.
         guard AXValueGetValue(boundsValue as! AXValue, .cgRect, &rect),
-              rect.width.isFinite, rect.height.isFinite,
-              !(rect.origin.x == 0 && rect.origin.y == 0 && rect.size == .zero) else { return nil }
+            rect.width.isFinite, rect.height.isFinite,
+            !(rect.origin.x == 0 && rect.origin.y == 0 && rect.size == .zero)
+        else { return nil }
 
         // AX returns Quartz screen coords (top-left origin). Convert to AppKit (bottom-left).
         guard let primary = NSScreen.screens.first else { return nil }

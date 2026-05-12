@@ -20,6 +20,7 @@ struct ClipboardHistoryView: View {
     @FocusState private var focusedField: FocusedField?
 
     let focus: ClipboardPanelFocus
+    let clipboardCacheURL: URL
     let onPaste: (ClipboardItem) -> Void
     let onDelete: (UUID) -> Void
     let onTogglePin: (UUID) -> Void
@@ -249,6 +250,11 @@ struct ClipboardHistoryView: View {
             FileRow(
                 item: item, quickKeyLabel: label, isSelected: item.id == selectedID,
                 relativeTime: relativeTime)
+        case .image:
+            ImageRow(
+                item: item, quickKeyLabel: label,
+                cacheURL: clipboardCacheURL,
+                relativeTime: relativeTime)
         default:
             textRow(item, quickKeyLabel: label)
         }
@@ -407,6 +413,75 @@ private struct FileRow: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct ImageRow: View {
+    let item: ClipboardItem
+    let quickKeyLabel: String
+    let cacheURL: URL
+    let relativeTime: (Date) -> String
+
+    @State private var thumbnail: NSImage?
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(quickKeyLabel)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 22, alignment: .leading)
+                .padding(.top, 4)
+
+            thumbView
+                .frame(width: 100, height: 72)
+                .background(Color.white.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.text)
+                    .font(.system(size: 14, weight: .medium))
+                    .lineLimit(1)
+                Text("\(item.imageWidth)×\(item.imageHeight) · \(formattedSize(item.byteSize))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Text(relativeTime(item.createdAt))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+        .task { loadThumbnailIfNeeded() }
+    }
+
+    @ViewBuilder
+    private var thumbView: some View {
+        if let img = thumbnail {
+            Image(nsImage: img).resizable().scaledToFill()
+        } else {
+            ProgressView().controlSize(.small)
+        }
+    }
+
+    private func loadThumbnailIfNeeded() {
+        guard thumbnail == nil, let rel = item.imageRelativePath else { return }
+        let url = cacheURL.appendingPathComponent(rel)
+        if let cached = ThumbnailLoader.shared.thumbnail(
+            fileURL: url,
+            completion: { img in
+                self.thumbnail = img
+            })
+        {
+            thumbnail = cached
+        }
+    }
+
+    private func formattedSize(_ bytes: Int) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 }
 
