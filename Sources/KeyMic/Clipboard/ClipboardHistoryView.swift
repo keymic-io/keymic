@@ -39,7 +39,8 @@ struct ClipboardHistoryView: View {
 
     private func computeFiltered() -> FilteredItems {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pool: [ClipboardItem] = trimmed.isEmpty
+        let pool: [ClipboardItem] =
+            trimmed.isEmpty
             ? items
             : items.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
         let pinned = pool.filter { $0.isPinned }
@@ -114,17 +115,18 @@ struct ClipboardHistoryView: View {
                 selectedID = filtered.all.first?.id
             }
         }
-        .background(KeyEventMonitor(
-            isEnabled: tab == .clipboard,
-            onArrowUp: moveSelection(by: -1),
-            onArrowDown: moveSelection(by: 1),
-            onReturn: triggerPaste,
-            onCommandDelete: triggerDelete,
-            onTogglePin: triggerTogglePin,
-            onEscape: onDismiss,
-            onQuickPaste: triggerQuickPaste,
-            onPinnedQuickPaste: triggerPinnedQuickPaste
-        ))
+        .background(
+            KeyEventMonitor(
+                isEnabled: tab == .clipboard,
+                onArrowUp: moveSelection(by: -1),
+                onArrowDown: moveSelection(by: 1),
+                onReturn: triggerPaste,
+                onCommandDelete: triggerDelete,
+                onTogglePin: triggerTogglePin,
+                onEscape: onDismiss,
+                onQuickPaste: triggerQuickPaste,
+                onPinnedQuickPaste: triggerPinnedQuickPaste
+            ))
     }
 
     private var searchField: some View {
@@ -224,7 +226,10 @@ struct ClipboardHistoryView: View {
             .background(Color.clear)
             .onChange(of: selectedID) { _, new in
                 guard let new else { return }
-                if suppressScrollOnce { suppressScrollOnce = false; return }
+                if suppressScrollOnce {
+                    suppressScrollOnce = false
+                    return
+                }
                 withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) }
             }
         }
@@ -237,7 +242,19 @@ struct ClipboardHistoryView: View {
             .textCase(nil)
     }
 
+    @ViewBuilder
     private func row(_ item: ClipboardItem, quickKeyLabel label: String) -> some View {
+        switch item.kind {
+        case .file:
+            FileRow(
+                item: item, quickKeyLabel: label, isSelected: item.id == selectedID,
+                relativeTime: relativeTime)
+        default:
+            textRow(item, quickKeyLabel: label)
+        }
+    }
+
+    private func textRow(_ item: ClipboardItem, quickKeyLabel label: String) -> some View {
         HStack(spacing: 10) {
             Text(label)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
@@ -345,6 +362,54 @@ private struct AppIconView: View {
     }
 }
 
+private struct FileRow: View {
+    let item: ClipboardItem
+    let quickKeyLabel: String
+    let isSelected: Bool
+    let relativeTime: (Date) -> String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(quickKeyLabel)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 22, alignment: .leading)
+
+            fileIcon
+                .frame(width: 28, height: 28)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text((item.fileURLPath as NSString?)?.lastPathComponent ?? item.text)
+                    .font(.system(size: 14, weight: .medium))
+                    .lineLimit(1)
+                Text(item.fileURLPath ?? "")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            Spacer(minLength: 8)
+
+            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 8)
+    }
+
+    private var fileIcon: some View {
+        Group {
+            if let path = item.fileURLPath {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                    .resizable()
+            } else {
+                Image(systemName: "doc")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
 private struct VisualEffectBackground: NSViewRepresentable {
     func makeNSView(context: Context) -> NSVisualEffectView {
         let v = NSVisualEffectView()
@@ -424,7 +489,8 @@ private struct KeyEventMonitor: NSViewRepresentable {
             guard isEnabled, let window, window.isVisible, event.window === window else { return event }
 
             let isCmd = event.modifierFlags.contains(.command)
-            let isAltOnly = event.modifierFlags.contains(.option)
+            let isAltOnly =
+                event.modifierFlags.contains(.option)
                 && !event.modifierFlags.contains(.command)
                 && !event.modifierFlags.contains(.control)
                 && !event.modifierFlags.contains(.shift)
@@ -445,26 +511,36 @@ private struct KeyEventMonitor: NSViewRepresentable {
             }
 
             switch (event.keyCode, isCmd) {
-            case (126, _): onArrowUp?(); return nil
-            case (125, _): onArrowDown?(); return nil
-            case (36, _), (76, _): onReturn?(); return nil
-            case (51, true): onCommandDelete?(); return nil
-            case (53, _): onEscape?(); return nil
+            case (126, _):
+                onArrowUp?()
+                return nil
+            case (125, _):
+                onArrowDown?()
+                return nil
+            case (36, _), (76, _):
+                onReturn?()
+                return nil
+            case (51, true):
+                onCommandDelete?()
+                return nil
+            case (53, _):
+                onEscape?()
+                return nil
             default: return event
             }
         }
 
         private func pinnedQuickPasteIndex(for keyCode: UInt16) -> Int? {
             switch keyCode {
-            case 0x0C: return 0   // Q
-            case 0x0D: return 1   // W
-            case 0x0E: return 2   // E
-            case 0x00: return 3   // A
-            case 0x01: return 4   // S
-            case 0x02: return 5   // D
-            case 0x06: return 6   // Z
-            case 0x07: return 7   // X
-            case 0x08: return 8   // C
+            case 0x0C: return 0  // Q
+            case 0x0D: return 1  // W
+            case 0x0E: return 2  // E
+            case 0x00: return 3  // A
+            case 0x01: return 4  // S
+            case 0x02: return 5  // D
+            case 0x06: return 6  // Z
+            case 0x07: return 7  // X
+            case 0x08: return 8  // C
             default: return nil
             }
         }
