@@ -109,6 +109,23 @@ test-clipboard-monitor:
 	       -o .build/clipboard-monitor-tests
 	.build/clipboard-monitor-tests
 
+test-clipboard-store-binary:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Clipboard/ClipboardItem.swift \
+	       Sources/KeyMic/Clipboard/ClipboardKind.swift \
+	       Sources/KeyMic/Clipboard/ImageFormat.swift \
+	       Sources/KeyMic/Clipboard/RichTextFormat.swift \
+	       Sources/KeyMic/Clipboard/ClipboardStore.swift \
+	       Sources/KeyMic/Clipboard/CleanupMode.swift \
+	       Sources/KeyMic/Clipboard/ClipboardPreferences.swift \
+	       Sources/KeyMic/Clipboard/KindClassifier.swift \
+	       Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
+	       Sources/KeyMic/Clipboard/GitleaksLoader.swift \
+	       Sources/KeyMic/Vault/VaultItem.swift \
+	       Tests/ClipboardStoreBinaryTests.swift \
+	       -o .build/clipboard-store-binary-tests
+	.build/clipboard-store-binary-tests
+
 test-toml-parser:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \

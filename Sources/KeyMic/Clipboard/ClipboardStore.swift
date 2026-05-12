@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import OSLog
 import SwiftData
@@ -7,6 +8,7 @@ final class ClipboardStore {
     private let container: ModelContainer
     private let context: ModelContext
     private(set) var maxHistory: Int
+    private let cacheDirectory: URL
 
     private let cleanupModeProvider: () -> CleanupMode
     private let cleanupDaysProvider: () -> Int
@@ -18,9 +20,15 @@ final class ClipboardStore {
 
     private static let logger = Logger(subsystem: "io.keymic.app", category: "ClipboardStore")
 
+    /// Single-image size cap. Pasteboard payloads above this are dropped entirely.
+    static let maxImageBytes: Int = 20 * 1024 * 1024
+
+    var clipboardCacheURL: URL { cacheDirectory }
+
     init(
         container: ModelContainer,
         maxHistory: Int,
+        cacheDirectory: URL = ClipboardStore.defaultCacheURL(),
         cleanupModeProvider: @escaping () -> CleanupMode = { ClipboardPreferences.cleanupMode },
         cleanupDaysProvider: @escaping () -> Int = { ClipboardPreferences.cleanupDays },
         cleanupHook: (() -> Void)? = nil,
@@ -29,10 +37,12 @@ final class ClipboardStore {
         self.container = container
         self.context = container.mainContext
         self.maxHistory = maxHistory
+        self.cacheDirectory = cacheDirectory
         self.cleanupModeProvider = cleanupModeProvider
         self.cleanupDaysProvider = cleanupDaysProvider
         self.cleanupHook = cleanupHook
         self.kindClassifier = kindClassifier
+        try? FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
         self.addCount = fetchAll().count
         applyCleanup()
     }
@@ -47,6 +57,16 @@ final class ClipboardStore {
             .appendingPathComponent("Clipboard.store")
     }
 
+    nonisolated static func defaultCacheURL(
+        applicationSupportDirectory: URL = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
+    ) -> URL {
+        applicationSupportDirectory
+            .appendingPathComponent("KeyMic", isDirectory: true)
+            .appendingPathComponent("Clipboard.cache", isDirectory: true)
+    }
+
     static func makeDefault(maxHistory: Int) -> ClipboardStore {
         do {
             let storeURL = defaultStoreURL()
@@ -54,14 +74,14 @@ final class ClipboardStore {
                 at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let config = ModelConfiguration(url: storeURL)
             let container = try ModelContainer(for: ClipboardItem.self, VaultItem.self, configurations: config)
-            return ClipboardStore(container: container, maxHistory: maxHistory)
+            return ClipboardStore(container: container, maxHistory: maxHistory, cacheDirectory: defaultCacheURL())
         } catch {
             logger.error(
                 "ModelContainer init failed, falling back to in-memory: \(error.localizedDescription, privacy: .public)"
             )
             let config = ModelConfiguration(isStoredInMemoryOnly: true)
             let container = try! ModelContainer(for: ClipboardItem.self, VaultItem.self, configurations: config)
-            return ClipboardStore(container: container, maxHistory: maxHistory)
+            return ClipboardStore(container: container, maxHistory: maxHistory, cacheDirectory: defaultCacheURL())
         }
     }
 
@@ -109,13 +129,86 @@ final class ClipboardStore {
         }
     }
 
+    func add(
+        image data: Data,
+        format: ImageFormat,
+        width: Int,
+        height: Int,
+        sourceBundleID: String?,
+        sourceAppName: String?
+    ) {
+        guard data.count <= Self.maxImageBytes else {
+            Self.logger.info("add(image:) skip oversized bytes=\(data.count, privacy: .public)")
+            return
+        }
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+
+        // Dedup by contentHash — bump createdAt and reuse existing cache file.
+        if let existing = findExistingImage(hash: hash) {
+            existing.createdAt = Date()
+            try? context.save()
+            return
+        }
+
+        let id = UUID()
+        let filename = "\(id.uuidString).\(format.fileExtension)"
+        let target = cacheDirectory.appendingPathComponent(filename)
+        do {
+            try data.write(to: target, options: .atomic)
+        } catch {
+            Self.logger.error("add(image:) write failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+
+        let item = ClipboardItem(
+            text: "Image \(width)×\(height)",
+            sourceBundleID: sourceBundleID,
+            sourceAppName: sourceAppName,
+            kind: .image
+        )
+        item.id = id
+        item.imageRelativePath = filename
+        item.imageWidth = width
+        item.imageHeight = height
+        item.byteSize = data.count
+        item.contentHash = hash
+        context.insert(item)
+        do {
+            try context.save()
+        } catch {
+            try? FileManager.default.removeItem(at: target)
+            context.delete(item)
+            Self.logger.error("add(image:) save failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        insertHook?(item)
+
+        if cleanupModeProvider() == .count { truncate(to: maxHistory) }
+        addCount += 1
+        if addCount % 10 == 0 { applyCleanup() }
+    }
+
+    private func findExistingImage(hash: String) -> ClipboardItem? {
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { $0.contentHash == hash }
+        )
+        return try? context.fetch(descriptor).first
+    }
+
     func delete(id: UUID) {
         let descriptor = FetchDescriptor<ClipboardItem>(
             predicate: #Predicate { $0.id == id }
         )
         guard let item = try? context.fetch(descriptor).first else { return }
+        removeImageCacheFile(for: item)
         context.delete(item)
         try? context.save()
+    }
+
+    private func removeImageCacheFile(for item: ClipboardItem) {
+        guard let rel = item.imageRelativePath, !rel.isEmpty else { return }
+        let url = cacheDirectory.appendingPathComponent(rel)
+        try? FileManager.default.removeItem(at: url)
     }
 
     /// Deletes every ClipboardItem row. Does NOT touch other model types in
@@ -123,7 +216,10 @@ final class ClipboardStore {
     func deleteAllClipboardItems() {
         let descriptor = FetchDescriptor<ClipboardItem>()
         guard let all = try? context.fetch(descriptor) else { return }
-        for item in all { context.delete(item) }
+        for item in all {
+            removeImageCacheFile(for: item)
+            context.delete(item)
+        }
         try? context.save()
         Self.logger.info("deleteAllClipboardItems — removed \(all.count, privacy: .public) rows")
     }
@@ -156,6 +252,7 @@ final class ClipboardStore {
         let allUnpinned = fetchAll().filter { !$0.isPinned }
         guard allUnpinned.count > limit else { return }
         for item in allUnpinned[limit...] {
+            removeImageCacheFile(for: item)
             context.delete(item)
         }
         try? context.save()
@@ -211,7 +308,10 @@ final class ClipboardStore {
             predicate: #Predicate { $0.createdAt < cutoff && $0.isPinned == false }
         )
         guard let stale = try? context.fetch(descriptor) else { return }
-        for item in stale { context.delete(item) }
+        for item in stale {
+            removeImageCacheFile(for: item)
+            context.delete(item)
+        }
         try? context.save()
     }
 
