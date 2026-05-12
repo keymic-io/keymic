@@ -62,6 +62,23 @@ struct ClipboardStoreBinaryTestRunner {
         fileStore.add(fileURL: fileURL, sourceBundleID: nil, sourceAppName: nil)
         expect(fileStore.fetchAll().count == firstFileCount, "duplicate file URL dedups by path")
 
+        // 6. Rich text insert stores blob + plain text, dedup by plain text.
+        let rtStore = ClipboardStore(container: container, maxHistory: 100, cacheDirectory: tmp)
+        let html = Data("<b>hello</b>".utf8)
+        rtStore.add(
+            richText: html, format: .html, plainText: "hello",
+            sourceBundleID: "com.apple.Safari", sourceAppName: "Safari")
+        let rtRow = rtStore.fetchAll().first { $0.kind == .richText }!
+        expect(rtRow.richBlob == html, "html blob persisted")
+        expect(rtRow.richBlobFormat == .html, "format persisted")
+        expect(rtRow.text == "hello", "plain text fallback persisted")
+        let rtCount = rtStore.fetchAll().count
+        let rtf = Data("{\\rtf1 hello}".utf8)
+        rtStore.add(
+            richText: rtf, format: .rtf, plainText: "hello",
+            sourceBundleID: nil, sourceAppName: nil)
+        expect(rtStore.fetchAll().count == rtCount, "rich text dedup by plain text")
+
         print("ClipboardStoreBinaryTests passed")
     }
 

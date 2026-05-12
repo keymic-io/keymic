@@ -236,6 +236,45 @@ final class ClipboardStore {
         return try? context.fetch(descriptor).first
     }
 
+    func add(
+        richText blob: Data,
+        format: RichTextFormat,
+        plainText: String,
+        sourceBundleID: String?,
+        sourceAppName: String?
+    ) {
+        let trimmed = plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        if let existing = findExisting(text: plainText) {
+            // Bump createdAt; preserve whichever blob the existing row already holds.
+            existing.createdAt = Date()
+            try? context.save()
+            return
+        }
+
+        let item = ClipboardItem(
+            text: plainText,
+            sourceBundleID: sourceBundleID,
+            sourceAppName: sourceAppName,
+            kind: .richText
+        )
+        item.richBlob = blob
+        item.richBlobFormat = format
+        item.byteSize = blob.count
+        context.insert(item)
+        do { try context.save() } catch {
+            context.delete(item)
+            Self.logger.error("add(richText:) save failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        insertHook?(item)
+
+        if cleanupModeProvider() == .count { truncate(to: maxHistory) }
+        addCount += 1
+        if addCount % 10 == 0 { applyCleanup() }
+    }
+
     func delete(id: UUID) {
         let descriptor = FetchDescriptor<ClipboardItem>(
             predicate: #Predicate { $0.id == id }
