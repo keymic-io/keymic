@@ -348,6 +348,32 @@ final class ClipboardStore {
         }
     }
 
+    /// Scans `cacheDirectory` and deletes any file whose name does not match an
+    /// `imageRelativePath` referenced by a live ClipboardItem. Called on app boot
+    /// after the schema-version wipe.
+    func collectOrphanCacheFiles() {
+        let referenced: Set<String> = {
+            let descriptor = FetchDescriptor<ClipboardItem>()
+            let all = (try? context.fetch(descriptor)) ?? []
+            return Set(all.compactMap { $0.imageRelativePath })
+        }()
+
+        let fm = FileManager.default
+        guard let entries = try? fm.contentsOfDirectory(at: cacheDirectory, includingPropertiesForKeys: nil) else {
+            return
+        }
+        var removed = 0
+        for entry in entries {
+            if !referenced.contains(entry.lastPathComponent) {
+                try? fm.removeItem(at: entry)
+                removed += 1
+            }
+        }
+        if removed > 0 {
+            Self.logger.info("collectOrphanCacheFiles — removed \(removed, privacy: .public) orphan files")
+        }
+    }
+
     private func findExisting(text: String) -> ClipboardItem? {
         let descriptor = FetchDescriptor<ClipboardItem>(
             predicate: #Predicate { $0.text == text }

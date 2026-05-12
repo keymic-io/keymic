@@ -79,6 +79,14 @@ struct ClipboardStoreBinaryTestRunner {
             sourceBundleID: nil, sourceAppName: nil)
         expect(rtStore.fetchAll().count == rtCount, "rich text dedup by plain text")
 
+        // 7. Cache orphan GC removes files not referenced by any row.
+        let gcStore = ClipboardStore(container: container, maxHistory: 100, cacheDirectory: tmp)
+        let orphan = tmp.appendingPathComponent("orphan-\(UUID().uuidString).png")
+        try Data([0xFF, 0xD8, 0xFF]).write(to: orphan)
+        expect(FileManager.default.fileExists(atPath: orphan.path), "orphan present before GC")
+        gcStore.collectOrphanCacheFiles()
+        expect(!FileManager.default.fileExists(atPath: orphan.path), "orphan deleted by GC")
+
         print("ClipboardStoreBinaryTests passed")
     }
 
