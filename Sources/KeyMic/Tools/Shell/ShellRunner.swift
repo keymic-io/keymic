@@ -48,7 +48,7 @@ final class ShellRunner {
 
         let args: [String]
         if let snap = snapshot {
-            let wrapped = "source \(posixQuote(snap.path)) 2>/dev/null && eval \(posixQuote(command))"
+            let wrapped = "source \(posixQuote(snap.path)) 2>/dev/null || true; eval \(posixQuote(command))"
             args = ["-c", wrapped]
         } else {
             let wrapped = "eval \(posixQuote(command))"
@@ -97,13 +97,14 @@ final class ShellRunner {
             Thread.sleep(forTimeInterval: 0.05)
         }
         if p.isRunning {
-            p.terminate()  // SIGTERM
+            let tree = collectProcessTree(p.processIdentifier)
+            for pid in tree { kill(pid, SIGTERM) }
             let killDeadline = Date().addingTimeInterval(sigkillGrace)
             while p.isRunning && Date() < killDeadline {
                 Thread.sleep(forTimeInterval: 0.05)
             }
             if p.isRunning {
-                kill(p.processIdentifier, SIGKILL)
+                for pid in tree { kill(pid, SIGKILL) }
                 p.waitUntilExit()
             }
         }
@@ -114,6 +115,34 @@ final class ShellRunner {
         let outStr = outQ.sync { String(data: stdoutData, encoding: .utf8) ?? "" }
         let errStr = errQ.sync { String(data: stderrData, encoding: .utf8) ?? "" }
         return (p.terminationStatus, outStr, errStr)
+    }
+
+    private func collectProcessTree(_ rootPid: Int32) -> [Int32] {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/ps")
+        p.arguments = ["-axo", "pid,ppid"]
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = Pipe()
+        guard (try? p.run()) != nil else { return [rootPid] }
+        p.waitUntilExit()
+
+        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        var children: [Int32: [Int32]] = [:]
+        for line in output.components(separatedBy: "\n") {
+            let cols = line.trimmingCharacters(in: .whitespaces)
+                .components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+            guard cols.count >= 2, let pid = Int32(cols[0]), let ppid = Int32(cols[1]) else { continue }
+            children[ppid, default: []].append(pid)
+        }
+
+        var pids: [Int32] = []
+        func collect(_ pid: Int32) {
+            pids.append(pid)
+            for child in children[pid] ?? [] { collect(child) }
+        }
+        collect(rootPid)
+        return pids
     }
 
     private func posixQuote(_ s: String) -> String {
