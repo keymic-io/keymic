@@ -52,6 +52,21 @@ final class ClipboardController {
         monitor.start()
     }
 
+    /// One-time schema upgrade. Drops every ClipboardItem (preserving VaultItem
+    /// in the shared container) and clears the cache directory of any leftovers.
+    /// Idempotent; AppDelegate gates calls on a UserDefaults version key.
+    func performSchemaWipe() {
+        store.deleteAllClipboardItems()
+        // After wipe there are no referenced cache files, so this sweeps everything left.
+        store.collectOrphanCacheFiles()
+    }
+
+    /// Boot-time orphan sweep — call once on launch after `performSchemaWipe`
+    /// (if any) to clean up files left behind by previous crashes.
+    func sweepOrphanCacheFiles() {
+        store.collectOrphanCacheFiles()
+    }
+
     var isPanelVisible: Bool {
         panel.isVisible
     }
@@ -169,7 +184,8 @@ final class ClipboardController {
         let source = CGEventSource(stateID: pasteSourceID)
         let vKeyCode: CGKeyCode = 0x09
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else { return }
+            let up = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
+        else { return }
         down.flags = .maskCommand
         up.flags = .maskCommand
         down.post(tap: .cgAnnotatedSessionEventTap)
