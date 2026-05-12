@@ -145,6 +145,13 @@ test-clipboard-monitor-types:
 	       -o .build/clipboard-monitor-types-tests
 	.build/clipboard-monitor-types-tests
 
+test-thumbnail-cache:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Clipboard/ThumbnailLoader.swift \
+	       Tests/ThumbnailCacheTests.swift \
+	       -o .build/thumbnail-cache-tests
+	.build/thumbnail-cache-tests
+
 test-toml-parser:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
