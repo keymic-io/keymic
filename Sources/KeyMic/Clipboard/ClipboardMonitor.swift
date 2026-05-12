@@ -86,6 +86,7 @@ final class ClipboardMonitor {
 
         let source = sourceAppProvider()
         if let bundleID = source.bundleID, bundleID == ownBundleID {
+            ignoredToken = nil
             return
         }
 
