@@ -158,6 +158,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: UserDefaults.didChangeNotification,
             object: nil
         )
+
+        ShellRunner.shared.warmUp()
     }
 
     static func syncPersonaHotkeysToRegistry() {
