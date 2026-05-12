@@ -37,7 +37,11 @@ final class ClipboardStore {
         applyCleanup()
     }
 
-    static func defaultStoreURL(applicationSupportDirectory: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!) -> URL {
+    static func defaultStoreURL(
+        applicationSupportDirectory: URL = FileManager.default.urls(
+            for: .applicationSupportDirectory, in: .userDomainMask
+        ).first!
+    ) -> URL {
         applicationSupportDirectory
             .appendingPathComponent("KeyMic", isDirectory: true)
             .appendingPathComponent("Clipboard.store")
@@ -46,12 +50,15 @@ final class ClipboardStore {
     static func makeDefault(maxHistory: Int) -> ClipboardStore {
         do {
             let storeURL = defaultStoreURL()
-            try FileManager.default.createDirectory(at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             let config = ModelConfiguration(url: storeURL)
             let container = try ModelContainer(for: ClipboardItem.self, VaultItem.self, configurations: config)
             return ClipboardStore(container: container, maxHistory: maxHistory)
         } catch {
-            logger.error("ModelContainer init failed, falling back to in-memory: \(error.localizedDescription, privacy: .public)")
+            logger.error(
+                "ModelContainer init failed, falling back to in-memory: \(error.localizedDescription, privacy: .public)"
+            )
             let config = ModelConfiguration(isStoredInMemoryOnly: true)
             let container = try! ModelContainer(for: ClipboardItem.self, VaultItem.self, configurations: config)
             return ClipboardStore(container: container, maxHistory: maxHistory)
@@ -111,6 +118,16 @@ final class ClipboardStore {
         try? context.save()
     }
 
+    /// Deletes every ClipboardItem row. Does NOT touch other model types in
+    /// the same container (VaultItem is shared with this store).
+    func deleteAllClipboardItems() {
+        let descriptor = FetchDescriptor<ClipboardItem>()
+        guard let all = try? context.fetch(descriptor) else { return }
+        for item in all { context.delete(item) }
+        try? context.save()
+        Self.logger.info("deleteAllClipboardItems — removed \(all.count, privacy: .public) rows")
+    }
+
     func bumpToTop(id: UUID) {
         let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == id })
         guard let item = try? context.fetch(descriptor).first else { return }
@@ -164,7 +181,9 @@ final class ClipboardStore {
     private func saveDedup(newest: ClipboardItem) -> Bool {
         do {
             try context.save()
-            Self.logger.info("dedup saved — count=\(self.fetchAll().count, privacy: .public) newestLen=\(newest.text.count, privacy: .public)")
+            Self.logger.info(
+                "dedup saved — count=\(self.fetchAll().count, privacy: .public) newestLen=\(newest.text.count, privacy: .public)"
+            )
             return true
         } catch {
             Self.logger.error("dedup save failed — \(error.localizedDescription, privacy: .public)")
@@ -176,7 +195,9 @@ final class ClipboardStore {
         do {
             try context.save()
             let newest = fetchAll().first
-            Self.logger.info("add saved — count=\(self.fetchAll().count, privacy: .public) newestLen=\(newest?.text.count ?? -1, privacy: .public) newestMatches=\(newest?.text == text, privacy: .public)")
+            Self.logger.info(
+                "add saved — count=\(self.fetchAll().count, privacy: .public) newestLen=\(newest?.text.count ?? -1, privacy: .public) newestMatches=\(newest?.text == text, privacy: .public)"
+            )
             return true
         } catch {
             Self.logger.error("add save failed — \(error.localizedDescription, privacy: .public)")
