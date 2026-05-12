@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# KeyMic pre-commit hook: swift-format (auto-fix) + swiftlint (check).
+# Operates on staged .swift files only. Re-stages files modified by formatting.
+# Install: `make install-hooks` (sets core.hooksPath to scripts/git-hooks).
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+# Collect staged Swift files (Added/Copied/Modified/Renamed).
+# Use read loop for bash 3.2 compatibility (macOS default shell).
+staged=()
+while IFS= read -r line; do
+    [[ -n "$line" ]] && staged+=("$line")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z \
+    | tr '\0' '\n' \
+    | grep -E '\.swift$' || true)
+
+if [[ ${#staged[@]} -eq 0 ]]; then
+    exit 0
+fi
+
+# Resolve swift-format. Prefer xcrun (ships with Xcode toolchain 6+).
+if command -v swift-format >/dev/null 2>&1; then
+    SWIFT_FORMAT=(swift-format)
+elif xcrun --find swift-format >/dev/null 2>&1; then
+    SWIFT_FORMAT=(xcrun swift-format)
+else
+    echo "pre-commit: swift-format not found (install Xcode 16+ or 'brew install swift-format')." >&2
+    exit 1
+fi
+
+# Detect files with both staged and unstaged changes — skip auto-fix on them
+# to avoid silently capturing unstaged work into the commit.
+unsafe=()
+safe=()
+for f in "${staged[@]}"; do
+    if [[ ! -f "$f" ]]; then
+        continue  # deleted in working tree
+    fi
+    if ! git diff --quiet -- "$f"; then
+        unsafe+=("$f")
+    else
+        safe+=("$f")
+    fi
+done
+
+if [[ ${#unsafe[@]} -gt 0 ]]; then
+    echo "pre-commit: skipping format on files with unstaged changes (commit staged-only or stash first):" >&2
+    printf '  - %s\n' "${unsafe[@]}" >&2
+fi
+
+# 1) Auto-format fully-staged files in place, then re-stage.
+#    swift-format lint is intentionally NOT run here — the codebase has
+#    pre-existing lint-only violations (e.g. OneVariableDeclarationPerLine)
+#    that would block unrelated commits. swiftlint below is the quality gate.
+if [[ ${#safe[@]} -gt 0 ]]; then
+    "${SWIFT_FORMAT[@]}" format --in-place --parallel "${safe[@]}"
+    git add -- "${safe[@]}"
+fi
+
+# 2) swiftlint pass (skipped if not installed).
+if command -v swiftlint >/dev/null 2>&1; then
+    SWIFTLINT_BIN=swiftlint
+elif [[ -x /opt/homebrew/bin/swiftlint ]]; then
+    SWIFTLINT_BIN=/opt/homebrew/bin/swiftlint
+elif [[ -x /usr/local/bin/swiftlint ]]; then
+    SWIFTLINT_BIN=/usr/local/bin/swiftlint
+else
+    SWIFTLINT_BIN=""
+fi
+
+if [[ -n "$SWIFTLINT_BIN" ]]; then
+    SCRIPT_INPUT_FILE_COUNT=${#staged[@]}
+    export SCRIPT_INPUT_FILE_COUNT
+    for i in "${!staged[@]}"; do
+        export "SCRIPT_INPUT_FILE_$i=$repo_root/${staged[$i]}"
+    done
+    "$SWIFTLINT_BIN" lint --quiet --strict --use-script-input-files || {
+        echo "pre-commit: swiftlint failed. Fix the issues above and re-stage." >&2
+        exit 1
+    }
+else
+    echo "pre-commit: swiftlint not installed; skipping (brew install swiftlint to enable)." >&2
+fi
+
+exit 0
