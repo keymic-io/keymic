@@ -195,6 +195,47 @@ final class ClipboardStore {
         return try? context.fetch(descriptor).first
     }
 
+    func add(
+        fileURL: URL,
+        sourceBundleID: String?,
+        sourceAppName: String?
+    ) {
+        let path = fileURL.path
+        guard !path.isEmpty else { return }
+
+        if let existing = findExistingFile(path: path) {
+            existing.createdAt = Date()
+            try? context.save()
+            return
+        }
+
+        let item = ClipboardItem(
+            text: path,  // path is the searchable representation
+            sourceBundleID: sourceBundleID,
+            sourceAppName: sourceAppName,
+            kind: .file
+        )
+        item.fileURLPath = path
+        context.insert(item)
+        do { try context.save() } catch {
+            context.delete(item)
+            Self.logger.error("add(fileURL:) save failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        insertHook?(item)
+
+        if cleanupModeProvider() == .count { truncate(to: maxHistory) }
+        addCount += 1
+        if addCount % 10 == 0 { applyCleanup() }
+    }
+
+    private func findExistingFile(path: String) -> ClipboardItem? {
+        let descriptor = FetchDescriptor<ClipboardItem>(
+            predicate: #Predicate { $0.fileURLPath == path }
+        )
+        return try? context.fetch(descriptor).first
+    }
+
     func delete(id: UUID) {
         let descriptor = FetchDescriptor<ClipboardItem>(
             predicate: #Predicate { $0.id == id }

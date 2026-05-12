@@ -51,6 +51,17 @@ struct ClipboardStoreBinaryTestRunner {
         expect(store.fetchAll().isEmpty, "row deleted")
         expect(!FileManager.default.fileExists(atPath: onDisk.path), "cache file cleaned up")
 
+        // 5. File URL insert dedups by path.
+        let fileStore = ClipboardStore(container: container, maxHistory: 100, cacheDirectory: tmp)
+        let fileURL = URL(fileURLWithPath: "/tmp/sample-\(UUID().uuidString).txt")
+        fileStore.add(fileURL: fileURL, sourceBundleID: "com.apple.finder", sourceAppName: "Finder")
+        expect(
+            fileStore.fetchAll().contains(where: { $0.kind == .file && $0.fileURLPath == fileURL.path }),
+            "file row stored with path")
+        let firstFileCount = fileStore.fetchAll().count
+        fileStore.add(fileURL: fileURL, sourceBundleID: nil, sourceAppName: nil)
+        expect(fileStore.fetchAll().count == firstFileCount, "duplicate file URL dedups by path")
+
         print("ClipboardStoreBinaryTests passed")
     }
 
