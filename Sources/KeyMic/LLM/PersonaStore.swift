@@ -141,8 +141,7 @@ final class PersonaStore {
 
     private func seedFirstLaunch() {
         self.personas = Persona.builtInSeeds()
-        // First launch: default persona is active (preserves current LLM-refiner UX).
-        self.activePersonaId = "builtin-default"
+        self.activePersonaId = nil
         save()
     }
 
