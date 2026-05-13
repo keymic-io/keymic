@@ -2,6 +2,7 @@ APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
+CODESIGN_IDENTITY ?= -
 
 .PHONY: build build-arm64 build-x86_64 clean install run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
 
@@ -22,8 +23,8 @@ build:
 	mkdir -p $(APP_BUNDLE)/Contents/Frameworks
 	rm -rf $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
 	cp -R $(BUILD_DIR)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
-	codesign --force --deep --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
-	codesign --force --sign "${CODESIGN_IDENTITY}" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
+	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
+	codesign --force --sign "$(CODESIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
 	@echo "\n✅ Built $(APP_BUNDLE)"
 
 build-arm64:
@@ -39,8 +40,8 @@ build-arm64:
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
 	cp -R $(ARM64_BUILD)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
-	codesign --force --deep --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
-	codesign --force --sign "${CODESIGN_IDENTITY}" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
+	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
+	codesign --force --sign "$(CODESIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
 	@echo "\n✅ Built $(APP_BUNDLE) (arm64)"
 
 build-x86_64:
@@ -56,8 +57,8 @@ build-x86_64:
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
 	cp -R $(X86_BUILD)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
-	codesign --force --deep --sign "${CODESIGN_IDENTITY}" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
-	codesign --force --sign "${CODESIGN_IDENTITY}" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
+	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
+	codesign --force --sign "$(CODESIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
 	@echo "\n✅ Built $(APP_BUNDLE) (x86_64)"
 
 run: build
