@@ -1,4 +1,5 @@
 import Cocoa
+import VisionKit
 
 protocol SelectionOverlayViewDelegate: AnyObject {
     func overlayDidEnterDrafted(_ view: SelectionOverlayView)
@@ -29,6 +30,11 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     func updateTool(_ tool: AnnotationTool) {
         cancelTextEditing()
         state.setSelectedTool(tool)
+        if tool == .ocr {
+            installOCROverlay()
+        } else {
+            removeOCROverlay()
+        }
         updateCursor()
         needsDisplay = true
         delegate?.overlayDidUpdateState(self)
@@ -348,6 +354,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseDown(with event: NSEvent) {
         guard isOwner else { return }
+        if state.selectedTool == .ocr { return }
         let p = convert(event.locationInWindow, from: nil)
         cancelTextEditing()
         switch state.phase {
@@ -419,6 +426,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseDragged(with event: NSEvent) {
         guard isOwner else { return }
+        if state.selectedTool == .ocr { return }
         let p = convert(event.locationInWindow, from: nil)
         switch state.phase {
         case .drafting:
@@ -449,6 +457,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func mouseUp(with event: NSEvent) {
         guard isOwner else { return }
+        if state.selectedTool == .ocr { return }
         switch state.phase {
         case .drafting:
             // Clean click on a detected window (no real drag) → use the window rect.
@@ -560,6 +569,12 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         guard isOwner else { NSCursor.arrow.set(); return }
         let mouseInWindow = window?.mouseLocationOutsideOfEventStream ?? .zero
         let p = convert(mouseInWindow, from: nil)
+        if state.selectedTool == .ocr {
+            if !state.selection.contains(p) {
+                NSCursor.arrow.set()
+            }
+            return
+        }
         switch state.phase {
         case .idle, .drafting:
             NSCursor.crosshair.set()
