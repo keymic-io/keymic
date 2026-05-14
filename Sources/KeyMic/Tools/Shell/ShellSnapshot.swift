@@ -141,7 +141,7 @@ final class ShellSnapshot {
         } else {
             funcsBlock = """
             declare -F 2>/dev/null | cut -d' ' -f3 | grep -vE '^_[^_]' | while read func; do
-              encoded=$(declare -f "$func" | base64)
+              encoded=$(declare -f "$func" | base64 | tr -d '\\n')
               printf 'eval "$(echo %s | base64 -d)" > /dev/null 2>&1\\n' "$encoded" >> "$SNAPSHOT_FILE"
             done
             """

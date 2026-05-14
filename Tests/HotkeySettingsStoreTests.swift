@@ -18,6 +18,9 @@ struct HotkeySettingsStoreTests {
         try testFeatureFallbackForInvalidStoredValue()
         try testRejectsDuplicateAcrossFeatures()
         try testRejectsDuplicateAcrossPersona()
+        try testPersonaRecordingKicksOutOtherPersona()
+        try testPersonaRecordingThrowsOnFeatureConflict()
+        try testValidationMessageSkipsPersonaConflictForPersonaOwner()
         try testRejectsNonModifierVoiceTrigger()
         try testRejectsPureModifierFeatureHotkey()
         try testRejectsSingleKeyFeatureHotkey()
@@ -131,6 +134,46 @@ struct HotkeySettingsStoreTests {
         } catch let error as HotkeySettingsStore.ValidationError {
             assert(error.message.contains("Persona"), "duplicate error should mention Persona")
         }
+    }
+
+    private static func testPersonaRecordingKicksOutOtherPersona() throws {
+        let store = makeStore()
+        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p1")
+        assert(store.rawPersonaHotkey(personaId: "p1") == "alt+cmd+q", "p1 should hold the original hotkey")
+
+        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p2")
+
+        assert(store.rawPersonaHotkey(personaId: "p1") == nil, "p1 binding should be cleared after p2 takes the same hotkey")
+        assert(store.rawPersonaHotkey(personaId: "p2") == "alt+cmd+q", "p2 should now hold the hotkey")
+    }
+
+    private static func testPersonaRecordingThrowsOnFeatureConflict() throws {
+        let store = makeStore()
+        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p1")
+
+        do {
+            try store.setPersonaHotkey(HotkeyConfig.parse("alt+v")!, personaId: "p1")
+            assert(false, "persona hotkey conflicting with feature should throw")
+        } catch let error as HotkeySettingsStore.ValidationError {
+            assert(error.message.contains("Clipboard"), "feature conflict error should mention Clipboard")
+        }
+
+        assert(store.rawPersonaHotkey(personaId: "p1") == "alt+cmd+q", "p1 binding should remain unchanged after feature conflict")
+    }
+
+    private static func testValidationMessageSkipsPersonaConflictForPersonaOwner() throws {
+        let store = makeStore()
+        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p1")
+
+        let cfg = HotkeyConfig.parse("cmd+alt+q")!
+        assert(
+            store.validationMessage(for: cfg, owner: .persona("p2")) == nil,
+            "validationMessage for persona owner should ignore persona-to-persona conflicts (kick-out policy)"
+        )
+
+        let featureConfig = HotkeyConfig.parse("alt+v")!
+        let msg = store.validationMessage(for: featureConfig, owner: .persona("p2"))
+        assert(msg != nil && msg!.contains("Clipboard"), "validationMessage for persona owner should still report feature conflict; got \(msg ?? "nil")")
     }
 
     private static func testRejectsNonModifierVoiceTrigger() throws {
