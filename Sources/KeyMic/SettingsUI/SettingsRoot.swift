@@ -31,7 +31,8 @@ final class SwiftUISettingsWindow: NSPanel {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers == "w" {
+            event.charactersIgnoringModifiers == "w"
+        {
             performClose(nil)
             return true
         }
@@ -61,26 +62,26 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general:    "General"
-        case .voice:      "Voice"
-        case .llm:        "LLM"
-        case .personas:   "Personas"
+        case .general: "General"
+        case .voice: "Voice"
+        case .llm: "LLM"
+        case .personas: "Personas"
         case .keyMapping: "Key Mapping"
-        case .shortcuts:  "Shortcuts"
-        case .clipboard:  "Clipboard"
+        case .shortcuts: "Shortcuts"
+        case .clipboard: "Clipboard"
         case .screenshot: "Screenshot"
         }
     }
 
     var symbol: String {
         switch self {
-        case .general:    "gearshape"
-        case .voice:      "mic"
-        case .llm:        "sparkles"
-        case .personas:   "person.crop.circle.badge.checkmark"
+        case .general: "gearshape"
+        case .voice: "mic"
+        case .llm: "sparkles"
+        case .personas: "person.crop.circle.badge.checkmark"
         case .keyMapping: "keyboard"
-        case .shortcuts:  "command.square"
-        case .clipboard:  "doc.on.clipboard"
+        case .shortcuts: "command.square"
+        case .clipboard: "doc.on.clipboard"
         case .screenshot: "camera.on.rectangle"
         }
     }
@@ -109,13 +110,13 @@ struct SettingsRootView: View {
     @ViewBuilder
     private var detail: some View {
         switch selection {
-        case .general:    GeneralSettingsView()
-        case .voice:      VoiceSettingsView()
-        case .llm:        LLMSettingsView()
-        case .personas:   PersonasView()
-        case .clipboard:  ClipboardSettingsView()
+        case .general: GeneralSettingsView()
+        case .voice: VoiceSettingsView()
+        case .llm: LLMSettingsView()
+        case .personas: PersonasView()
+        case .clipboard: ClipboardSettingsView()
         case .keyMapping: KeyMappingSettingsSection()
-        case .shortcuts:  ShortcutsSettingsSection()
+        case .shortcuts: ShortcutsSettingsSection()
         case .screenshot: ScreenshotSettingsView()
         }
     }
@@ -155,9 +156,11 @@ private struct ScreenshotSettingsView: View {
             } header: {
                 Text("Screenshot")
             } footer: {
-                Text("Press \(hotkeyDisplayString) to capture a region of the screen and open it in the annotation editor.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Press \(hotkeyDisplayString) to capture a region of the screen and open it in the annotation editor."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -209,9 +212,11 @@ private struct GeneralSettingsView: View {
             } header: {
                 Text("Updates")
             } footer: {
-                Text("When enabled, KeyMic checks for updates daily at 11:00 AM and installs them silently. When disabled, you'll be prompted to review updates before installing.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "When enabled, KeyMic checks for updates daily at 11:00 AM and installs them silently. When disabled, you'll be prompted to review updates before installing."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
 
             Section {
@@ -243,9 +248,10 @@ private struct GeneralSettingsView: View {
                 Text("Permissions")
             } footer: {
                 Group {
-                    Text("KeyMic needs Accessibility to monitor the trigger key, apply key mappings, and synthesize paste.")
-                    + Text("  ") +
-                    Text("Version \(Bundle.main.appVersion)")
+                    Text(
+                        "KeyMic needs Accessibility to monitor the trigger key, apply key mappings, and synthesize paste."
+                    )
+                        + Text("  ") + Text("Version \(Bundle.main.appVersion)")
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -306,8 +312,8 @@ private struct AccessibilityStatusView: View {
     }
 }
 
-private extension Bundle {
-    var appVersion: String {
+extension Bundle {
+    fileprivate var appVersion: String {
         let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = infoDictionary?["CFBundleVersion"] as? String ?? "—"
         return "\(version) (\(build))"
@@ -345,9 +351,11 @@ private struct VoiceSettingsView: View {
                     }
                 }
             } footer: {
-                Text("If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
 
             Section {
@@ -482,7 +490,7 @@ private struct LLMSettingsView: View {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let text): status = .ok(text)
-                case .failure(let err):  status = .fail(err.localizedDescription)
+                case .failure(let err): status = .fail(err.localizedDescription)
                 }
             }
         }
@@ -750,7 +758,6 @@ struct HotkeyRecorderWithClear: View {
 /// restores the default (or clears the value, when no default is provided).
 struct HotkeyRecorderConfigWithClear: View {
     @Binding var config: HotkeyConfig?
-    let defaultConfig: HotkeyConfig?
     let mode: HotkeyRecorder.Mode
     let validator: HotkeyRecorder.Validator
     let displayName: HotkeyRecorderField.DisplayName?
@@ -758,46 +765,31 @@ struct HotkeyRecorderConfigWithClear: View {
 
     init(
         config: Binding<HotkeyConfig?>,
-        defaultConfig: HotkeyConfig? = nil,
         mode: HotkeyRecorder.Mode,
         validator: @escaping HotkeyRecorder.Validator,
         displayName: HotkeyRecorderField.DisplayName? = nil,
         recorderWidth: CGFloat
     ) {
         self._config = config
-        self.defaultConfig = defaultConfig
         self.mode = mode
         self.validator = validator
         self.displayName = displayName
         self.recorderWidth = recorderWidth
     }
 
-    private var canReset: Bool {
-        if let defaultConfig { return config != defaultConfig }
-        return config != nil
-    }
-
     var body: some View {
-        HStack(spacing: 4) {
-            HotkeyRecorderField(
-                config: $config,
-                mode: mode,
-                validator: validator,
-                displayName: displayName
-            )
-            .frame(width: recorderWidth, height: 24)
-
-            ClearHotkeyButton(
-                hasDefault: defaultConfig != nil,
-                isEnabled: canReset,
-                action: { config = defaultConfig }
-            )
-        }
+        HotkeyRecorderField(
+            config: $config,
+            mode: mode,
+            validator: validator,
+            displayName: displayName
+        )
+        .frame(width: recorderWidth, height: 24)
     }
 }
 
-/// Compact "×" button shared by both recorder wrappers. Keeps layout stable
-/// by reserving space via `.opacity` rather than removing the view.
+/// Compact "×" button used by encoded-string recorder wrappers that suppress
+/// the field's built-in clear (e.g. to substitute a "restore default" action).
 private struct ClearHotkeyButton: View {
     let hasDefault: Bool
     let isEnabled: Bool
@@ -981,11 +973,13 @@ private struct ShortcutsSettingsSection: View {
                     }
                 }
             } header: {
-                Text("Trigger any text input, key press, or shell script with a hotkey combo. Shell actions run with your full user privileges — only add shortcuts you trust.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .textCase(nil)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(
+                    "Trigger any text input, key press, or shell script with a hotkey combo. Shell actions run with your full user privileges — only add shortcuts you trust."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textCase(nil)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Section {
@@ -1145,7 +1139,8 @@ private struct BindingEditorSheet: View {
 
                     LabeledRow(
                         "Apps:",
-                        help: "Leave empty to make this shortcut work in all apps. Add apps to limit it to those running applications."
+                        help:
+                            "Leave empty to make this shortcut work in all apps. Add apps to limit it to those running applications."
                     ) {
                         AppsScopeView(bundleIDs: $appBundleIDs)
                     }
@@ -1203,9 +1198,18 @@ private struct BindingEditorSheet: View {
     }
 
     private func save() {
-        guard let trigger else { error = "Set a hotkey first"; return }
-        if let msg = validator(trigger) { error = msg; return }
-        if actions.isEmpty { error = "Add at least one action"; return }
+        guard let trigger else {
+            error = "Set a hotkey first"
+            return
+        }
+        if let msg = validator(trigger) {
+            error = msg
+            return
+        }
+        if actions.isEmpty {
+            error = "Add at least one action"
+            return
+        }
         if let badIdx = actions.firstIndex(where: { !$0.isValid }) {
             error = "Action \(badIdx + 1) is incomplete or invalid"
             return
@@ -1231,8 +1235,8 @@ private struct ActionDraft: Identifiable, Equatable {
             switch self {
             case .typeText: "Text"
             case .keyPress: "Key"
-            case .wait:     "Wait"
-            case .shell:    "Shell"
+            case .wait: "Wait"
+            case .shell: "Shell"
             }
         }
     }
@@ -1246,14 +1250,17 @@ private struct ActionDraft: Identifiable, Equatable {
     init(_ action: HotkeyAction) {
         switch action {
         case .typeText(let s):
-            kind = .typeText; text = s
+            kind = .typeText
+            text = s
         case .keyPress(let kc, let mods):
             kind = .keyPress
             text = HotkeyConfig(modifiers: CGEventFlags(rawValue: mods), keyCode: CGKeyCode(kc)).encode()
         case .wait(let ms):
-            kind = .wait; text = String(ms)
+            kind = .wait
+            text = String(ms)
         case .shell(let cmd):
-            kind = .shell; text = cmd
+            kind = .shell
+            text = cmd
         }
     }
 
@@ -1263,8 +1270,8 @@ private struct ActionDraft: Identifiable, Equatable {
         case .keyPress:
             guard let cfg = HotkeyConfig.parse(text) else { return false }
             return !cfg.isPureModifier
-        case .wait:     return Int(text) != nil
-        case .shell:    return !text.isEmpty
+        case .wait: return Int(text) != nil
+        case .shell: return !text.isEmpty
         }
     }
 
@@ -1276,8 +1283,8 @@ private struct ActionDraft: Identifiable, Equatable {
                 return .keyPress(keyCode: UInt16(cfg.keyCode), modifiers: cfg.modifiers.rawValue)
             }
             return .keyPress(keyCode: 0, modifiers: 0)
-        case .wait:     return .wait(ms: max(0, Int(text) ?? 100))
-        case .shell:    return .shell(text)
+        case .wait: return .wait(ms: max(0, Int(text) ?? 100))
+        case .shell: return .shell(text)
         }
     }
 }
@@ -1314,8 +1321,8 @@ private struct ActionDraftRow: View {
         switch action.kind {
         case .typeText: "Text to type"
         case .keyPress: "e.g. cmd+shift+a"
-        case .wait:     "Milliseconds"
-        case .shell:    "Shell command"
+        case .wait: "Milliseconds"
+        case .shell: "Shell command"
         }
     }
 }
@@ -1426,7 +1433,8 @@ private struct AppPickerList: View {
             .filter { $0.activationPolicy == .regular }
             .compactMap { app -> AppInfo? in
                 guard let bid = app.bundleIdentifier, !seen.contains(bid),
-                      unique.insert(bid).inserted else { return nil }
+                    unique.insert(bid).inserted
+                else { return nil }
                 return AppInfo(bundleID: bid, name: app.localizedName ?? bid, icon: app.icon)
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -1490,8 +1498,9 @@ private struct AppPickerList: View {
         panel.canChooseFiles = true
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         if panel.runModal() == .OK, let url = panel.url,
-           let bundle = Bundle(url: url),
-           let bid = bundle.bundleIdentifier {
+            let bundle = Bundle(url: url),
+            let bid = bundle.bundleIdentifier
+        {
             onPick(bid)
         }
     }

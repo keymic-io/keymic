@@ -63,6 +63,7 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
         state.lineWidth = 3
         state.fontSize = 18
         state.dropShadowEnabled = false
+        state.isOCRAnalyzing = false
 
         cancellables.removeAll()
         state.$selectedTool.sink { [weak self] t in self?.ownerPanel?.overlayView.updateTool(t) }.store(in: &cancellables)
@@ -136,6 +137,7 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
         state.canUndo = view.canvasUndoManager.canUndo
         state.canRedo = view.canvasUndoManager.canRedo
         state.hasAnnotation = !view.annotations.isEmpty
+        state.isOCRAnalyzing = view.isOCRAnalyzing
     }
 
     // MARK: - Export
