@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
+.PHONY: build build-arm64 build-x86_64 clean install run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store
 
 
 build:
@@ -134,6 +134,16 @@ test-hotkey-bindings-store:
 	       -o .build/hotkey-bindings-store-tests
 	.build/hotkey-bindings-store-tests
 
+test-hotkey-settings-store:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
+	       Tests/HotkeySettingsStoreTests.swift \
+	       -o .build/hotkey-settings-store-tests
+	.build/hotkey-settings-store-tests
+
 test-kind-classifier:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
@@ -213,8 +223,9 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyConfig.swift \
 	       Sources/KeyMic/Hotkey/HotkeyPreferences.swift \
-	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
+	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
@@ -330,7 +341,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
