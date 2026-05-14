@@ -20,7 +20,7 @@ final class HotkeyActionRunner {
     init(
         typeText: @escaping TypeTextFn,
         keyPress: @escaping KeyPressFn = HotkeyActionRunner.defaultKeyPress,
-        shell:    @escaping ShellFn    = HotkeyActionRunner.defaultShell
+        shell:    @escaping ShellFn    = { ShellRunner.shared.run($0) }
     ) {
         self.typeText = typeText
         self.keyPress = keyPress
@@ -64,20 +64,5 @@ final class HotkeyActionRunner {
         up.post(tap: .cgAnnotatedSessionEventTap)
     }
 
-    static func defaultShell(_ command: String) -> Int32 {
-        let p = Process()
-        p.launchPath = "/bin/zsh"
-        p.arguments = ["-lc", command]
-        let devNull = FileHandle(forWritingAtPath: "/dev/null")
-        p.standardOutput = devNull
-        p.standardError = devNull
-        do {
-            try p.run()
-        } catch {
-            Self.logger.error("defaultShell failed to launch: \(error.localizedDescription, privacy: .public)")
-            return -1
-        }
-        p.waitUntilExit()
-        return p.terminationStatus
-    }
+
 }
