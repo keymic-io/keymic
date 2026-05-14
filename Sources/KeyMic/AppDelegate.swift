@@ -150,7 +150,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppDelegate.syncPersonaHotkeysToRegistry()
         NotificationCenter.default.addObserver(
             forName: PersonaStore.didChangeNotification, object: nil, queue: .main
-        ) { _ in AppDelegate.syncPersonaHotkeysToRegistry() }
+        ) { [weak self] _ in
+            AppDelegate.syncPersonaHotkeysToRegistry()
+            self?.rebuildPersonasMenu()
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -596,26 +599,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildPersonasMenu() {
         guard let personasMenu else { return }
-        personasMenu.removeAllItems()
+        let personas = PersonaStore.shared.personas
 
-        for persona in PersonaStore.shared.personas {
-            let item = NSMenuItem(title: persona.name, action: #selector(selectPersona(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = persona.id
-            item.state = persona.id == PersonaStore.shared.activePersonaId ? .on : .off
-            if let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) {
-                let rep = cfg.menuRepresentation
-                item.keyEquivalent = rep.key
-                item.keyEquivalentModifierMask = rep.modifiers
+        // Fast path: if persona identity + title + hotkey are unchanged, just redraw
+        // existing views (preserves NSMenu tracking state while the submenu is open).
+        let existing = personasMenu.items.compactMap { $0.view as? PersonaMenuItemView }
+        if existing.count == personas.count,
+           zip(existing, personas).allSatisfy({ $0.personaId == $1.id }) {
+            existing.forEach { $0.needsDisplay = true }
+            return
+        }
+
+        personasMenu.removeAllItems()
+        for persona in personas {
+            let pid = persona.id
+            let hotkeyText = persona.hotkey
+                .flatMap { HotkeyConfig.parse($0) }?
+                .displayString()
+            let view = PersonaMenuItemView(
+                personaId: pid,
+                title: persona.name,
+                hotkeyText: hotkeyText
+            ) { [weak self] in
+                self?.togglePersona(id: pid)
             }
+            let item = NSMenuItem()
+            item.representedObject = pid
+            item.view = view
             personasMenu.addItem(item)
         }
     }
 
-    @objc private func selectPersona(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        PersonaStore.shared.setActive(id)
-        rebuildPersonasMenu()
+    private func togglePersona(id: String) {
+        let store = PersonaStore.shared
+        if store.activePersonaId == id {
+            store.setActive(nil)
+        } else {
+            store.setActive(id)
+        }
     }
 
     private func applySettingsShortcut(to item: NSMenuItem) {
