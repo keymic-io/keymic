@@ -42,13 +42,21 @@ struct EditorToolbarView: View {
     private func toolButton(_ tool: AnnotationTool) -> some View {
         let selected = state.selectedTool == tool
         return Button(action: { state.selectedTool = tool }) {
-            Image(systemName: tool.iconName)
-                .font(.system(size: 14))
-                .frame(width: 28, height: 28)
-                .background(selected ? Color.accentColor.opacity(0.25) : Color.clear)
-                .clipShape(RoundedRectangle(cornerRadius: 4))
+            Group {
+                if tool == .ocr && state.isOCRAnalyzing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Image(systemName: tool.iconName)
+                        .font(.system(size: 14))
+                }
+            }
+            .frame(width: 28, height: 28)
+            .background(selected ? Color.accentColor.opacity(0.25) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
         .buttonStyle(.plain)
+        .disabled(tool == .ocr && state.isOCRAnalyzing)
         .help("\(tool.displayName)")
     }
 

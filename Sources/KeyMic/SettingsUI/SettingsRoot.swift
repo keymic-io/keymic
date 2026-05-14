@@ -31,25 +31,13 @@ final class SwiftUISettingsWindow: NSPanel {
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
-           event.charactersIgnoringModifiers == "w" {
+            event.charactersIgnoringModifiers == "w"
+        {
             performClose(nil)
             return true
         }
         return super.performKeyEquivalent(with: event)
     }
-}
-
-// MARK: - Default hotkey strings
-
-/// Single source of truth for hotkey defaults. Values match the fallbacks
-/// used in `KeyMonitor`, `AppDelegate`, and the `@AppStorage` initializers
-/// below — keep them in sync.
-enum HotkeyDefaults {
-    static let settings      = "cmd+shift+,"
-    static let voiceTrigger  = "fn"
-    static let clipboard     = "alt+v"
-    static let vault         = "alt+b"
-    static let screenshot    = "ctrl+shift+a"
 }
 
 // MARK: - Sections
@@ -61,26 +49,26 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general:    "General"
-        case .voice:      "Voice"
-        case .llm:        "LLM"
-        case .personas:   "Personas"
+        case .general: "General"
+        case .voice: "Voice"
+        case .llm: "LLM"
+        case .personas: "Personas"
         case .keyMapping: "Key Mapping"
-        case .shortcuts:  "Shortcuts"
-        case .clipboard:  "Clipboard"
+        case .shortcuts: "Shortcuts"
+        case .clipboard: "Clipboard"
         case .screenshot: "Screenshot"
         }
     }
 
     var symbol: String {
         switch self {
-        case .general:    "gearshape"
-        case .voice:      "mic"
-        case .llm:        "sparkles"
-        case .personas:   "person.crop.circle.badge.checkmark"
+        case .general: "gearshape"
+        case .voice: "mic"
+        case .llm: "sparkles"
+        case .personas: "person.crop.circle.badge.checkmark"
         case .keyMapping: "keyboard"
-        case .shortcuts:  "command.square"
-        case .clipboard:  "doc.on.clipboard"
+        case .shortcuts: "command.square"
+        case .clipboard: "doc.on.clipboard"
         case .screenshot: "camera.on.rectangle"
         }
     }
@@ -109,15 +97,40 @@ struct SettingsRootView: View {
     @ViewBuilder
     private var detail: some View {
         switch selection {
-        case .general:    GeneralSettingsView()
-        case .voice:      VoiceSettingsView()
-        case .llm:        LLMSettingsView()
-        case .personas:   PersonasView()
-        case .clipboard:  ClipboardSettingsView()
+        case .general: GeneralSettingsView()
+        case .voice: VoiceSettingsView()
+        case .llm: LLMSettingsView()
+        case .personas: PersonasView()
+        case .clipboard: ClipboardSettingsView()
         case .keyMapping: KeyMappingSettingsSection()
-        case .shortcuts:  ShortcutsSettingsSection()
+        case .shortcuts: ShortcutsSettingsSection()
         case .screenshot: ScreenshotSettingsView()
         }
+    }
+}
+
+private func hotkeyBinding(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> Binding<String> {
+    Binding(
+        get: { store.rawHotkey(for: feature) },
+        set: { newValue in
+            guard let config = HotkeyConfig.parse(newValue) else { return }
+            do {
+                try store.setHotkey(config, for: feature)
+            } catch {
+                NSLog("[Settings] Failed to save hotkey: \(error)")
+            }
+        }
+    )
+}
+
+private func resetHotkey(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> String? {
+    do {
+        try store.resetHotkey(for: feature)
+        return nil
+    } catch let error as HotkeySettingsStore.ValidationError {
+        return error.message
+    } catch {
+        return error.localizedDescription
     }
 }
 
@@ -125,12 +138,13 @@ struct SettingsRootView: View {
 
 private struct ScreenshotSettingsView: View {
     @AppStorage("screenshotEnabled") private var screenshotEnabled: Bool = true
-    @AppStorage("screenshotHotkey") private var screenshotHotkey: String = "cmd+shift+a"
+    @State private var hotkeyStore = HotkeySettingsStore.shared
+    @State private var hotkeyResetError: String?
 
-    private static let defaultHotkey = "cmd+shift+a"
+    private var screenshotHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .screenshot) }
 
     private var hotkeyDisplayString: String {
-        HotkeyConfig.parse(screenshotHotkey)?.displayString() ?? "⌘⇧A"
+        HotkeyConfig.parse(screenshotHotkey.wrappedValue)?.displayString() ?? "⌘⇧A"
     }
 
     var body: some View {
@@ -140,24 +154,32 @@ private struct ScreenshotSettingsView: View {
                 LabeledContent("Hotkey:") {
                     HStack(spacing: 8) {
                         HotkeyRecorderField(
-                            encoded: $screenshotHotkey,
+                            encoded: screenshotHotkey,
                             mode: .combo,
-                            validator: { _ in nil }
+                            validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.screenshot)) },
+                            showsClearButton: false
                         )
                         .frame(width: 160, height: 24)
                         Button("Reset") {
-                            screenshotHotkey = Self.defaultHotkey
+                            hotkeyResetError = resetHotkey(hotkeyStore, for: .screenshot)
                         }
                         .controlSize(.small)
                     }
                 }
                 .disabled(!screenshotEnabled)
+                if let hotkeyResetError {
+                    Text(hotkeyResetError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                }
             } header: {
                 Text("Screenshot")
             } footer: {
-                Text("Press \(hotkeyDisplayString) to capture a region of the screen and open it in the annotation editor.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "Press \(hotkeyDisplayString) to capture a region of the screen and open it in the annotation editor."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -167,8 +189,10 @@ private struct ScreenshotSettingsView: View {
 // MARK: - General
 
 private struct GeneralSettingsView: View {
-    @AppStorage("settingsHotkey") private var settingsHotkey: String = "cmd+shift+,"
     @AppStorage("automaticallyUpdates") private var automaticallyUpdates: Bool = true
+    @State private var hotkeyStore = HotkeySettingsStore.shared
+    @State private var hotkeyResetError: String?
+    private var settingsHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .settingsWindow) }
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var launchAtLoginError: String?
     @State private var accessibilityGranted: Bool = AXIsProcessTrusted()
@@ -209,20 +233,28 @@ private struct GeneralSettingsView: View {
             } header: {
                 Text("Updates")
             } footer: {
-                Text("When enabled, KeyMic checks for updates daily at 11:00 AM and installs them silently. When disabled, you'll be prompted to review updates before installing.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "When enabled, KeyMic checks for updates daily at 11:00 AM and installs them silently. When disabled, you'll be prompted to review updates before installing."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
 
             Section {
                 LabeledContent("Open Settings:") {
                     HotkeyRecorderWithClear(
-                        encoded: $settingsHotkey,
-                        defaultEncoded: HotkeyDefaults.settings,
+                        encoded: settingsHotkey,
+                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.settingsWindow.rawValue]!,
                         mode: .combo,
-                        validator: settingsValidator,
-                        recorderWidth: 200
+                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.settingsWindow)) },
+                        recorderWidth: 200,
+                        resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .settingsWindow) }
                     )
+                }
+                if let hotkeyResetError {
+                    Text(hotkeyResetError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
                 }
             } header: {
                 Text("Hotkey")
@@ -243,9 +275,10 @@ private struct GeneralSettingsView: View {
                 Text("Permissions")
             } footer: {
                 Group {
-                    Text("KeyMic needs Accessibility to monitor the trigger key, apply key mappings, and synthesize paste.")
-                    + Text("  ") +
-                    Text("Version \(Bundle.main.appVersion)")
+                    Text(
+                        "KeyMic needs Accessibility to monitor the trigger key, apply key mappings, and synthesize paste."
+                    )
+                        + Text("  ") + Text("Version \(Bundle.main.appVersion)")
                 }
                 .font(.callout)
                 .foregroundStyle(.secondary)
@@ -268,18 +301,6 @@ private struct GeneralSettingsView: View {
         )
     }
 
-    private func settingsValidator(_ cfg: HotkeyConfig) -> String? {
-        if cfg.isPureModifier { return "Need a key, not just modifiers" }
-        if cfg.modifiers.isEmpty { return "Need at least one modifier" }
-        if cfg.isSystemReserved { return "\(cfg.displayString()) is reserved by macOS" }
-        let voiceKey = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        let clipKey = UserDefaults.standard.string(forKey: "clipboardHotkey") ?? "alt+v"
-        let vaultKey = UserDefaults.standard.string(forKey: "vaultHotkey") ?? "alt+b"
-        if HotkeyConfig.parse(voiceKey) == cfg { return "Conflicts with voice trigger" }
-        if HotkeyConfig.parse(clipKey) == cfg { return "Conflicts with clipboard hotkey" }
-        if HotkeyConfig.parse(vaultKey) == cfg { return "Conflicts with vault hotkey" }
-        return nil
-    }
 }
 
 private struct AccessibilityStatusView: View {
@@ -306,8 +327,8 @@ private struct AccessibilityStatusView: View {
     }
 }
 
-private extension Bundle {
-    var appVersion: String {
+extension Bundle {
+    fileprivate var appVersion: String {
         let version = infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = infoDictionary?["CFBundleVersion"] as? String ?? "—"
         return "\(version) (\(build))"
@@ -318,8 +339,10 @@ private extension Bundle {
 
 private struct VoiceSettingsView: View {
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = true
-    @AppStorage("voiceTriggerKey") private var triggerKey: String = "fn"
     @AppStorage("selectedLocaleCode") private var localeCode: String = ""
+    @State private var hotkeyStore = HotkeySettingsStore.shared
+    @State private var hotkeyResetError: String?
+    private var triggerKey: Binding<String> { hotkeyBinding(hotkeyStore, for: .voiceTrigger) }
 
     private static let languages: [SpeechLanguageOption] = SFSpeechRecognizer.supportedLocales()
         .map { SpeechLanguageOption(locale: $0) }
@@ -345,20 +368,28 @@ private struct VoiceSettingsView: View {
                     }
                 }
             } footer: {
-                Text("If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Text(
+                    "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
 
             Section {
                 LabeledContent("Trigger Key:") {
                     HotkeyRecorderWithClear(
-                        encoded: $triggerKey,
-                        defaultEncoded: HotkeyDefaults.voiceTrigger,
+                        encoded: triggerKey,
+                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.voiceTrigger.rawValue]!,
                         mode: .pureModifier,
-                        validator: HotkeyRecorder.voiceValidator,
-                        recorderWidth: 220
+                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.voiceTrigger)) },
+                        recorderWidth: 220,
+                        resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .voiceTrigger) }
                     )
+                }
+                if let hotkeyResetError {
+                    Text(hotkeyResetError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
                 }
             } footer: {
                 Text("Hold the trigger key to dictate.")
@@ -482,7 +513,7 @@ private struct LLMSettingsView: View {
             DispatchQueue.main.async {
                 switch result {
                 case .success(let text): status = .ok(text)
-                case .failure(let err):  status = .fail(err.localizedDescription)
+                case .failure(let err): status = .fail(err.localizedDescription)
                 }
             }
         }
@@ -498,8 +529,10 @@ private struct ClipboardSettingsView: View {
     @AppStorage(ClipboardPreferences.cleanupModeKey) private var cleanupModeRaw: String = CleanupMode.count.rawValue
     @AppStorage(ClipboardPreferences.cleanupDaysKey) private var cleanupDays: Int = ClipboardPreferences.defaultCleanupDays
     @AppStorage(ClipboardPreferences.panelPositionKey) private var panelPositionRaw: String = ClipboardPreferences.defaultPanelPosition.rawValue
-    @AppStorage("clipboardHotkey") private var hotkey: String = "alt+v"
-    @AppStorage("vaultHotkey") private var vaultHotkey: String = "alt+b"
+    @State private var hotkeyStore = HotkeySettingsStore.shared
+    @State private var hotkeyResetError: String?
+    private var hotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .clipboardPanel) }
+    private var vaultHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .vaultPanel) }
 
     private var cleanupMode: Binding<CleanupMode> {
         Binding(
@@ -526,21 +559,28 @@ private struct ClipboardSettingsView: View {
             Section {
                 LabeledContent("Open panel:") {
                     HotkeyRecorderWithClear(
-                        encoded: $hotkey,
-                        defaultEncoded: HotkeyDefaults.clipboard,
+                        encoded: hotkey,
+                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.clipboardPanel.rawValue]!,
                         mode: .combo,
-                        validator: clipboardHotkeyValidator,
-                        recorderWidth: 160
+                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.clipboardPanel)) },
+                        recorderWidth: 160,
+                        resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .clipboardPanel) }
                     )
                 }
                 LabeledContent("Open Vault:") {
                     HotkeyRecorderWithClear(
-                        encoded: $vaultHotkey,
-                        defaultEncoded: HotkeyDefaults.vault,
+                        encoded: vaultHotkey,
+                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.vaultPanel.rawValue]!,
                         mode: .combo,
-                        validator: vaultHotkeyValidator,
-                        recorderWidth: 160
+                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.vaultPanel)) },
+                        recorderWidth: 160,
+                        resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .vaultPanel) }
                     )
+                }
+                if let hotkeyResetError {
+                    Text(hotkeyResetError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
                 }
             } header: {
                 Text("Hotkeys")
@@ -590,17 +630,6 @@ private struct ClipboardSettingsView: View {
         .formStyle(.grouped)
     }
 
-    private func clipboardHotkeyValidator(_ cfg: HotkeyConfig) -> String? {
-        if let message = HotkeyRecorder.clipboardValidator(cfg) { return message }
-        if HotkeyConfig.parse(vaultHotkey) == cfg { return "Conflicts with vault hotkey" }
-        return nil
-    }
-
-    private func vaultHotkeyValidator(_ cfg: HotkeyConfig) -> String? {
-        if let message = HotkeyRecorder.clipboardValidator(cfg) { return message }
-        if HotkeyConfig.parse(hotkey) == cfg { return "Conflicts with clipboard hotkey" }
-        return nil
-    }
 }
 
 // MARK: - HotkeyRecorder bridge
@@ -612,24 +641,28 @@ struct HotkeyRecorderField: View {
     let mode: HotkeyRecorder.Mode
     let validator: HotkeyRecorder.Validator
     let displayName: DisplayName?
+    let showsClearButton: Bool
 
     init(
         config: Binding<HotkeyConfig?>,
         mode: HotkeyRecorder.Mode,
         validator: @escaping HotkeyRecorder.Validator,
-        displayName: DisplayName? = nil
+        displayName: DisplayName? = nil,
+        showsClearButton: Bool = true
     ) {
         self._config = config
         self.mode = mode
         self.validator = validator
         self.displayName = displayName
+        self.showsClearButton = showsClearButton
     }
 
     /// Convenience initializer that bridges to a UserDefaults-backed encoded string.
     init(
         encoded: Binding<String>,
         mode: HotkeyRecorder.Mode,
-        validator: @escaping HotkeyRecorder.Validator
+        validator: @escaping HotkeyRecorder.Validator,
+        showsClearButton: Bool = true
     ) {
         self.init(
             config: Binding(
@@ -638,7 +671,8 @@ struct HotkeyRecorderField: View {
             ),
             mode: mode,
             validator: validator,
-            displayName: nil
+            displayName: nil,
+            showsClearButton: showsClearButton
         )
     }
 
@@ -650,7 +684,7 @@ struct HotkeyRecorderField: View {
                 validator: validator,
                 displayName: displayName
             )
-            if config != nil {
+            if showsClearButton && config != nil {
                 Button {
                     config = nil
                 } label: {
@@ -718,14 +752,14 @@ private struct HotkeyRecorderButton: NSViewRepresentable {
 
 // MARK: - HotkeyRecorder with clear / restore-default button
 
-/// Recorder bound to a UserDefaults-backed encoded string, with a trailing "×"
-/// button that restores the default (or clears, when no default is provided).
+/// Recorder bound to an encoded string, with caller-defined reset behavior.
 struct HotkeyRecorderWithClear: View {
     @Binding var encoded: String
     let defaultEncoded: String?
     let mode: HotkeyRecorder.Mode
     let validator: HotkeyRecorder.Validator
     let recorderWidth: CGFloat
+    let resetAction: () -> Void
 
     private var canReset: Bool {
         if let defaultEncoded { return encoded != defaultEncoded }
@@ -734,13 +768,13 @@ struct HotkeyRecorderWithClear: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            HotkeyRecorderField(encoded: $encoded, mode: mode, validator: validator)
+            HotkeyRecorderField(encoded: $encoded, mode: mode, validator: validator, showsClearButton: false)
                 .frame(width: recorderWidth, height: 24)
 
             ClearHotkeyButton(
                 hasDefault: defaultEncoded != nil,
                 isEnabled: canReset,
-                action: { encoded = defaultEncoded ?? "" }
+                action: resetAction
             )
         }
     }
@@ -750,7 +784,6 @@ struct HotkeyRecorderWithClear: View {
 /// restores the default (or clears the value, when no default is provided).
 struct HotkeyRecorderConfigWithClear: View {
     @Binding var config: HotkeyConfig?
-    let defaultConfig: HotkeyConfig?
     let mode: HotkeyRecorder.Mode
     let validator: HotkeyRecorder.Validator
     let displayName: HotkeyRecorderField.DisplayName?
@@ -758,46 +791,31 @@ struct HotkeyRecorderConfigWithClear: View {
 
     init(
         config: Binding<HotkeyConfig?>,
-        defaultConfig: HotkeyConfig? = nil,
         mode: HotkeyRecorder.Mode,
         validator: @escaping HotkeyRecorder.Validator,
         displayName: HotkeyRecorderField.DisplayName? = nil,
         recorderWidth: CGFloat
     ) {
         self._config = config
-        self.defaultConfig = defaultConfig
         self.mode = mode
         self.validator = validator
         self.displayName = displayName
         self.recorderWidth = recorderWidth
     }
 
-    private var canReset: Bool {
-        if let defaultConfig { return config != defaultConfig }
-        return config != nil
-    }
-
     var body: some View {
-        HStack(spacing: 4) {
-            HotkeyRecorderField(
-                config: $config,
-                mode: mode,
-                validator: validator,
-                displayName: displayName
-            )
-            .frame(width: recorderWidth, height: 24)
-
-            ClearHotkeyButton(
-                hasDefault: defaultConfig != nil,
-                isEnabled: canReset,
-                action: { config = defaultConfig }
-            )
-        }
+        HotkeyRecorderField(
+            config: $config,
+            mode: mode,
+            validator: validator,
+            displayName: displayName
+        )
+        .frame(width: recorderWidth, height: 24)
     }
 }
 
-/// Compact "×" button shared by both recorder wrappers. Keeps layout stable
-/// by reserving space via `.opacity` rather than removing the view.
+/// Compact "×" button used by encoded-string recorder wrappers that suppress
+/// the field's built-in clear (e.g. to substitute a "restore default" action).
 private struct ClearHotkeyButton: View {
     let hasDefault: Bool
     let isEnabled: Bool
@@ -981,11 +999,13 @@ private struct ShortcutsSettingsSection: View {
                     }
                 }
             } header: {
-                Text("Trigger any text input, key press, or shell script with a hotkey combo. Shell actions run with your full user privileges — only add shortcuts you trust.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .textCase(nil)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text(
+                    "Trigger any text input, key press, or shell script with a hotkey combo. Shell actions run with your full user privileges — only add shortcuts you trust."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .textCase(nil)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Section {
@@ -1024,8 +1044,11 @@ private struct ShortcutsSettingsSection: View {
     private func validate(_ cfg: HotkeyConfig, excluding id: UUID?) -> String? {
         if cfg.isPureModifier { return "Modifier-only triggers are not allowed" }
         if cfg.modifiers.isEmpty { return "Need at least one modifier" }
-        let voiceKey = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        let clipKey = UserDefaults.standard.string(forKey: "clipboardHotkey") ?? "alt+v"
+
+        let hotkeyStore = HotkeySettingsStore.shared
+        let voiceKey = hotkeyStore.rawHotkey(for: .voiceTrigger)
+        let clipKey = hotkeyStore.rawHotkey(for: .clipboardPanel)
+
         if HotkeyConfig.parse(voiceKey) == cfg { return "Conflicts with voice trigger" }
         if HotkeyConfig.parse(clipKey) == cfg { return "Conflicts with clipboard hotkey" }
         if store.bindings.contains(where: { $0.id != id && HotkeyConfig.parse($0.trigger) == cfg }) {
@@ -1145,7 +1168,8 @@ private struct BindingEditorSheet: View {
 
                     LabeledRow(
                         "Apps:",
-                        help: "Leave empty to make this shortcut work in all apps. Add apps to limit it to those running applications."
+                        help:
+                            "Leave empty to make this shortcut work in all apps. Add apps to limit it to those running applications."
                     ) {
                         AppsScopeView(bundleIDs: $appBundleIDs)
                     }
@@ -1203,9 +1227,18 @@ private struct BindingEditorSheet: View {
     }
 
     private func save() {
-        guard let trigger else { error = "Set a hotkey first"; return }
-        if let msg = validator(trigger) { error = msg; return }
-        if actions.isEmpty { error = "Add at least one action"; return }
+        guard let trigger else {
+            error = "Set a hotkey first"
+            return
+        }
+        if let msg = validator(trigger) {
+            error = msg
+            return
+        }
+        if actions.isEmpty {
+            error = "Add at least one action"
+            return
+        }
         if let badIdx = actions.firstIndex(where: { !$0.isValid }) {
             error = "Action \(badIdx + 1) is incomplete or invalid"
             return
@@ -1231,8 +1264,8 @@ private struct ActionDraft: Identifiable, Equatable {
             switch self {
             case .typeText: "Text"
             case .keyPress: "Key"
-            case .wait:     "Wait"
-            case .shell:    "Shell"
+            case .wait: "Wait"
+            case .shell: "Shell"
             }
         }
     }
@@ -1246,14 +1279,17 @@ private struct ActionDraft: Identifiable, Equatable {
     init(_ action: HotkeyAction) {
         switch action {
         case .typeText(let s):
-            kind = .typeText; text = s
+            kind = .typeText
+            text = s
         case .keyPress(let kc, let mods):
             kind = .keyPress
             text = HotkeyConfig(modifiers: CGEventFlags(rawValue: mods), keyCode: CGKeyCode(kc)).encode()
         case .wait(let ms):
-            kind = .wait; text = String(ms)
+            kind = .wait
+            text = String(ms)
         case .shell(let cmd):
-            kind = .shell; text = cmd
+            kind = .shell
+            text = cmd
         }
     }
 
@@ -1263,8 +1299,8 @@ private struct ActionDraft: Identifiable, Equatable {
         case .keyPress:
             guard let cfg = HotkeyConfig.parse(text) else { return false }
             return !cfg.isPureModifier
-        case .wait:     return Int(text) != nil
-        case .shell:    return !text.isEmpty
+        case .wait: return Int(text) != nil
+        case .shell: return !text.isEmpty
         }
     }
 
@@ -1276,8 +1312,8 @@ private struct ActionDraft: Identifiable, Equatable {
                 return .keyPress(keyCode: UInt16(cfg.keyCode), modifiers: cfg.modifiers.rawValue)
             }
             return .keyPress(keyCode: 0, modifiers: 0)
-        case .wait:     return .wait(ms: max(0, Int(text) ?? 100))
-        case .shell:    return .shell(text)
+        case .wait: return .wait(ms: max(0, Int(text) ?? 100))
+        case .shell: return .shell(text)
         }
     }
 }
@@ -1314,8 +1350,8 @@ private struct ActionDraftRow: View {
         switch action.kind {
         case .typeText: "Text to type"
         case .keyPress: "e.g. cmd+shift+a"
-        case .wait:     "Milliseconds"
-        case .shell:    "Shell command"
+        case .wait: "Milliseconds"
+        case .shell: "Shell command"
         }
     }
 }
@@ -1426,7 +1462,8 @@ private struct AppPickerList: View {
             .filter { $0.activationPolicy == .regular }
             .compactMap { app -> AppInfo? in
                 guard let bid = app.bundleIdentifier, !seen.contains(bid),
-                      unique.insert(bid).inserted else { return nil }
+                    unique.insert(bid).inserted
+                else { return nil }
                 return AppInfo(bundleID: bid, name: app.localizedName ?? bid, icon: app.icon)
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -1490,8 +1527,9 @@ private struct AppPickerList: View {
         panel.canChooseFiles = true
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         if panel.runModal() == .OK, let url = panel.url,
-           let bundle = Bundle(url: url),
-           let bid = bundle.bundleIdentifier {
+            let bundle = Bundle(url: url),
+            let bid = bundle.bundleIdentifier
+        {
             onPick(bid)
         }
     }
