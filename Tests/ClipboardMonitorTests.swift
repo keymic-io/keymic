@@ -6,13 +6,43 @@ final class FakePasteboard: PasteboardReading {
     var changeCount: Int = 0
     var stringValue: String?
     var typesValue: [String] = []
+    var dataByType: [String: Data] = [:]
+    var fileURLValues: [URL] = []
 
     func string() -> String? { stringValue }
     func types() -> [String] { typesValue }
+    func data(forType type: String) -> Data? { dataByType[type] }
+    func fileURLs() -> [URL] { fileURLValues }
 
     func simulate(text: String, types: [String] = []) {
         stringValue = text
         typesValue = types
+        dataByType = [:]
+        fileURLValues = []
+        changeCount += 1
+    }
+
+    func simulate(image data: Data, mime type: String) {
+        stringValue = nil
+        typesValue = [type]
+        dataByType = [type: data]
+        fileURLValues = []
+        changeCount += 1
+    }
+
+    func simulate(fileURLs urls: [URL]) {
+        stringValue = nil
+        typesValue = ["public.file-url"]
+        dataByType = [:]
+        fileURLValues = urls
+        changeCount += 1
+    }
+
+    func simulate(richTextHTML html: Data, plainText: String) {
+        stringValue = plainText
+        typesValue = ["public.html", "public.utf8-plain-text"]
+        dataByType = ["public.html": html]
+        fileURLValues = []
         changeCount += 1
     }
 }
@@ -63,7 +93,9 @@ struct ClipboardMonitorTestRunner {
         monitor.markIgnored(text: "keymic-write")
         fake.simulate(text: "user-typed")
         monitor.tickForTesting()
-        expect(store.fetchAll().map(\.text).first == "user-typed", "non-matching marker is consumed and external copy captured")
+        expect(
+            store.fetchAll().map(\.text).first == "user-typed",
+            "non-matching marker is consumed and external copy captured")
         // and the same text the marker once held must now be capturable when copied externally
         fake.simulate(text: "keymic-write")
         monitor.tickForTesting()
