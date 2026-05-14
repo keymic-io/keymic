@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store
 
 
 build:
@@ -78,6 +78,8 @@ test-clipboard-store:
 	swiftc Sources/KeyMic/Clipboard/CleanupMode.swift \
 	       Sources/KeyMic/Clipboard/ClipboardPreferences.swift \
 	       Sources/KeyMic/Clipboard/ClipboardKind.swift \
+	       Sources/KeyMic/Clipboard/ImageFormat.swift \
+	       Sources/KeyMic/Clipboard/RichTextFormat.swift \
 	       Sources/KeyMic/Clipboard/ClipboardItem.swift \
 	       Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
 	       Sources/KeyMic/Clipboard/GitleaksLoader.swift \
@@ -93,6 +95,8 @@ test-clipboard-monitor:
 	swiftc Sources/KeyMic/Clipboard/CleanupMode.swift \
 	       Sources/KeyMic/Clipboard/ClipboardPreferences.swift \
 	       Sources/KeyMic/Clipboard/ClipboardKind.swift \
+	       Sources/KeyMic/Clipboard/ImageFormat.swift \
+	       Sources/KeyMic/Clipboard/RichTextFormat.swift \
 	       Sources/KeyMic/Clipboard/ClipboardItem.swift \
 	       Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
 	       Sources/KeyMic/Clipboard/GitleaksLoader.swift \
@@ -104,6 +108,49 @@ test-clipboard-monitor:
 	       Tests/ClipboardMonitorTests.swift \
 	       -o .build/clipboard-monitor-tests
 	.build/clipboard-monitor-tests
+
+test-clipboard-store-binary:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Clipboard/ClipboardItem.swift \
+	       Sources/KeyMic/Clipboard/ClipboardKind.swift \
+	       Sources/KeyMic/Clipboard/ImageFormat.swift \
+	       Sources/KeyMic/Clipboard/RichTextFormat.swift \
+	       Sources/KeyMic/Clipboard/ClipboardStore.swift \
+	       Sources/KeyMic/Clipboard/CleanupMode.swift \
+	       Sources/KeyMic/Clipboard/ClipboardPreferences.swift \
+	       Sources/KeyMic/Clipboard/KindClassifier.swift \
+	       Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
+	       Sources/KeyMic/Clipboard/GitleaksLoader.swift \
+	       Sources/KeyMic/Vault/VaultItem.swift \
+	       Tests/ClipboardStoreBinaryTests.swift \
+	       -o .build/clipboard-store-binary-tests
+	.build/clipboard-store-binary-tests
+
+test-clipboard-monitor-types:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Clipboard/ClipboardItem.swift \
+	       Sources/KeyMic/Clipboard/ClipboardKind.swift \
+	       Sources/KeyMic/Clipboard/ImageFormat.swift \
+	       Sources/KeyMic/Clipboard/RichTextFormat.swift \
+	       Sources/KeyMic/Clipboard/ClipboardStore.swift \
+	       Sources/KeyMic/Clipboard/ClipboardMonitor.swift \
+	       Sources/KeyMic/Clipboard/CleanupMode.swift \
+	       Sources/KeyMic/Clipboard/ClipboardPreferences.swift \
+	       Sources/KeyMic/Clipboard/KindClassifier.swift \
+	       Sources/KeyMic/Clipboard/PasteboardReading.swift \
+	       Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
+	       Sources/KeyMic/Clipboard/GitleaksLoader.swift \
+	       Sources/KeyMic/Vault/VaultItem.swift \
+	       Tests/ClipboardMonitorTypesTests.swift \
+	       -o .build/clipboard-monitor-types-tests
+	.build/clipboard-monitor-types-tests
+
+test-thumbnail-cache:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Clipboard/ThumbnailLoader.swift \
+	       Tests/ThumbnailCacheTests.swift \
+	       -o .build/thumbnail-cache-tests
+	.build/thumbnail-cache-tests
 
 test-toml-parser:
 	mkdir -p .build
@@ -159,6 +206,8 @@ test-cleanup-policy:
 	swiftc Sources/KeyMic/Clipboard/CleanupMode.swift \
 	       Sources/KeyMic/Clipboard/ClipboardPreferences.swift \
 	       Sources/KeyMic/Clipboard/ClipboardKind.swift \
+	       Sources/KeyMic/Clipboard/ImageFormat.swift \
+	       Sources/KeyMic/Clipboard/RichTextFormat.swift \
 	       Sources/KeyMic/Clipboard/ClipboardItem.swift \
 	       Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
 	       Sources/KeyMic/Clipboard/GitleaksLoader.swift \
@@ -201,6 +250,8 @@ test-vault-store:
 	swiftc Sources/KeyMic/Clipboard/CleanupMode.swift \
 	       Sources/KeyMic/Clipboard/ClipboardPreferences.swift \
 	       Sources/KeyMic/Clipboard/ClipboardKind.swift \
+	       Sources/KeyMic/Clipboard/ImageFormat.swift \
+	       Sources/KeyMic/Clipboard/RichTextFormat.swift \
 	       Sources/KeyMic/Clipboard/ClipboardItem.swift \
 	       Sources/KeyMic/Clipboard/MinimalTOMLParser.swift \
 	       Sources/KeyMic/Clipboard/GitleaksLoader.swift \
@@ -341,7 +392,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
@@ -372,6 +423,17 @@ install: build
 	rm -rf /Applications/$(APP_BUNDLE)
 	cp -r $(APP_BUNDLE) /Applications/
 	@echo "✅ Installed to /Applications/$(APP_BUNDLE)"
+
+## Enable the repo's git hooks (swift-format + swiftlint on commit).
+install-hooks:
+	@chmod +x scripts/git-hooks/pre-commit
+	@git config core.hooksPath scripts/git-hooks
+	@echo "✅ core.hooksPath -> scripts/git-hooks"
+
+## Disable the repo's git hooks (revert to .git/hooks).
+uninstall-hooks:
+	@git config --unset core.hooksPath || true
+	@echo "✅ core.hooksPath cleared"
 
 release:
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=1.1.0 [FORCE=1]"; exit 1; fi
