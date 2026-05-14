@@ -47,6 +47,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     private var ocrOverlay: ImageAnalysisOverlayView?
     private var ocrAnalyzeTask: Task<Void, Never>?
     private let ocrAnalyzer = ImageAnalyzer()
+    private(set) var isOCRAnalyzing = false
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
@@ -87,6 +88,10 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        if let frame = frozenFrame {
+            ctx.draw(frame, in: bounds)
+        }
+
         let maskAlpha: CGFloat = isOwner ? 0.25 : 0.45
         NSColor.black.withAlphaComponent(maskAlpha).setFill()
         bounds.fill()
@@ -685,8 +690,17 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
         ocrOverlay = overlay
 
         let config = ImageAnalyzer.Configuration([.text])
+        isOCRAnalyzing = true
+        delegate?.overlayDidUpdateState(self)
 
         ocrAnalyzeTask = Task { [weak self, weak overlay, analyzer = ocrAnalyzer] in
+            defer {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.isOCRAnalyzing = false
+                    self.delegate?.overlayDidUpdateState(self)
+                }
+            }
             do {
                 let analysis = try await analyzer.analyze(
                     cropped,
@@ -709,6 +723,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     private func removeOCROverlay() {
         ocrAnalyzeTask?.cancel()
         ocrAnalyzeTask = nil
+        isOCRAnalyzing = false
         if let overlay = ocrOverlay {
             if let firstResp = window?.firstResponder as? NSView, firstResp.isDescendant(of: overlay) || firstResp === overlay {
                 window?.makeFirstResponder(self)
