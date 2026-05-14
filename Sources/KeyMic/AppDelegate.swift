@@ -73,7 +73,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let systemLang = Locale.current.language.languageCode?.identifier
         if let systemLang,
-           let match = supported.first(where: { $0.language.languageCode?.identifier == systemLang }) {
+            let match = supported.first(where: { $0.language.languageCode?.identifier == systemLang })
+        {
             return match.identifier
         }
         return "en-US"
@@ -87,7 +88,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppScreen.refresh()
 
         let savedCode = selectedLocaleCode
-        speechEngine.locale = savedCode.isEmpty ? Locale(identifier: Self.defaultSpeechLocaleCode()) : Locale(identifier: savedCode)
+        speechEngine.locale =
+            savedCode.isEmpty ? Locale(identifier: Self.defaultSpeechLocaleCode()) : Locale(identifier: savedCode)
 
         setupMainMenu()
         setupStatusBar()
@@ -123,6 +125,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
         clipboardController = ClipboardController()
         clipboardController.overlayPanel = overlayPanel
+
+        let schemaKey = "clipboardSchemaVersion"
+        let installedVersion = UserDefaults.standard.integer(forKey: schemaKey)
+        if installedVersion < 2 {
+            logger.info("Clipboard schema upgrade to v2: wiping legacy ClipboardItem rows")
+            clipboardController.performSchemaWipe()
+            UserDefaults.standard.set(2, forKey: schemaKey)
+        } else {
+            // Boot-time orphan sweep handles cleanup from crashes / kills.
+            clipboardController.sweepOrphanCacheFiles()
+        }
+
         textInjector.onMarkIgnored = { [weak self] text in
             self?.clipboardController.markPasteboardWrite(text)
         }
@@ -141,20 +155,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardController.start()
         _ = UpdaterController.shared
 
+        HotkeySettingsStore.shared.ensureInitialized()
+
         // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
         let registry = HotkeyRegistry.shared
-        let triggerRaw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        if let cfg = HotkeyConfig.parse(triggerRaw) {
+        let hotkeys = HotkeySettingsStore.shared
+        if let cfg = hotkeys.hotkey(for: .voiceTrigger) {
             registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
         }
-        let clipRaw = UserDefaults.standard.string(forKey: "clipboardHotkey") ?? "alt+v"
-        if let clipCfg = HotkeyConfig.parse(clipRaw) {
-            registry.register(clipCfg, owner: .clipboardPanel, purpose: "Clipboard panel (⌥V)")
+        if let cfg = hotkeys.hotkey(for: .clipboardPanel) {
+            registry.register(cfg, owner: .clipboardPanel, purpose: "Clipboard panel")
+        }
+        if let cfg = hotkeys.hotkey(for: .vaultPanel) {
+            registry.register(cfg, owner: .vaultPanel, purpose: "Vault panel")
+        }
+        if let cfg = hotkeys.hotkey(for: .settingsWindow) {
+            registry.register(cfg, owner: .settingsWindow, purpose: "Settings window")
+        }
+        if let cfg = hotkeys.hotkey(for: .screenshot) {
+            registry.register(cfg, owner: .screenshot, purpose: "Screenshot")
         }
         AppDelegate.syncPersonaHotkeysToRegistry()
         NotificationCenter.default.addObserver(
             forName: PersonaStore.didChangeNotification, object: nil, queue: .main
-        ) { _ in AppDelegate.syncPersonaHotkeysToRegistry() }
+        ) { [weak self] _ in
+            AppDelegate.syncPersonaHotkeysToRegistry()
+            self?.rebuildPersonasMenu()
+        }
 
         NotificationCenter.default.addObserver(
             self,
@@ -162,15 +189,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: UserDefaults.didChangeNotification,
             object: nil
         )
+
+        ShellRunner.shared.warmUp()
     }
 
     static func syncPersonaHotkeysToRegistry() {
         let registry = HotkeyRegistry.shared
+        let hotkeys = HotkeySettingsStore.shared
+        hotkeys.ensureInitialized()
         for entry in registry.all() {
             if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
         }
         for persona in PersonaStore.shared.personas {
-            guard let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) else { continue }
+            guard let cfg = hotkeys.personaHotkey(personaId: persona.id) else { continue }
             registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
         }
     }
@@ -189,7 +220,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return false
         }
         if let existing = SingleInstance.existingInstance(bundleIdentifier: bundleIdentifier),
-           let app = NSRunningApplication(processIdentifier: existing.processIdentifier) {
+            let app = NSRunningApplication(processIdentifier: existing.processIdentifier)
+        {
             app.activate(options: [])
         }
         NSApp.terminate(nil)
@@ -253,13 +285,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechEngine.onError = { [weak self] msg in
             guard let self else { return }
-            guard !self.lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                self.overlayPanel.dismiss()
-                return
-            }
-            self.overlayPanel.updateText("Error: \(msg)")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                self.overlayPanel.dismiss()
+            self.overlayPanel.updateText(msg)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.overlayPanel.dismiss()
             }
         }
 
@@ -303,37 +331,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let userText = buildUserText(transcript: text, contextMode: persona.contextMode)
 
         overlayPanel.showRefining()
-        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
+        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) {
+            [weak self] result in
             guard let self else { return }
-            let finalText: String
             switch result {
             case .success(let refined):
-                finalText = refined.isEmpty ? text : refined
-                let wasRefined = finalText != text
-                if wasRefined {
-                    self.overlayPanel.updateText("✨ \(finalText)")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self.overlayPanel.dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            self.textInjector.inject(finalText)
-                            NSSound(named: .init("Pop"))?.play()
-                        }
-                    }
-                } else {
-                    self.overlayPanel.dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.textInjector.inject(finalText)
-                        NSSound(named: .init("Pop"))?.play()
-                    }
+                let finalText = refined.isEmpty ? text : refined
+                self.overlayPanel.dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.textInjector.inject(finalText)
+                    NSSound(named: .init("Pop"))?.play()
                 }
             case .failure(let error):
                 logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
-                finalText = text
-                self.overlayPanel.updateText("Refine failed: \(error.localizedDescription)")
+                self.overlayPanel.showMessage("Refine failed: \(error.localizedDescription)")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     self.overlayPanel.dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.textInjector.inject(finalText)
+                        self.textInjector.inject(text)
                         NSSound(named: .init("Pop"))?.play()
                     }
                 }
@@ -347,9 +362,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func buildUserText(transcript: String, contextMode: ContextMode) -> String {
         guard contextMode == .selectionAndClipboard else { return transcript }
 
-        let selection = SelectionTextProvider.currentSelection()?
+        let selection =
+            SelectionTextProvider.currentSelection()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let clipboard = NSPasteboard.general.string(forType: .string)?
+        let clipboard =
+            NSPasteboard.general.string(forType: .string)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
         var sections: [String] = []
@@ -379,7 +396,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if result.utf16.count > 7500 {
             let units = result.utf16
             let cutIdx = units.index(units.startIndex, offsetBy: 7500)
-            result = String(units[units.startIndex..<cutIdx]) ?? String(result[..<result.unicodeScalars.index(result.startIndex, offsetBy: 7500)])
+            result =
+                String(units[units.startIndex..<cutIdx])
+                ?? String(result[..<result.unicodeScalars.index(result.startIndex, offsetBy: 7500)])
         }
         return result
     }
@@ -412,14 +431,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
 
         // Group 1: Voice + Personas
-        voiceEnabledMenuItem = NSMenuItem(title: voiceEnabledMenuTitle, action: #selector(toggleVoiceEnabled), keyEquivalent: "")
+        voiceEnabledMenuItem = NSMenuItem(
+            title: voiceEnabledMenuTitle, action: #selector(toggleVoiceEnabled), keyEquivalent: "")
         voiceEnabledMenuItem.target = self
         voiceEnabledMenuItem.state = isVoiceEnabled ? .on : .off
         voiceEnabledMenuItem.image = symbolImage("mic.fill")
         applyVoiceShortcut(to: voiceEnabledMenuItem)
         menu.addItem(voiceEnabledMenuItem)
 
-        personasRootMenuItem = NSMenuItem(title: "Personas", action: nil, keyEquivalent: "")
+        personasRootMenuItem = NSMenuItem(title: "Default Persona", action: nil, keyEquivalent: "")
         personasRootMenuItem.image = symbolImage("person.crop.circle.badge.checkmark")
         let personasMenu = NSMenu()
         personasRootMenuItem.submenu = personasMenu
@@ -436,7 +456,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMappingMenuItem.image = symbolImage("keyboard")
         menu.addItem(keyMappingMenuItem)
 
-        clipboardMenuItem = NSMenuItem(title: "Clipboard History", action: #selector(toggleClipboard), keyEquivalent: "")
+        clipboardMenuItem = NSMenuItem(
+            title: "Clipboard History", action: #selector(toggleClipboard), keyEquivalent: "")
         clipboardMenuItem.target = self
         clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
         clipboardMenuItem.image = symbolImage("doc.on.clipboard")
@@ -497,7 +518,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let image = NSImage()
         for name in ["TrayIconTemplate", "TrayIconTemplate@2x"] {
             guard let url = Bundle.main.url(forResource: name, withExtension: "png"),
-                  let rep = NSImageRep(contentsOf: url) else { continue }
+                let rep = NSImageRep(contentsOf: url)
+            else { continue }
             rep.size = NSSize(width: pointSize, height: pointSize)
             image.addRepresentation(rep)
         }
@@ -577,8 +599,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func applyVoiceShortcut(to item: NSMenuItem) {
-        let raw = UserDefaults.standard.string(forKey: "voiceTriggerKey") ?? "fn"
-        guard let cfg = HotkeyConfig.parse(raw) else {
+        guard let cfg = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger) else {
             item.title = voiceEnabledMenuTitle
             item.keyEquivalent = ""
             item.keyEquivalentModifierMask = []
@@ -600,31 +621,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildPersonasMenu() {
         guard let personasMenu else { return }
-        personasMenu.removeAllItems()
+        let personas = PersonaStore.shared.personas
 
-        for persona in PersonaStore.shared.personas {
-            let item = NSMenuItem(title: persona.name, action: #selector(selectPersona(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = persona.id
-            item.state = persona.id == PersonaStore.shared.activePersonaId ? .on : .off
-            if let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) {
-                let rep = cfg.menuRepresentation
-                item.keyEquivalent = rep.key
-                item.keyEquivalentModifierMask = rep.modifiers
+        // Fast path: if persona identity + title + hotkey are unchanged, just redraw
+        // existing views (preserves NSMenu tracking state while the submenu is open).
+        let existing = personasMenu.items.compactMap { $0.view as? PersonaMenuItemView }
+        if existing.count == personas.count,
+           zip(existing, personas).allSatisfy({ $0.personaId == $1.id }) {
+            existing.forEach { $0.needsDisplay = true }
+            return
+        }
+
+        personasMenu.removeAllItems()
+        for persona in personas {
+            let pid = persona.id
+            let hotkeyText = HotkeySettingsStore.shared
+                .personaHotkey(personaId: pid)?
+                .displayString()
+            let view = PersonaMenuItemView(
+                personaId: pid,
+                title: persona.name,
+                hotkeyText: hotkeyText
+            ) { [weak self] in
+                self?.togglePersona(id: pid)
             }
+            let item = NSMenuItem()
+            item.representedObject = pid
+            item.view = view
             personasMenu.addItem(item)
         }
     }
 
-    @objc private func selectPersona(_ sender: NSMenuItem) {
-        guard let id = sender.representedObject as? String else { return }
-        PersonaStore.shared.setActive(id)
-        rebuildPersonasMenu()
+    private func togglePersona(id: String) {
+        let store = PersonaStore.shared
+        if store.activePersonaId == id {
+            store.setActive(nil)
+        } else {
+            store.setActive(id)
+        }
     }
 
     private func applySettingsShortcut(to item: NSMenuItem) {
-        let raw = UserDefaults.standard.string(forKey: "settingsHotkey") ?? "cmd+shift+,"
-        let cfg = HotkeyConfig.parse(raw) ?? HotkeyConfig(modifiers: [.maskCommand, .maskShift], keyCode: 0x2B)
+        guard let cfg = HotkeySettingsStore.shared.hotkey(for: .settingsWindow) else {
+            item.keyEquivalent = ""
+            item.keyEquivalentModifierMask = []
+            return
+        }
         let rep = cfg.menuRepresentation
         item.keyEquivalent = rep.key
         item.keyEquivalentModifierMask = rep.modifiers
@@ -652,7 +694,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func centerSettingsWindowOnActiveScreen() {
         let mouse = NSEvent.mouseLocation
-        let screen = NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
+        let screen =
+            NSScreen.screens.first(where: { NSMouseInRect(mouse, $0.frame, false) })
             ?? NSScreen.main
             ?? NSScreen.screens.first
         guard let visible = screen?.visibleFrame else {
@@ -683,7 +726,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Accessibility Permission Required"
         alert.informativeText = """
-            KeyMic needs Accessibility permission to monitor the Fn key and apply key mappings.
+            KeyMic needs Accessibility permission to monitor configured hotkeys and apply key mappings.
 
             1. Open System Settings → Privacy & Security → Accessibility
             2. Add and enable KeyMic
@@ -714,31 +757,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 // MARK: - HotkeyConfig → NSMenuItem
 
-private extension HotkeyConfig {
+extension HotkeyConfig {
     /// Convert this hotkey to an NSMenuItem keyEquivalent + modifier mask so the
     /// shortcut shows next to the menu item title (e.g. "⇧⌘,").
-    var menuRepresentation: (key: String, modifiers: NSEvent.ModifierFlags) {
+    fileprivate var menuRepresentation: (key: String, modifiers: NSEvent.ModifierFlags) {
         var mods: NSEvent.ModifierFlags = []
-        if modifiers.contains(.maskCommand)     { mods.insert(.command) }
-        if modifiers.contains(.maskShift)       { mods.insert(.shift) }
-        if modifiers.contains(.maskControl)     { mods.insert(.control) }
-        if modifiers.contains(.maskAlternate)   { mods.insert(.option) }
+        if modifiers.contains(.maskCommand) { mods.insert(.command) }
+        if modifiers.contains(.maskShift) { mods.insert(.shift) }
+        if modifiers.contains(.maskControl) { mods.insert(.control) }
+        if modifiers.contains(.maskAlternate) { mods.insert(.option) }
         if modifiers.contains(.maskSecondaryFn) { mods.insert(.function) }
 
         let key: String
         switch keyCode {
-        case 0x35: key = "\u{1B}"   // ⎋
-        case 0x24: key = "\r"        // ↩
-        case 0x33: key = "\u{8}"     // ⌫
-        case 0x30: key = "\t"        // ⇥
-        case 0x31: key = " "         // Space
+        case 0x35: key = "\u{1B}"  // ⎋
+        case 0x24: key = "\r"  // ↩
+        case 0x33: key = "\u{8}"  // ⌫
+        case 0x30: key = "\t"  // ⇥
+        case 0x31: key = " "  // Space
         case 0x7B: key = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
         case 0x7C: key = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
         case 0x7D: key = String(Character(UnicodeScalar(NSDownArrowFunctionKey)!))
         case 0x7E: key = String(Character(UnicodeScalar(NSUpArrowFunctionKey)!))
         default:
             if let token = HotkeyConfig.tokenToKeyCode.first(where: { $0.value == keyCode })?.key,
-               token.count == 1 {
+                token.count == 1
+            {
                 key = token
             } else {
                 key = ""

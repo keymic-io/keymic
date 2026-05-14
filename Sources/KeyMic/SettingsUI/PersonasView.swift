@@ -77,7 +77,7 @@ private struct PersonaRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .imageScale(.small)
-            } else if let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) {
+            } else if let cfg = HotkeySettingsStore.shared.personaHotkey(personaId: persona.id) {
                 Text(cfg.displayString())
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -135,10 +135,7 @@ private struct PersonaDetailForm: View {
 
                 // Hotkey
                 FieldLabel("Hotkey") {
-                    PersonaHotkeyField(
-                        hotkeyRaw: model.binding(\.hotkey, for: persona),
-                        personaId: persona.id
-                    )
+                    PersonaHotkeyField(personaId: persona.id)
                 }
 
                 // Style prompt
@@ -298,31 +295,33 @@ struct PersonaIconPicker: View {
 // MARK: - Hotkey field (wraps NSButton HotkeyRecorder)
 
 struct PersonaHotkeyField: View {
-    @Binding var hotkeyRaw: String?
     let personaId: String
 
     var body: some View {
-        HStack(spacing: 4) {
+        let raw = HotkeySettingsStore.shared.rawPersonaHotkey(personaId: personaId)
+
+        return HStack(spacing: 4) {
             // .id(personaId): the embedded NSViewRepresentable captures personaId in
             // its validator and onCommit closures at makeNSView time. Without a
             // per-id identity, SwiftUI reuses the recorder across persona switches
             // and the closures keep targeting the originally selected persona —
             // recording for B would silently write to A and bypass cross-persona
             // conflict checks. The .id() forces SwiftUI to rebuild on switch.
-            PersonaHotkeyRecorder(hotkeyRaw: $hotkeyRaw, personaId: personaId)
+            PersonaHotkeyRecorder(personaId: personaId)
                 .id(personaId)
                 .frame(height: 24)
 
             Button {
-                hotkeyRaw = nil
+                try? HotkeySettingsStore.shared.setPersonaHotkey(nil, personaId: personaId)
+                AppDelegate.syncPersonaHotkeysToRegistry()
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .imageScale(.medium)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.borderless)
-            .opacity(hotkeyRaw != nil ? 1 : 0)
-            .disabled(hotkeyRaw == nil)
+            .opacity(raw != nil ? 1 : 0)
+            .disabled(raw == nil)
             .accessibilityLabel("Clear hotkey")
             .help("Clear")
         }
@@ -330,45 +329,33 @@ struct PersonaHotkeyField: View {
 }
 
 private struct PersonaHotkeyRecorder: NSViewRepresentable {
-    @Binding var hotkeyRaw: String?
     let personaId: String
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeNSView(context: Context) -> HotkeyRecorder {
-        let coord = context.coordinator
-        let initial = hotkeyRaw.flatMap { HotkeyConfig.parse($0) }
+        let initial = HotkeySettingsStore.shared.personaHotkey(personaId: personaId)
         let recorder = HotkeyRecorder(
             initial: initial,
             mode: .combo,
             validator: { [personaId] cfg in
-                // System reserved?
-                if cfg.isSystemReserved {
-                    return "\(cfg.displayString()) is reserved by macOS"
-                }
-                // Internal conflict?
-                let conflicts = HotkeyRegistry.shared.conflicts(
-                    for: cfg, excluding: .persona(id: personaId)
-                )
-                if let first = conflicts.first {
-                    return "Conflicts with: \(first.purpose)"
-                }
-                return nil
+                HotkeySettingsStore.shared.validationMessage(for: cfg, owner: .persona(personaId))
             },
-            onCommit: { cfg in
+            onCommit: { [personaId] cfg in
                 DispatchQueue.main.async {
-                    coord.parent.hotkeyRaw = cfg.encode()
+                    try? HotkeySettingsStore.shared.setPersonaHotkey(cfg, personaId: personaId)
+                    AppDelegate.syncPersonaHotkeysToRegistry()
                 }
             }
         )
-        coord.recorder = recorder
+        context.coordinator.recorder = recorder
         return recorder
     }
 
     func updateNSView(_ recorder: HotkeyRecorder, context: Context) {
         context.coordinator.parent = self
         context.coordinator.recorder = recorder
-        let cfg = hotkeyRaw.flatMap { HotkeyConfig.parse($0) }
+        let cfg = HotkeySettingsStore.shared.personaHotkey(personaId: personaId)
         recorder.updateValue(cfg)
     }
 
@@ -465,8 +452,6 @@ final class PersonasViewModel: ObservableObject {
                       p[keyPath: keyPath] != newValue else { return }
                 p[keyPath: keyPath] = newValue
                 self.store.update(p)
-                // Sync persona hotkeys in registry after any change
-                AppDelegate.syncPersonaHotkeysToRegistry()
             }
         )
     }

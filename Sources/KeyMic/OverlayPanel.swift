@@ -9,6 +9,7 @@ final class OverlayState {
     var text: String = "Listening..."
     var audioLevel: CGFloat = 0   // 0…1, already smoothed by the panel
     var isAnimating: Bool = false
+    var showsText: Bool = true
 }
 
 // MARK: - Panel host
@@ -65,9 +66,10 @@ final class OverlayPanel: NSPanel {
 
     func show(text: String = "Listening...") {
         state.text = text
+        state.showsText = true
         state.isAnimating = true
 
-        let w = idealWidth(for: text)
+        let w = idealWidth(for: text, showsText: true)
         guard let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
         let x = area.midX - w / 2
@@ -90,8 +92,9 @@ final class OverlayPanel: NSPanel {
 
     func updateText(_ text: String) {
         state.text = text
+        state.showsText = true
 
-        let w = idealWidth(for: text)
+        let w = idealWidth(for: text, showsText: true)
         guard let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
         let x = area.midX - w / 2
@@ -115,10 +118,31 @@ final class OverlayPanel: NSPanel {
     }
 
     func showRefining() {
+        state.text = ""
+        state.showsText = false
+        state.isAnimating = true
+        smoothedLevel = 0
+        state.audioLevel = 0
+
+        let w = idealWidth(for: nil, showsText: false)
+        guard let screen = NSScreen.main else { return }
+        let area = screen.visibleFrame
+        let x = area.midX - w / 2
+        let newFrame = NSRect(x: x, y: frame.origin.y, width: w, height: capsuleHeight)
+
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.46, 0.45, 0.94)
+            ctx.allowsImplicitAnimation = true
+            animator().setFrame(newFrame, display: true)
+        }
+    }
+
+    func showMessage(_ text: String) {
         state.isAnimating = false
         smoothedLevel = 0
         state.audioLevel = 0
-        updateText("Refining...")
+        updateText(text)
     }
 
     private var isShowingTranscript: Bool {
@@ -183,7 +207,8 @@ final class OverlayPanel: NSPanel {
         })
     }
 
-    private func idealWidth(for text: String) -> CGFloat {
+    private func idealWidth(for text: String?, showsText: Bool) -> CGFloat {
+        guard showsText, let text else { return minWidth }
         let attrs: [NSAttributedString.Key: Any] = [.font: labelFont]
         let textW = ceil((text as NSString).size(withAttributes: attrs).width)
         let total = hPad + waveSize + gap + textW + hPad
@@ -201,12 +226,14 @@ private struct OverlayContent: View {
             WaveformView(level: state.audioLevel, animating: state.isAnimating)
                 .frame(width: 44, height: 32)
 
-            Text(state.text)
-                .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(Color.white.opacity(0.92))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .fixedSize(horizontal: true, vertical: false)
+            if state.showsText {
+                Text(state.text)
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(Color.white.opacity(0.92))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -230,8 +257,11 @@ private struct WaveformView: View {
     let level: CGFloat
     let animating: Bool
 
+    @State private var phase: CGFloat = 0
+
     private static let weights: [CGFloat] = [0.5, 0.8, 1.0, 0.75, 0.55]
     private static let minFraction: CGFloat = 0.15
+    private static let loadingAmplitude: CGFloat = 0.35
     private static let barWidth: CGFloat = 4.5
     private static let barSpacing: CGFloat = 3.5
 
@@ -239,8 +269,13 @@ private struct WaveformView: View {
         GeometryReader { geo in
             HStack(spacing: Self.barSpacing) {
                 ForEach(Self.weights.indices, id: \.self) { i in
+                    let clampedLevel = max(0, min(level, 1))
+                    let loadingOffset = (sin(phase + CGFloat(i) * 0.9) + 1) / 2
+                    let animatedLevel = clampedLevel > 0
+                        ? clampedLevel
+                        : Self.loadingAmplitude * loadingOffset
                     let fraction = animating
-                        ? Self.minFraction + (1 - Self.minFraction) * max(0, min(level, 1)) * Self.weights[i]
+                        ? Self.minFraction + (1 - Self.minFraction) * animatedLevel * Self.weights[i]
                         : Self.minFraction
                     Capsule(style: .continuous)
                         .fill(Color.white.opacity(0.9))
@@ -249,8 +284,25 @@ private struct WaveformView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .center)
         }
+        .onAppear {
+            updatePhaseAnimation()
+        }
+        .onChange(of: animating) { _, _ in
+            updatePhaseAnimation()
+        }
         .animation(.easeOut(duration: 0.08), value: level)
         .animation(.easeInOut(duration: 0.18), value: animating)
         .accessibilityHidden(true)
+    }
+
+    private func updatePhaseAnimation() {
+        if animating {
+            phase = 0
+            withAnimation(.linear(duration: 1.0).repeatForever(autoreverses: false)) {
+                phase = .pi * 2
+            }
+        } else {
+            phase = 0
+        }
     }
 }
