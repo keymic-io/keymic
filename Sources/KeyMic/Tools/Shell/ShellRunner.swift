@@ -112,6 +112,15 @@ final class ShellRunner {
         outPipe.fileHandleForReading.readabilityHandler = nil
         errPipe.fileHandleForReading.readabilityHandler = nil
 
+        // Drain any data the readability handler may not have delivered yet.
+        // Process has already exited, so the write ends are closed and these
+        // reads return promptly. Serialize through the same queues to avoid
+        // racing with the (now-removed but possibly in-flight) handlers.
+        let trailingOut = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let trailingErr = errPipe.fileHandleForReading.readDataToEndOfFile()
+        if !trailingOut.isEmpty { outQ.sync { stdoutData.append(trailingOut) } }
+        if !trailingErr.isEmpty { errQ.sync { stderrData.append(trailingErr) } }
+
         let outStr = outQ.sync { String(data: stdoutData, encoding: .utf8) ?? "" }
         let errStr = errQ.sync { String(data: stderrData, encoding: .utf8) ?? "" }
         return (p.terminationStatus, outStr, errStr)

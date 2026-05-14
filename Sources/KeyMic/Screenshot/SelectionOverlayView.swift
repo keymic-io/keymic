@@ -695,8 +695,12 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
 
         ocrAnalyzeTask = Task { [weak self, weak overlay, analyzer = ocrAnalyzer] in
             defer {
+                // Capture cancellation status synchronously: a newer OCR task
+                // would have called .cancel() on this one before replacing it,
+                // and we must not clear `isOCRAnalyzing` for the live task.
+                let wasCancelled = Task.isCancelled
                 Task { @MainActor [weak self] in
-                    guard let self else { return }
+                    guard let self, !wasCancelled else { return }
                     self.isOCRAnalyzing = false
                     self.delegate?.overlayDidUpdateState(self)
                 }
