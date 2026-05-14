@@ -252,13 +252,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         speechEngine.onError = { [weak self] msg in
             guard let self else { return }
-            guard !self.lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                self.overlayPanel.dismiss()
-                return
-            }
-            self.overlayPanel.updateText("Error: \(msg)")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                self.overlayPanel.dismiss()
+            self.overlayPanel.updateText(msg)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.overlayPanel.dismiss()
             }
         }
 
@@ -304,35 +300,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayPanel.showRefining()
         refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
             guard let self else { return }
-            let finalText: String
             switch result {
             case .success(let refined):
-                finalText = refined.isEmpty ? text : refined
-                let wasRefined = finalText != text
-                if wasRefined {
-                    self.overlayPanel.updateText("✨ \(finalText)")
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                        self.overlayPanel.dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                            self.textInjector.inject(finalText)
-                            NSSound(named: .init("Pop"))?.play()
-                        }
-                    }
-                } else {
-                    self.overlayPanel.dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.textInjector.inject(finalText)
-                        NSSound(named: .init("Pop"))?.play()
-                    }
+                let finalText = refined.isEmpty ? text : refined
+                self.overlayPanel.dismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    self.textInjector.inject(finalText)
+                    NSSound(named: .init("Pop"))?.play()
                 }
             case .failure(let error):
                 logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
-                finalText = text
-                self.overlayPanel.updateText("Refine failed: \(error.localizedDescription)")
+                self.overlayPanel.showMessage("Refine failed: \(error.localizedDescription)")
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     self.overlayPanel.dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.textInjector.inject(finalText)
+                        self.textInjector.inject(text)
                         NSSound(named: .init("Pop"))?.play()
                     }
                 }
@@ -418,7 +400,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyVoiceShortcut(to: voiceEnabledMenuItem)
         menu.addItem(voiceEnabledMenuItem)
 
-        personasRootMenuItem = NSMenuItem(title: "Personas", action: nil, keyEquivalent: "")
+        personasRootMenuItem = NSMenuItem(title: "Default Persona", action: nil, keyEquivalent: "")
         personasRootMenuItem.image = symbolImage("person.crop.circle.badge.checkmark")
         let personasMenu = NSMenu()
         personasRootMenuItem.submenu = personasMenu

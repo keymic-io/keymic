@@ -229,6 +229,13 @@ test-single-instance:
 	       -o .build/single-instance-tests
 	.build/single-instance-tests
 
+test-speech-engine:
+	mkdir -p .build
+	swiftc Sources/KeyMic/SpeechEngine.swift \
+	       Tests/SpeechEngineTests.swift \
+	       -o .build/speech-engine-tests
+	.build/speech-engine-tests
+
 test-annotation-model:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Screenshot/AnnotationModel.swift \
@@ -299,7 +306,7 @@ test-hotkey-registry:
 	       -o .build/hotkey-registry-tests
 	.build/hotkey-registry-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
