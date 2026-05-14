@@ -10,7 +10,7 @@
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Email: www@keymic.io
+Email: lorne@keymic.io
 
 Include:
 
