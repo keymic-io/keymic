@@ -64,6 +64,73 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 
+    override func sendEvent(_ event: NSEvent) {
+        if let handledShortcut = handledClipboardShortcut(for: event) {
+            handledShortcut()
+            return
+        }
+        if let quickPasteIndex = quickPasteIndex(for: event) {
+            focus.quickPasteIndex = quickPasteIndex
+            focus.quickPasteRequestID += 1
+            return
+        }
+        super.sendEvent(event)
+    }
+
+    private func handledClipboardShortcut(for event: NSEvent) -> (() -> Void)? {
+        guard focus.currentTab == .clipboard, isAltOnlyKeyDown(event) else { return nil }
+        if event.keyCode == 0x23 {
+            return { [focus] in focus.togglePinRequestID += 1 }
+        }
+        if let index = pinnedQuickPasteIndex(for: event.keyCode) {
+            return { [focus] in
+                focus.pinnedQuickPasteIndex = index
+                focus.pinnedQuickPasteRequestID += 1
+            }
+        }
+        return nil
+    }
+
+    private func quickPasteIndex(for event: NSEvent) -> Int? {
+        guard isAltOnlyKeyDown(event) else { return nil }
+        switch event.keyCode {
+        case 18: return 0
+        case 19: return 1
+        case 20: return 2
+        case 21: return 3
+        case 23: return 4
+        case 22: return 5
+        case 26: return 6
+        case 28: return 7
+        case 25: return 8
+        case 29: return 9
+        default: return nil
+        }
+    }
+
+    private func pinnedQuickPasteIndex(for keyCode: UInt16) -> Int? {
+        switch keyCode {
+        case 0x0C: return 0
+        case 0x0D: return 1
+        case 0x0E: return 2
+        case 0x00: return 3
+        case 0x01: return 4
+        case 0x02: return 5
+        case 0x06: return 6
+        case 0x07: return 7
+        case 0x08: return 8
+        default: return nil
+        }
+    }
+
+    private func isAltOnlyKeyDown(_ event: NSEvent) -> Bool {
+        event.type == .keyDown
+            && event.modifierFlags.contains(.option)
+            && !event.modifierFlags.contains(.command)
+            && !event.modifierFlags.contains(.control)
+            && !event.modifierFlags.contains(.shift)
+    }
+
     override func resignKey() {
         super.resignKey()
         orderOut(nil)

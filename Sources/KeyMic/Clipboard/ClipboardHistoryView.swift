@@ -96,6 +96,12 @@ struct ClipboardHistoryView: View {
         .onChange(of: focus.quickPasteRequestID) { _, _ in
             triggerQuickPaste(focus.quickPasteIndex)
         }
+        .onChange(of: focus.pinnedQuickPasteRequestID) { _, _ in
+            triggerPinnedQuickPaste(focus.pinnedQuickPasteIndex)
+        }
+        .onChange(of: focus.togglePinRequestID) { _, _ in
+            triggerTogglePin()
+        }
         .onChange(of: focus.tabRequestID) { _, _ in
             tab = focus.initialTab
             query = ""
