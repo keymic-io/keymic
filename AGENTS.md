@@ -78,6 +78,21 @@ IOHIDSetModifierLockState(connect, Int32(kIOHIDCapsLockState), !state)
 - `.cgSessionEventTap` (used here): per-user-session, sees logical keyboard events. Good for remap.
 - `.cghidEventTap`: lowest layer. Posting here makes events visible to your own session tap too — guard against re-entry by ensuring posted keyCodes don't have mappings.
 
+## Reset safety (Milestone 1)
+
+- `KeyMonitor.resetAllInputState(reason:)` is the single entry point for clearing
+  trigger state, held modifiers, remapped-key-down state, and repeat timers. Call
+  it from any code path that may leave input state inconsistent: tap-disabled
+  notifications, Secure Input enter, settings reload, app stop.
+- The event tap may be disabled by macOS (`.tapDisabledByTimeout` /
+  `.tapDisabledByUserInput`) when the callback is too slow. `KeyMonitor` logs
+  these via `os.Logger` (`subsystem=io.keymic.app`, `category=KeyMonitor`),
+  resets state, then re-enables the tap. Do **not** add work to the callback path
+  without checking that it remains fast.
+- Secure Input (sudo prompts, password fields, lock screen) can drop key-up
+  events from the session tap. `SecureInputMonitor` polls every 200ms and tells
+  `KeyMonitor` to suspend hotkey dispatch until Secure Input exits.
+
 ## Modifier keys reference
 
 | Key             | keyCode | Flag                |
