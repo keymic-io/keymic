@@ -52,6 +52,21 @@ final class ClipboardController {
         monitor.start()
     }
 
+    /// One-time schema upgrade. Drops every ClipboardItem (preserving VaultItem
+    /// in the shared container) and clears the cache directory of any leftovers.
+    /// Idempotent; AppDelegate gates calls on a UserDefaults version key.
+    func performSchemaWipe() {
+        store.deleteAllClipboardItems()
+        // After wipe there are no referenced cache files, so this sweeps everything left.
+        store.collectOrphanCacheFiles()
+    }
+
+    /// Boot-time orphan sweep — call once on launch after `performSchemaWipe`
+    /// (if any) to clean up files left behind by previous crashes.
+    func sweepOrphanCacheFiles() {
+        store.collectOrphanCacheFiles()
+    }
+
     var isPanelVisible: Bool {
         panel.isVisible
     }
@@ -101,6 +116,7 @@ final class ClipboardController {
     private func makePanel() -> ClipboardPanel {
         ClipboardPanel(
             modelContainer: store.modelContainer,
+            clipboardCacheURL: store.clipboardCacheURL,
             onPaste: { [weak self] item in self?.paste(item) },
             onDelete: { [weak self] id in self?.store.delete(id: id) },
             onTogglePin: { [weak self] id in self?.store.togglePin(id: id) },
@@ -141,21 +157,95 @@ final class ClipboardController {
     }
 
     private func paste(_ item: ClipboardItem) {
+        switch item.kind {
+        case .image:
+            pasteImage(item)
+        case .file:
+            pasteFile(item)
+        case .richText:
+            pasteRichText(item)
+        default:
+            pasteText(item)
+        }
+    }
+
+    private func pasteText(_ item: ClipboardItem) {
         store.bumpToTop(id: item.id)
         pasteboard.write(item.text)
-        monitor.markIgnored(text: item.text)
+        monitor.markIgnored(token: item.text)
         panel.dismiss()
+        activateTargetAndSendCommandV()
+    }
 
+    private func pasteImage(_ item: ClipboardItem) {
+        guard let rel = item.imageRelativePath else {
+            panel.dismiss()
+            return
+        }
+        let url = store.clipboardCacheURL.appendingPathComponent(rel)
+        guard let data = try? Data(contentsOf: url) else {
+            Self.logger.error("paste image — cache file missing: \(url.path, privacy: .public)")
+            overlayPanel?.showMessage("图片缓存已丢失")
+            panel.dismiss()
+            return
+        }
+        let format: ImageFormat = url.pathExtension.lowercased() == "tiff" ? .tiff : .png
+        store.bumpToTop(id: item.id)
+        pasteboard.write(payloads: [(type: format.pasteboardType, data: data)])
+        if let hash = item.contentHash {
+            monitor.markIgnored(token: hash)
+        }
+        panel.dismiss()
+        activateTargetAndSendCommandV()
+    }
+
+    private func pasteFile(_ item: ClipboardItem) {
+        guard let path = item.fileURLPath, FileManager.default.fileExists(atPath: path) else {
+            overlayPanel?.showMessage("文件已不存在")
+            panel.dismiss()
+            return
+        }
+        let url = URL(fileURLWithPath: path)
+        store.bumpToTop(id: item.id)
+        pasteboard.write(fileURL: url)
+        monitor.markIgnored(token: path)
+        panel.dismiss()
+        activateTargetAndSendCommandV()
+    }
+
+    private func pasteRichText(_ item: ClipboardItem) {
+        guard let blob = item.richBlob, let format = item.richBlobFormat else {
+            // Fall back to plain text if the blob is somehow gone.
+            pasteText(item)
+            return
+        }
+        var payloads: [(type: String, data: Data)] = [
+            (type: format.pasteboardType, data: blob)
+        ]
+        payloads.append((type: "public.utf8-plain-text", data: Data(item.text.utf8)))
+        store.bumpToTop(id: item.id)
+        pasteboard.write(payloads: payloads)
+        monitor.markIgnored(token: item.text)
+        panel.dismiss()
+        activateTargetAndSendCommandV()
+    }
+
+    private func activateTargetAndSendCommandV() {
         if let target = pasteTargetApplication, !target.isTerminated {
             target.activate(options: [])
         }
-
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Self.synthesizeCommandV()
         }
     }
 
     private func handleNewlyInserted(_ item: ClipboardItem) {
+        switch item.kind {
+        case .image, .file:
+            return  // no text content to scan for secrets
+        default:
+            break
+        }
         let text = item.text
         let bundleID = item.sourceBundleID
         scanner.scan(text) { [weak self] match in
@@ -169,7 +259,8 @@ final class ClipboardController {
         let source = CGEventSource(stateID: pasteSourceID)
         let vKeyCode: CGKeyCode = 0x09
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-              let up = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else { return }
+            let up = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
+        else { return }
         down.flags = .maskCommand
         up.flags = .maskCommand
         down.post(tap: .cgAnnotatedSessionEventTap)

@@ -12,9 +12,24 @@ final class ClipboardItem {
     var isPinned: Bool = false
     var pinnedAt: Date? = nil
 
+    // Binary / non-text additions (all optional / defaulted so existing rows continue to load).
+    var imageRelativePath: String? = nil  // .image: filename under Clipboard.cache/
+    var imageWidth: Int = 0
+    var imageHeight: Int = 0
+    var byteSize: Int = 0  // image: cache file bytes; richText: blob size; file: 0
+    var fileURLPath: String? = nil  // .file: absolute path string
+    var richBlob: Data? = nil  // .richText: blob bytes (HTML or RTF)
+    var richBlobFormatRaw: String? = nil  // .richText: RichTextFormat rawValue
+    var contentHash: String? = nil  // .image: SHA-256 hex (for dedup); other kinds: nil
+
     var kind: ClipboardKind {
         get { ClipboardKind(rawValue: kindRaw) ?? .plain }
         set { kindRaw = newValue.rawValue }
+    }
+
+    var richBlobFormat: RichTextFormat? {
+        get { richBlobFormatRaw.flatMap(RichTextFormat.init(rawValue:)) }
+        set { richBlobFormatRaw = newValue?.rawValue }
     }
 
     init(
@@ -38,7 +53,8 @@ final class ClipboardItem {
 extension ClipboardItem {
     /// Single-line preview (max 80 chars, newlines replaced).
     var preview: String {
-        let collapsed = text
+        let collapsed =
+            text
             .replacingOccurrences(of: "\r\n", with: " ↵ ")
             .replacingOccurrences(of: "\n", with: " ↵ ")
             .replacingOccurrences(of: "\t", with: "    ")

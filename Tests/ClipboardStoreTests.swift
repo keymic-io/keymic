@@ -8,8 +8,11 @@ struct ClipboardStoreTestRunner {
         let container = try ModelContainer(for: ClipboardItem.self, configurations: config)
         let store = ClipboardStore(container: container, maxHistory: 3)
 
-        let defaultStoreURL = ClipboardStore.defaultStoreURL(applicationSupportDirectory: URL(fileURLWithPath: "/tmp/keymic-test-app-support", isDirectory: true))
-        expect(defaultStoreURL.path == "/tmp/keymic-test-app-support/KeyMic/Clipboard.store", "default store path is app-specific")
+        let defaultStoreURL = ClipboardStore.defaultStoreURL(
+            applicationSupportDirectory: URL(fileURLWithPath: "/tmp/keymic-test-app-support", isDirectory: true))
+        expect(
+            defaultStoreURL.path == "/tmp/keymic-test-app-support/KeyMic/Clipboard.store",
+            "default store path is app-specific")
 
         // add inserts
         store.add(text: "one", sourceBundleID: "a", sourceAppName: "A")
@@ -43,7 +46,7 @@ struct ClipboardStoreTestRunner {
         expect(store.fetchAll().count == 3, "blank text rejected")
 
         // delete by id
-        let target = store.fetchAll()[1] // "three"
+        let target = store.fetchAll()[1]  // "three"
         store.delete(id: target.id)
         let afterDelete = store.fetchAll()
         expect(afterDelete.count == 2, "deletion removed row")
@@ -84,7 +87,16 @@ struct ClipboardStoreTestRunner {
         toUnpin.isPinned = false
         toUnpin.pinnedAt = nil
         pinnedStore.testDeleteOlderThan(days: 1)
-        expect(!pinnedStore.fetchAll().contains(where: { $0.text == "p1" }), "unpinned item becomes eligible for cleanup")
+        expect(
+            !pinnedStore.fetchAll().contains(where: { $0.text == "p1" }), "unpinned item becomes eligible for cleanup")
+
+        // deleteAllClipboardItems wipes ClipboardItem rows
+        let wipeStore = ClipboardStore(container: container, maxHistory: 10)
+        wipeStore.add(text: "alpha", sourceBundleID: nil, sourceAppName: nil)
+        wipeStore.add(text: "beta", sourceBundleID: nil, sourceAppName: nil)
+        expect(!wipeStore.fetchAll().isEmpty, "rows exist before wipe")
+        wipeStore.deleteAllClipboardItems()
+        expect(wipeStore.fetchAll().isEmpty, "wipe removed all ClipboardItem rows")
 
         print("ClipboardStoreTests passed")
     }

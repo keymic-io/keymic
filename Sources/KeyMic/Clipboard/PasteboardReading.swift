@@ -4,6 +4,10 @@ protocol PasteboardReading: AnyObject {
     var changeCount: Int { get }
     func string() -> String?
     func types() -> [String]
+    /// Raw data for the given UTI. Returns nil if absent.
+    func data(forType type: String) -> Data?
+    /// File URLs from a `.fileURL` pasteboard. Returns empty if none.
+    func fileURLs() -> [URL]
 }
 
 final class SystemPasteboard: PasteboardReading {
@@ -19,11 +23,43 @@ final class SystemPasteboard: PasteboardReading {
         pasteboard.types?.map(\.rawValue) ?? []
     }
 
+    func data(forType type: String) -> Data? {
+        pasteboard.data(forType: NSPasteboard.PasteboardType(type))
+    }
+
+    func fileURLs() -> [URL] {
+        guard
+            let objs = pasteboard.readObjects(
+                forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL]
+        else {
+            return []
+        }
+        return objs
+    }
+
     /// Writer used by ClipboardController. Returns the new changeCount after the write.
     @discardableResult
     func write(_ text: String) -> Int {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
+        return pasteboard.changeCount
+    }
+
+    /// Writes one or more typed payloads atomically. Returns the new changeCount.
+    @discardableResult
+    func write(payloads: [(type: String, data: Data)]) -> Int {
+        pasteboard.clearContents()
+        for p in payloads {
+            pasteboard.setData(p.data, forType: NSPasteboard.PasteboardType(p.type))
+        }
+        return pasteboard.changeCount
+    }
+
+    /// Writes a single file URL. Returns the new changeCount.
+    @discardableResult
+    func write(fileURL: URL) -> Int {
+        pasteboard.clearContents()
+        _ = pasteboard.writeObjects([fileURL as NSURL])
         return pasteboard.changeCount
     }
 
