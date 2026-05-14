@@ -306,7 +306,31 @@ test-hotkey-registry:
 	       -o .build/hotkey-registry-tests
 	.build/hotkey-registry-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry
+test-shell-logger:
+	mkdir -p .build
+	swiftc Tests/ShellLoggerTests.swift \
+	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       -o .build/shell-logger-tests
+	.build/shell-logger-tests
+
+test-shell-snapshot:
+	mkdir -p .build
+	swiftc Tests/ShellSnapshotTests.swift \
+	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       -o .build/shell-snapshot-tests
+	.build/shell-snapshot-tests
+
+test-shell-runner:
+	mkdir -p .build
+	swiftc Tests/ShellRunnerTests.swift \
+	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       -o .build/shell-runner-tests
+	.build/shell-runner-tests
+
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
