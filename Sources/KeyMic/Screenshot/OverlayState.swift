@@ -97,7 +97,7 @@ final class ScreenshotOverlayState {
             let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: a.fontSize, weight: .semibold)]
             let size = (a.text as NSString).size(withAttributes: attrs)
             return NSRect(origin: a.startPoint, size: size).insetBy(dx: -6, dy: -6).contains(point)
-        case .select:
+        case .select, .ocr:
             return false
         }
     }

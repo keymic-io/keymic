@@ -46,7 +46,7 @@ enum AnnotationRenderer {
             ctx.scaleBy(x: scale, y: scale)
             for ann in annotations {
                 switch ann.kind {
-                case .mosaic, .blur, .select: continue
+                case .mosaic, .blur, .select, .ocr: continue
                 case .rect: drawRectAnnotation(ann, in: ctx)
                 case .ellipse: drawEllipseAnnotation(ann, in: ctx)
                 case .arrow: drawArrowAnnotation(ann, in: ctx)
