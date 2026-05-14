@@ -2,6 +2,9 @@ import Cocoa
 import IOKit
 import IOKit.hid
 import IOKit.hidsystem
+import os.log
+
+private let log = Logger(subsystem: "io.keymic.app", category: "KeyMonitor")
 
 final class KeyMonitor {
     var onTriggerDown: (() -> Void)?
@@ -22,15 +25,17 @@ final class KeyMonitor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
-    private var triggerActive = false
+    private var state = InputState()
+    /// When `true`, app-level hotkey dispatch (clipboard/vault/settings/screenshot/persona/action/voice trigger)
+    /// is bypassed. Set on Secure Input enter, cleared on Secure Input exit.
+    /// Physical events still pass through unchanged.
+    private var secureInputSuspended = false
     private var clipboardHotkey: HotkeyConfig?
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
-    private var heldModifiers = Set<CGKeyCode>()
-    private var remappedKeysDown = Set<CGKeyCode>()
     private var repeatTimers: [CGKeyCode: DispatchSourceTimer] = [:]
     private let keyMappingManager: KeyMappingManager
 
@@ -90,14 +95,36 @@ final class KeyMonitor {
         NotificationCenter.default.removeObserver(self, name: UserDefaults.didChangeNotification, object: nil)
         runLoopSource = nil
         eventTap = nil
-        cancelAllRepeatTimers()
-        triggerActive = false
-        heldModifiers.removeAll()
+        resetAllInputState(reason: .stop)
     }
 
-    func resetTriggerState() {
-        triggerActive = false
-        heldModifiers.removeAll()
+    /// Central reset for every piece of mutable input state owned by `KeyMonitor`.
+    /// MUST be called whenever the event tap may have lost events (timeout, user
+    /// input, Secure Input enter, settings reload, stop). Idempotent.
+    func resetAllInputState(reason: InputResetReason) {
+        let priorTimerCount = repeatTimers.count
+        let prior = state.resetTransient()
+        cancelAllRepeatTimers()
+
+        // Interrupt any active voice session — fn-held trigger OR persona-hotkey
+        // push-to-talk. AppDelegate's cancelRecording is idempotent so a single
+        // notification covers both sources.
+        if prior.triggerActive || prior.personaHotkeyKeyDown != nil {
+            DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
+        }
+
+        log.info("resetAllInputState reason=\(reason.rawValue, privacy: .public) trigger=\(prior.triggerActive, privacy: .public) heldMods=\(prior.heldModifiers.count, privacy: .public) remappedDown=\(prior.remappedKeysDown.count, privacy: .public) timers=\(priorTimerCount, privacy: .public) personaHotkey=\(prior.personaHotkeyKeyDown != nil, privacy: .public)")
+    }
+
+    func onSecureInputEnter() {
+        log.info("Secure Input active — suspending hotkey dispatch and resetting state")
+        secureInputSuspended = true
+        resetAllInputState(reason: .secureInputEnter)
+    }
+
+    func onSecureInputExit() {
+        log.info("Secure Input inactive — resuming hotkey dispatch")
+        secureInputSuspended = false
     }
 
     @objc private func userDefaultsChanged() {
@@ -143,14 +170,27 @@ final class KeyMonitor {
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            let reason: InputResetReason = (type == .tapDisabledByTimeout)
+                ? .tapDisabledByTimeout
+                : .tapDisabledByUserInput
+            log.error("event tap disabled reason=\(reason.rawValue, privacy: .public) — resetting state and re-enabling")
+            resetAllInputState(reason: reason)
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
+                let stillEnabled = CGEvent.tapIsEnabled(tap: tap)
+                log.info("event tap re-enable result enabled=\(stillEnabled, privacy: .public)")
             }
             return Unmanaged.passRetained(event)
         }
 
         if let remapped = remapIfNeeded(type: type, event: event) {
             return remapped
+        }
+
+        // While Secure Input is active, key-up events can be missed. Pass events through
+        // unchanged and skip hotkey dispatch entirely until Secure Input exits.
+        if secureInputSuspended {
+            return Unmanaged.passRetained(event)
         }
 
         // Bypass app-level hotkey dispatch while a HotkeyRecorder is capturing input.
@@ -161,11 +201,29 @@ final class KeyMonitor {
             return Unmanaged.passRetained(event)
         }
 
+        // Persona push-to-talk: while a persona hotkey is held, every event for
+        // its primary key (auto-repeat keyDowns and the final keyUp) must be
+        // swallowed. Passing auto-repeats through causes a system beep on every
+        // repeat tick because the focused app has no binding for the combo and
+        // treats the event as unhandled. Modifier state at release time doesn't
+        // have to match the original combo — tracking by primary keyCode is enough.
+        if let downKey = state.personaHotkeyKeyDown,
+           type == .keyDown || type == .keyUp {
+            let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            if keyCode == downKey {
+                if type == .keyUp {
+                    state.personaHotkeyKeyDown = nil
+                    DispatchQueue.main.async { [weak self] in self?.onTriggerUp?() }
+                }
+                return nil
+            }
+        }
+
         if type == .keyDown {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) == 1
 
-            if triggerActive && !isAutoRepeat {
+            if state.triggerActive && !isAutoRepeat {
                 DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
             }
 
@@ -225,30 +283,45 @@ final class KeyMonitor {
                 return nil
             }
 
-            // Persona hotkeys: switch active persona on keyDown.
-            // Swallow the event to prevent dead-key side effects (e.g. ⌥E → ´).
-            if !isAutoRepeat {
+            // Persona hotkeys: push-to-talk per persona. Activate the persona and
+            // start a voice session; the matching keyUp ends it. Swallow the event
+            // to prevent dead-key side effects (e.g. ⌥E → ´). Gate on no other
+            // voice session being active so fn-trigger and persona-trigger don't
+            // overlap.
+            if !isAutoRepeat,
+               state.personaHotkeyKeyDown == nil,
+               !state.triggerActive {
                 let hotkeys = HotkeySettingsStore.shared
                 for persona in PersonaStore.shared.personas {
                     guard let cfg = hotkeys.personaHotkey(personaId: persona.id),
                           !cfg.isPureModifier,
                           cfg.matches(keyCode: keyCode, flags: event.flags) else { continue }
-                    DispatchQueue.main.async {
-                        PersonaStore.shared.setActive(persona.id)
-                        NSSound(named: .init("Pop"))?.play()
+                    let id = persona.id
+                    state.personaHotkeyKeyDown = keyCode
+                    DispatchQueue.main.async { [weak self] in
+                        PersonaStore.shared.setActive(id)
+                        self?.onTriggerDown?()
                     }
                     return nil
                 }
             }
         }
 
+        // Always call computeTriggerActive so heldModifiers stays in sync, but
+        // suppress fn voice trigger callbacks while a persona push-to-talk owns
+        // the recording session. Without this guard, pressing fn during a persona
+        // hotkey would start a second voice session AppDelegate doesn't gate, and
+        // its release would prematurely stop the persona recording.
         let nowActive = computeTriggerActive(type: type, event: event)
-        if nowActive && !triggerActive {
-            triggerActive = true
+        if state.personaHotkeyKeyDown != nil {
+            return Unmanaged.passRetained(event)
+        }
+        if nowActive && !state.triggerActive {
+            state.triggerActive = true
             DispatchQueue.main.async { [weak self] in self?.onTriggerDown?() }
             return nil
-        } else if !nowActive && triggerActive {
-            triggerActive = false
+        } else if !nowActive && state.triggerActive {
+            state.triggerActive = false
             DispatchQueue.main.async { [weak self] in self?.onTriggerUp?() }
             return nil
         }
@@ -262,22 +335,22 @@ final class KeyMonitor {
             if HotkeyConfig.modifierKeyCodes.contains(keyCode) {
                 if keyCode == 0x3F {
                     if event.flags.contains(.maskSecondaryFn) {
-                        heldModifiers.insert(keyCode)
+                        state.heldModifiers.insert(keyCode)
                     } else {
-                        heldModifiers.remove(keyCode)
+                        state.heldModifiers.remove(keyCode)
                     }
                 } else {
-                    if heldModifiers.contains(keyCode) {
-                        heldModifiers.remove(keyCode)
+                    if state.heldModifiers.contains(keyCode) {
+                        state.heldModifiers.remove(keyCode)
                     } else {
-                        heldModifiers.insert(keyCode)
+                        state.heldModifiers.insert(keyCode)
                     }
                 }
             }
         }
 
         guard let voice = voiceTriggerHotkey, voice.isPureModifier else { return false }
-        return heldModifiers.contains(voice.keyCode)
+        return state.heldModifiers.contains(voice.keyCode)
     }
 
     private func remapIfNeeded(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>?? {
@@ -332,12 +405,12 @@ final class KeyMonitor {
         case .keyUp:
             return false
         case .flagsChanged:
-            let wasDown = remappedKeysDown.contains(keyCode)
+            let wasDown = state.remappedKeysDown.contains(keyCode)
             let isDown = !wasDown
             if isDown {
-                remappedKeysDown.insert(keyCode)
+                state.remappedKeysDown.insert(keyCode)
             } else {
-                remappedKeysDown.remove(keyCode)
+                state.remappedKeysDown.remove(keyCode)
             }
             return isDown
         default:

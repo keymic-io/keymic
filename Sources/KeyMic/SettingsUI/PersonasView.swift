@@ -301,7 +301,14 @@ struct PersonaHotkeyField: View {
         let raw = HotkeySettingsStore.shared.rawPersonaHotkey(personaId: personaId)
 
         return HStack(spacing: 4) {
+            // .id(personaId): the embedded NSViewRepresentable captures personaId in
+            // its validator and onCommit closures at makeNSView time. Without a
+            // per-id identity, SwiftUI reuses the recorder across persona switches
+            // and the closures keep targeting the originally selected persona —
+            // recording for B would silently write to A and bypass cross-persona
+            // conflict checks. The .id() forces SwiftUI to rebuild on switch.
             PersonaHotkeyRecorder(personaId: personaId)
+                .id(personaId)
                 .frame(height: 24)
 
             Button {

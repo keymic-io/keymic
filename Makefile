@@ -368,6 +368,20 @@ test-hotkey-registry:
 	       -o .build/hotkey-registry-tests
 	.build/hotkey-registry-tests
 
+test-input-state:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Input/InputState.swift \
+	       Tests/InputStateTests.swift \
+	       -o .build/input-state-tests
+	.build/input-state-tests
+
+test-secure-input-monitor:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Input/SecureInputMonitor.swift \
+	       Tests/SecureInputMonitorTests.swift \
+	       -o .build/secure-input-monitor-tests
+	.build/secure-input-monitor-tests
+
 test-shell-logger:
 	mkdir -p .build
 	swiftc Tests/ShellLoggerTests.swift \
@@ -392,7 +406,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
