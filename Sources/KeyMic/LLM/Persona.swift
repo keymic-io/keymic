@@ -40,8 +40,8 @@ struct Persona: Codable, Identifiable, Equatable {
                     ONLY fix clear, obvious transcription mistakes. When in doubt, leave the text unchanged.
 
                     What to fix:
-                    - English words/acronyms wrongly rendered as Chinese characters \
-                    (e.g. "配森" → "Python", "杰森" → "JSON", "阿皮爱" → "API")
+                    - English words/acronyms wrongly rendered as sound-alike tokens \
+                    (e.g. "pie-thon" → "Python", "jay-son" → "JSON", "A P eye" → "API")
                     - Obvious Chinese homophone errors where context makes the correct character clear
                     - Broken English words or phrases split/merged incorrectly by the recognizer
 
@@ -64,7 +64,7 @@ struct Persona: Codable, Identifiable, Equatable {
                 id: "builtin-translate",
                 name: "Auto Translate",
                 icon: "globe",
-                stylePrompt: "自动识别输入语言并翻译为英文。保持专业、流畅的表达。Return ONLY the translated text.",
+                stylePrompt: "Automatically detect the input language and translate it into English. Keep the tone professional and fluent. Return ONLY the translated text.",
                 temperature: 0.6,
                 hotkey: nil,
                 contextMode: .none,
@@ -76,7 +76,7 @@ struct Persona: Codable, Identifiable, Equatable {
                 id: "builtin-cli",
                 name: "CLI Wizard",
                 icon: "terminal",
-                stylePrompt: "将语音转写为可执行的 shell 命令。简洁、准确，适合技术用户。Return ONLY the command, no markdown fences.",
+                stylePrompt: "Convert voice transcription into executable shell commands. Be concise and accurate for technical users. Return ONLY the command, with no markdown fences.",
                 temperature: 0.1,
                 hotkey: nil,
                 contextMode: .none,
@@ -86,16 +86,16 @@ struct Persona: Codable, Identifiable, Equatable {
             ),
             Persona(
                 id: "builtin-context",
-                name: "上下文",
+                name: "Context",
                 icon: "text.quote",
                 stylePrompt: """
-                    你将看到三段输入：
-                    1. [Selected text] — 用户当前在前台应用中选中的文本（可能为空）
-                    2. [Recent clipboard] — 最近一次剪贴板中的文本（可能为空）
-                    3. [User said] — 用户语音输入的转写
+                    You will receive three inputs:
+                    1. [Selected text] — text currently selected in the foreground app (may be empty)
+                    2. [Recent clipboard] — the most recent clipboard text (may be empty)
+                    3. [User said] — the user's speech transcription
 
-                    请基于上下文理解 [User said] 的意图，改写为更连贯、更精准的文本。\
-                    若上下文为空，则按常规纠错处理。Return ONLY the rewritten text.
+                    Use the context to infer the intent of [User said], then rewrite it into clearer and more accurate text.\
+                    If context is empty, perform normal transcription correction. Return ONLY the rewritten text.
                     """,
                 temperature: 0.5,
                 hotkey: nil,
