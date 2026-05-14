@@ -9,18 +9,18 @@ struct PersonaStoreTestRunner {
         defer { try? FileManager.default.removeItem(at: tmp) }
         let url = tmp.appendingPathComponent("personas.json")
 
-        // First load on empty disk → seeds 4 built-ins, active = builtin-default
+        // First load on empty disk → seeds 4 built-ins, active = nil
         let store1 = PersonaStore(storeURL: url)
         expect(store1.personas.count == 4, "first load seeds 4 built-ins")
-        expect(store1.activePersonaId == "builtin-default",
-               "first launch sets default as active")
+        expect(store1.activePersonaId == nil,
+               "first launch leaves active persona empty")
         expect(FileManager.default.fileExists(atPath: url.path),
                "first load writes file to disk")
 
         // Persistence: re-load same URL retains state
         let store2 = PersonaStore(storeURL: url)
         expect(store2.personas.count == 4, "reload keeps 4 personas")
-        expect(store2.activePersonaId == "builtin-default", "reload keeps active")
+        expect(store2.activePersonaId == nil, "reload keeps empty active persona")
 
         // setActive(nil) → passthrough mode
         store2.setActive(nil)

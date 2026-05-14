@@ -23,6 +23,29 @@ final class HotkeyRecorder: NSButton {
     override var canBecomeKeyView: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
+    /// F-row and arrow keys arrive with `.maskSecondaryFn` already set by macOS,
+    /// even when the user did not press fn. The flag is implied by the keyCode
+    /// itself, so we drop it from recorded combos to avoid bogus fn+F1 bindings.
+    private static let implicitFnKeyCodes: Set<CGKeyCode> = [
+        // F1-F12
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
+        // F13-F20
+        105, 107, 113, 106, 64, 79, 80, 90,
+        // Arrows + nav cluster
+        123, 124, 125, 126, 115, 116, 117, 119, 121,
+    ]
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        // SwiftUI may pull the NSView out of its window without deallocating it
+        // (sheet dismiss, tab switch, view hidden). Without this hook the local +
+        // global NSEvent monitors stay armed and activeRecordingCount leaks,
+        // permanently bypassing app-level hotkey dispatch.
+        if newWindow == nil, isRecording {
+            cancelRecording()
+        }
+    }
+
     init(initial: HotkeyConfig?, mode: Mode, validator: @escaping Validator, onCommit: @escaping (HotkeyConfig) -> Void) {
         self.current = initial
         self.mode = mode
@@ -53,6 +76,10 @@ final class HotkeyRecorder: NSButton {
     }
 
     func updateValue(_ cfg: HotkeyConfig?) {
+        // If a parent state push lands while we are still recording, cancel the
+        // session first so monitors are torn down — otherwise renderIdle() would
+        // make the button look idle while activeRecordingCount stays elevated.
+        if isRecording { cancelRecording() }
         current = cfg
         renderIdle()
     }
@@ -144,16 +171,21 @@ final class HotkeyRecorder: NSButton {
             cfg = HotkeyConfig(modifiers: [], keyCode: CGKeyCode(event.keyCode))
 
         case (.combo, .keyDown):
-            let cgFlags = cgEventFlags(from: event.modifierFlags)
-            cfg = HotkeyConfig(modifiers: cgFlags, keyCode: CGKeyCode(event.keyCode))
+            var cgFlags = cgEventFlags(from: event.modifierFlags)
+            let kc = CGKeyCode(event.keyCode)
+            // F-row / arrows arrive with .function asserted by the system even when
+            // the user did not press fn. Drop it so single F1 doesn't record as fn+F1.
+            if Self.implicitFnKeyCodes.contains(kc) {
+                cgFlags.remove(.maskSecondaryFn)
+            }
+            cfg = HotkeyConfig(modifiers: cgFlags, keyCode: kc)
 
         case (.singleKey, .keyDown):
             cfg = HotkeyConfig(modifiers: [], keyCode: CGKeyCode(event.keyCode))
 
         case (.singleKey, .flagsChanged):
-            let modifierKeyCodes: Set<CGKeyCode> = [0x36, 0x37, 0x38, 0x3C, 0x39, 0x3A, 0x3D, 0x3B, 0x3E, 0x3F]
             let kc = CGKeyCode(event.keyCode)
-            guard modifierKeyCodes.contains(kc) else { return nil }
+            guard HotkeyConfig.modifierKeyCodes.contains(kc) else { return nil }
             // Caps Lock is a toggle: emits one flagsChanged per physical press, but
             // .capsLock is asserted only on toggle-on. Accept either edge for it.
             if kc != 0x39 {
