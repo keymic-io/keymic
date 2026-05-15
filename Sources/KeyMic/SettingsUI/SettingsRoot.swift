@@ -49,14 +49,14 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general: "General"
-        case .voice: "Voice"
+        case .general: String(localized: "General")
+        case .voice: String(localized: "Voice")
         case .llm: "LLM"
-        case .personas: "Personas"
-        case .keyMapping: "Key Mapping"
-        case .shortcuts: "Shortcuts"
-        case .clipboard: "Clipboard"
-        case .screenshot: "Screenshot"
+        case .personas: String(localized: "Personas")
+        case .keyMapping: String(localized: "Key Mapping")
+        case .shortcuts: String(localized: "Shortcuts")
+        case .clipboard: String(localized: "Clipboard")
+        case .screenshot: String(localized: "Screenshot")
         }
     }
 
@@ -103,22 +103,26 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    /// Dedicated KeyMic-only key so we never confuse the user's explicit choice
+    /// with the macOS-level `AppleLanguages` global, which would leak through
+    /// `UserDefaults.standard` when the app has no override of its own.
+    private static let overrideKey = "appLanguageOverride"
+
     static var current: AppLanguage {
-        guard let arr = UserDefaults.standard.array(forKey: "AppleLanguages") as? [String],
-              let first = arr.first else {
+        guard let raw = UserDefaults.standard.string(forKey: overrideKey),
+              !raw.isEmpty else {
             return .system
         }
-        if first.hasPrefix("zh-Hans") { return .zhHans }
-        if first.hasPrefix("zh-Hant") { return .zhHant }
-        let prefix = first.split(separator: "-").first.map(String.init) ?? first
-        return AppLanguage(rawValue: prefix) ?? .system
+        return AppLanguage(rawValue: raw) ?? .system
     }
 
     func apply() {
         let defaults = UserDefaults.standard
         if self == .system {
+            defaults.removeObject(forKey: Self.overrideKey)
             defaults.removeObject(forKey: "AppleLanguages")
         } else {
+            defaults.set(rawValue, forKey: Self.overrideKey)
             defaults.set([rawValue], forKey: "AppleLanguages")
         }
     }
@@ -514,8 +518,8 @@ private struct LLMSettingsView: View {
         var text: String {
             switch self {
             case .idle: return ""
-            case .testing: return "Testing…"
-            case .ok(let m): return "OK: \(m)"
+            case .testing: return String(localized: "Testing…")
+            case .ok(let m): return String(localized: "OK: \(m)")
             case .fail(let m): return m
             }
         }
@@ -561,9 +565,9 @@ private struct LLMSettingsView: View {
     }
 
     @ViewBuilder
-    private func llmFieldRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func llmFieldRow<Content: View>(_ label: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("\(label):")
+            (Text(label) + Text(verbatim: ":"))
                 .fontWeight(.semibold)
                 .frame(width: 160, alignment: .leading)
 
@@ -1345,10 +1349,10 @@ private struct ActionDraft: Identifiable, Equatable {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .typeText: "Text"
-            case .keyPress: "Key"
-            case .wait: "Wait"
-            case .shell: "Shell"
+            case .typeText: String(localized: "Text")
+            case .keyPress: String(localized: "Key")
+            case .wait: String(localized: "Wait")
+            case .shell: String(localized: "Shell")
             }
         }
     }
@@ -1431,10 +1435,10 @@ private struct ActionDraftRow: View {
 
     private var placeholder: String {
         switch action.kind {
-        case .typeText: "Text to type"
-        case .keyPress: "e.g. cmd+shift+a"
-        case .wait: "Milliseconds"
-        case .shell: "Shell command"
+        case .typeText: String(localized: "Text to type")
+        case .keyPress: String(localized: "e.g. cmd+shift+a")
+        case .wait: String(localized: "Milliseconds")
+        case .shell: String(localized: "Shell command")
         }
     }
 }
@@ -1442,11 +1446,11 @@ private struct ActionDraftRow: View {
 // MARK: - Labeled row helper
 
 private struct LabeledRow<Content: View>: View {
-    let title: String
-    let help: String?
+    let title: LocalizedStringKey
+    let help: LocalizedStringKey?
     let content: Content
 
-    init(_ title: String, help: String? = nil, @ViewBuilder content: () -> Content) {
+    init(_ title: LocalizedStringKey, help: LocalizedStringKey? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.help = help
         self.content = content()

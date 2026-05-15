@@ -14,11 +14,11 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
 
     var displayName: String {
         switch self {
-        case .voiceTrigger: return "Voice trigger"
-        case .clipboardPanel: return "Clipboard panel"
-        case .vaultPanel: return "Vault panel"
-        case .settingsWindow: return "Settings window"
-        case .screenshot: return "Screenshot"
+        case .voiceTrigger: return String(localized: "Voice trigger")
+        case .clipboardPanel: return String(localized: "Clipboard panel")
+        case .vaultPanel: return String(localized: "Vault panel")
+        case .settingsWindow: return String(localized: "Settings window")
+        case .screenshot: return String(localized: "Screenshot")
         }
     }
 
@@ -157,7 +157,7 @@ final class HotkeySettingsStore {
             guard owner != .feature(feature),
                   let existing = hotkey(for: feature),
                   existing == config else { continue }
-            throw ValidationError(message: "Conflicts with: \(feature.displayName)")
+            throw ValidationError(message: String(localized: "Conflicts with: \(feature.displayName)"))
         }
     }
 
@@ -166,7 +166,7 @@ final class HotkeySettingsStore {
             guard owner != .persona(personaId),
                   HotkeyConfig.parse(raw) == config else { continue }
             let name = personasProvider().first { $0.id == personaId }?.name ?? personaId
-            throw ValidationError(message: "Conflicts with: Persona: \(name)")
+            throw ValidationError(message: String(localized: "Conflicts with: Persona: \(name)"))
         }
     }
 
@@ -231,19 +231,19 @@ final class HotkeySettingsStore {
         switch owner {
         case .feature(.voiceTrigger):
             if !config.isPureModifier {
-                throw ValidationError(message: "Use a modifier key for voice trigger")
+                throw ValidationError(message: String(localized: "Use a modifier key for voice trigger"))
             }
         case .feature, .persona:
             if config.isPureModifier {
-                throw ValidationError(message: "Need a key, not just modifiers")
+                throw ValidationError(message: String(localized: "Need a key, not just modifiers"))
             }
             if config.modifiers.isEmpty {
-                throw ValidationError(message: "Need at least one modifier")
+                throw ValidationError(message: String(localized: "Need at least one modifier"))
             }
         }
 
         if config.isSystemReserved {
-            throw ValidationError(message: "\(config.displayString()) is reserved by macOS")
+            throw ValidationError(message: String(localized: "\(config.displayString()) is reserved by macOS"))
         }
     }
 

@@ -36,7 +36,7 @@ struct KeychainVault: KeychainBackend {
     func read(account: String) throws -> String {
         let context = LAContext()
         context.touchIDAuthenticationAllowableReuseDuration = VaultConfig.touchIDReuseDuration
-        context.localizedReason = "Reveal secret from KeyMic Vault"
+        context.localizedReason = String(localized: "Reveal secret from KeyMic Vault")
 
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

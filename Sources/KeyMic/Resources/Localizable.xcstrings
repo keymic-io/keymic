@@ -637,59 +637,6 @@
         }
       }
     },
-    "Active": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Aktiv"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Active"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Activo"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Actif"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "アクティブ"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "활성"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前激活"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "目前啟用"
-          }
-        }
-      }
-    },
     "Add Action": {
       "extractionState": "manual",
       "localizations": {
@@ -961,7 +908,7 @@
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Alter"
+            "value": "Aufbewahrungsdauer"
           }
         },
         "en": {
@@ -973,37 +920,37 @@
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Antigüedad"
+            "value": "Tiempo de retención"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Âge"
+            "value": "Durée de conservation"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "経過時間"
+            "value": "保存期間"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "기간"
+            "value": "보관 기간"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "时长"
+            "value": "保留时间"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "時長"
+            "value": "保留時間"
           }
         }
       }
@@ -1061,6 +1008,112 @@
         }
       }
     },
+    "Arrow": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pfeil"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arrow"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Flecha"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Flèche"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "矢印"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "화살표"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "箭头"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "箭頭"
+          }
+        }
+      }
+    },
+    "Audio engine failed: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Audio-Engine fehlgeschlagen: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Audio engine failed: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Falló el motor de audio: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Échec du moteur audio : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "オーディオエンジンに失敗しました：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "오디오 엔진 실패: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音频引擎失败：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "音訊引擎失敗：%@"
+          }
+        }
+      }
+    },
     "Automatically check and install updates": {
       "extractionState": "manual",
       "localizations": {
@@ -1110,6 +1163,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "自動檢查並安裝更新"
+          }
+        }
+      }
+    },
+    "Blur": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unschärfe"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blur"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Desenfoque"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Flou"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ぼかし"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "흐림"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "模糊"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "模糊"
           }
         }
       }
@@ -1326,6 +1432,59 @@
         }
       }
     },
+    "Choose a folder to save the screenshot": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Wähle einen Ordner zum Speichern des Bildschirmfotos"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a folder to save the screenshot"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Elige una carpeta para guardar la captura"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Choisis un dossier pour enregistrer la capture d’écran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "スクリーンショットを保存するフォルダを選択"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "스크린샷을 저장할 폴더 선택"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择截图保存的文件夹"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "選擇截圖儲存的檔案夾"
+          }
+        }
+      }
+    },
     "Choose an Application": {
       "extractionState": "manual",
       "localizations": {
@@ -1485,55 +1644,55 @@
         }
       }
     },
-    "Clear Active": {
+    "Clear Default": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Aktivierung aufheben"
+            "value": "Standard aufheben"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Clear Active"
+            "value": "Clear Default"
           }
         },
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Quitar activo"
+            "value": "Quitar el predeterminado"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Désactiver"
+            "value": "Effacer le défaut"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "アクティブを解除"
+            "value": "デフォルトを解除"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "활성 해제"
+            "value": "기본 해제"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "取消当前"
+            "value": "取消默认"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "取消啟用"
+            "value": "取消預設"
           }
         }
       }
@@ -1640,6 +1799,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "清除快速鍵"
+          }
+        }
+      }
+    },
+    "Click and drag to select a region  •  Press Esc to cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Klicken und ziehen, um einen Bereich auszuwählen  •  Esc zum Abbrechen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Click and drag to select a region  •  Press Esc to cancel"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Haz clic y arrastra para seleccionar una región  •  Esc para cancelar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Cliquez et faites glisser pour sélectionner une zone  •  Esc pour annuler"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ドラッグして領域を選択  •  Esc でキャンセル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "드래그하여 영역 선택  •  Esc로 취소"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点击并拖动选择区域  •  按 Esc 取消"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "點擊並拖動選擇區域  •  按 Esc 取消"
           }
         }
       }
@@ -1799,6 +2011,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "剪貼簿歷史"
+          }
+        }
+      }
+    },
+    "Clipboard panel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Zwischenablage-Panel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Clipboard panel"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Panel del portapapeles"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Panneau du presse-papiers"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "クリップボードパネル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "클립보드 패널"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剪贴板面板"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "剪貼簿面板"
           }
         }
       }
@@ -2015,6 +2280,112 @@
         }
       }
     },
+    "Conflicts with: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Konflikt mit: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicts with: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Conflicto con: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Conflit avec : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@ と競合"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "'%@'와(과) 충돌"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与 %@ 冲突"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "與 %@ 衝突"
+          }
+        }
+      }
+    },
+    "Conflicts with: Persona: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Konflikt mit Persona: %@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conflicts with: Persona: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Conflicto con Persona: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Conflit avec Persona : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Persona %@ と競合"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Persona '%@'와(과) 충돌"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与 Persona %@ 冲突"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "與 Persona %@ 衝突"
+          }
+        }
+      }
+    },
     "Context": {
       "extractionState": "manual",
       "localizations": {
@@ -2216,13 +2587,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "数量"
+            "value": "条数"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "數量"
+            "value": "條數"
           }
         }
       }
@@ -2276,6 +2647,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "剪下"
+          }
+        }
+      }
+    },
+    "Default": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Standard"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Default"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Predeterminado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Par défaut"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "デフォルト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "기본"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "預設"
           }
         }
       }
@@ -2810,6 +3234,59 @@
         }
       }
     },
+    "Ellipse": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ellipse"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ellipse"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Elipse"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ellipse"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "楕円"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "타원"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "椭圆"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "橢圓"
+          }
+        }
+      }
+    },
     "Enable clipboard history": {
       "extractionState": "manual",
       "localizations": {
@@ -3081,7 +3558,7 @@
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Von"
+            "value": "Ursprungstaste"
           }
         },
         "en": {
@@ -3093,37 +3570,37 @@
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "De"
+            "value": "Tecla original"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "De"
+            "value": "Touche source"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "変換元"
+            "value": "元のキー"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "원본"
+            "value": "원본 키"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "来源"
+            "value": "原按键"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "來源"
+            "value": "原按鍵"
           }
         }
       }
@@ -3389,6 +3866,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "已授予"
+          }
+        }
+      }
+    },
+    "Highlight": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Markierung"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Highlight"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Resaltado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Surlignage"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ハイライト"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "강조"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "高亮"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "高亮"
           }
         }
       }
@@ -4559,6 +5089,59 @@
         }
       }
     },
+    "Microphone access denied.\nGrant in System Settings → Privacy & Security → Microphone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mikrofonzugriff verweigert.\nIn „Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon“ erteilen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Microphone access denied.\nGrant in System Settings → Privacy & Security → Microphone."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Acceso al micrófono denegado.\nConcédelo en « Ajustes del Sistema → Privacidad y seguridad → Micrófono »."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Accès au microphone refusé.\nAccordez-le dans « Réglages système → Confidentialité et sécurité → Microphone »."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "マイクへのアクセスが拒否されました。\n「システム設定 → プライバシーとセキュリティ → マイク」で許可してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "마이크 접근이 거부되었습니다.\n「시스템 설정 → 개인정보 보호 및 보안 → 마이크」에서 허용하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风权限被拒绝。\n请在「系统设置 → 隐私与安全性 → 麦克风」中授权。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "麥克風權限被拒絕。\n請在「系統設定 → 隱私權與安全性 → 麥克風」中授權。"
+          }
+        }
+      }
+    },
     "Milliseconds": {
       "extractionState": "manual",
       "localizations": {
@@ -4718,6 +5301,59 @@
         }
       }
     },
+    "Mosaic": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mosaik"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mosaic"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mosaico"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mosaïque"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "モザイク"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "모자이크"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "马赛克"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "馬賽克"
+          }
+        }
+      }
+    },
     "Name": {
       "extractionState": "manual",
       "localizations": {
@@ -4767,6 +5403,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "名稱"
+          }
+        }
+      }
+    },
+    "Need a key, not just modifiers": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Eine Taste erforderlich, nicht nur Modifikatoren"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Need a key, not just modifiers"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Se requiere una tecla, no solo modificadores"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Une touche est requise, pas seulement des modificateurs"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "修飾キーだけでなく、キーが必要です"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "수정 키만이 아니라 키가 필요합니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "需要一个普通按键，而不仅是修饰键"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "需要一個普通按鍵，而不僅是修飾鍵"
           }
         }
       }
@@ -5244,6 +5933,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "尚未新增快速鍵 —— 點擊「新增快速鍵」以建立。"
+          }
+        }
+      }
+    },
+    "None": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Keine"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "None"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ninguno"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Aucun"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "なし"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "없음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "無"
           }
         }
       }
@@ -5831,6 +6573,59 @@
         }
       }
     },
+    "Pen": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Stift"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bolígrafo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Stylo"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ペン"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "펜"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "钢笔"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "鋼筆"
+          }
+        }
+      }
+    },
     "Permission Required": {
       "extractionState": "manual",
       "localizations": {
@@ -6255,6 +7050,59 @@
         }
       }
     },
+    "Rectangle": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Rechteck"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rectangle"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Rectángulo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Rectangle"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "四角形"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "사각형"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "矩形"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "矩形"
+          }
+        }
+      }
+    },
     "Refine failed: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -6626,6 +7474,59 @@
         }
       }
     },
+    "Reveal secret from KeyMic Vault": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Geheimnis aus KeyMic Vault anzeigen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reveal secret from KeyMic Vault"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mostrar secreto del KeyMic Vault"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Afficher le secret depuis KeyMic Vault"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "KeyMic Vault からシークレットを表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "KeyMic Vault에서 비밀 정보 표시"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "从 KeyMic Vault 显示机密"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "從 KeyMic Vault 顯示機密"
+          }
+        }
+      }
+    },
     "Save": {
       "extractionState": "manual",
       "localizations": {
@@ -6675,6 +7576,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "儲存"
+          }
+        }
+      }
+    },
+    "Save Failed": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Speichern fehlgeschlagen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save Failed"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Error al guardar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Échec de l’enregistrement"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "保存に失敗しました"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "저장 실패"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "儲存失敗"
           }
         }
       }
@@ -6944,6 +7898,59 @@
         }
       }
     },
+    "Select": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Auswählen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Select"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Seleccionar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sélectionner"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "選択"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "선택"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "選擇"
+          }
+        }
+      }
+    },
     "Select All": {
       "extractionState": "manual",
       "localizations": {
@@ -7050,55 +8057,108 @@
         }
       }
     },
-    "Set Active": {
+    "Selection + Clipboard": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Als aktiv festlegen"
+            "value": "Auswahl + Zwischenablage"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set Active"
+            "value": "Selection + Clipboard"
           }
         },
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Establecer activo"
+            "value": "Selección + Portapapeles"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Définir comme actif"
+            "value": "Sélection + Presse-papiers"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "アクティブに設定"
+            "value": "選択範囲 + クリップボード"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "활성으로 설정"
+            "value": "선택 영역 + 클립보드"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "设为当前"
+            "value": "选区 + 剪贴板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "設為目前"
+            "value": "選取 + 剪貼簿"
+          }
+        }
+      }
+    },
+    "Set Default": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Als Standard festlegen"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set Default"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Establecer predeterminado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Définir par défaut"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "デフォルトに設定"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "기본으로 설정"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设为默认"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "設為預設"
           }
         }
       }
@@ -7152,6 +8212,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "請先設定快速鍵"
+          }
+        }
+      }
+    },
+    "Settings window": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Einstellungsfenster"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Settings window"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Ventana de Ajustes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Fenêtre des réglages"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "設定ウインドウ"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "설정 창"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "设置窗口"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "設定視窗"
           }
         }
       }
@@ -7576,6 +8689,218 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "來源鍵與目標鍵必須不同"
+          }
+        }
+      }
+    },
+    "Speech recognition denied.\nGrant in System Settings → Privacy & Security → Speech Recognition.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Spracherkennung verweigert.\nIn „Systemeinstellungen → Datenschutz & Sicherheit → Spracherkennung“ erteilen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition denied.\nGrant in System Settings → Privacy & Security → Speech Recognition."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Reconocimiento de voz denegado.\nConcédelo en « Ajustes del Sistema → Privacidad y seguridad → Reconocimiento de voz »."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Reconnaissance vocale refusée.\nAccordez-la dans « Réglages système → Confidentialité et sécurité → Reconnaissance vocale »."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "音声認識が拒否されました。\n「システム設定 → プライバシーとセキュリティ → 音声認識」で許可してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "음성 인식이 거부되었습니다.\n「시스템 설정 → 개인정보 보호 및 보안 → 음성 인식」에서 허용하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音识别权限被拒绝。\n请在「系统设置 → 隐私与安全性 → 语音识别」中授权。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "語音識別權限被拒絕。\n請在「系統設定 → 隱私權與安全性 → 語音識別」中授權。"
+          }
+        }
+      }
+    },
+    "Speech recognition is not supported for %@. Please check that the language is downloaded in System Settings → General → Keyboard → Dictation.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Spracherkennung wird für %@ nicht unterstützt. Bitte stelle in „Systemeinstellungen → Allgemein → Tastatur → Diktat“ sicher, dass die Sprache geladen ist."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition is not supported for %@. Please check that the language is downloaded in System Settings → General → Keyboard → Dictation."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "El reconocimiento de voz no es compatible con %@. Comprueba que el idioma esté descargado en « Ajustes del Sistema → General → Teclado → Dictado »."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "La reconnaissance vocale n’est pas prise en charge pour %@. Vérifiez que la langue est téléchargée dans « Réglages système → Général → Clavier → Dictée »."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@ は音声認識に対応していません。「システム設定 → 一般 → キーボード → 音声入力」で言語をダウンロードしてください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@은(는) 음성 인식이 지원되지 않습니다. 「시스템 설정 → 일반 → 키보드 → 받아쓰기」에서 해당 언어를 다운로드하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 不支持语音识别。请在「系统设置 → 通用 → 键盘 → 听写」中下载该语言。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@ 不支援語音識別。請在「系統設定 → 一般 → 鍵盤 → 聽寫」中下載該語言。"
+          }
+        }
+      }
+    },
+    "Speech recognition permission not determined.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Berechtigung für die Spracherkennung ist nicht festgelegt."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognition permission not determined."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "El permiso de reconocimiento de voz no está determinado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "L’autorisation de reconnaissance vocale n’est pas définie."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "音声認識の権限が未確定です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "음성 인식 권한이 아직 결정되지 않았습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未确定语音识别权限。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "尚未確定語音識別權限。"
+          }
+        }
+      }
+    },
+    "Speech recognizer not available for %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Spracherkennung für %@ nicht verfügbar"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech recognizer not available for %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Reconocedor de voz no disponible para %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Reconnaissance vocale indisponible pour %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@ の音声認識エンジンを利用できません"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@의 음성 인식기를 사용할 수 없습니다"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 的语音识别器不可用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@ 的語音識別器不可用"
           }
         }
       }
@@ -8063,7 +9388,7 @@
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Nach"
+            "value": "Zieltaste"
           }
         },
         "en": {
@@ -8075,37 +9400,37 @@
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "A"
+            "value": "Tecla destino"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Vers"
+            "value": "Touche cible"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "変換先"
+            "value": "変換先キー"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "대상"
+            "value": "대상 키"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "映射为"
+            "value": "目标按键"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "對應為"
+            "value": "目標按鍵"
           }
         }
       }
@@ -8322,6 +9647,59 @@
         }
       }
     },
+    "Unknown speech recognition authorization status.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Unbekannter Status der Spracherkennungsberechtigung."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown speech recognition authorization status."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Estado de autorización de reconocimiento de voz desconocido."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Statut d’autorisation de la reconnaissance vocale inconnu."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "音声認識の認可状態が不明です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "알 수 없는 음성 인식 권한 상태입니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知的语音识别授权状态。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "未知的語音識別授權狀態。"
+          }
+        }
+      }
+    },
     "Updates": {
       "extractionState": "manual",
       "localizations": {
@@ -8375,6 +9753,59 @@
         }
       }
     },
+    "Use a modifier key for voice trigger": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Verwende eine Modifikatortaste für den Sprach-Trigger"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use a modifier key for voice trigger"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Usa una tecla modificadora para el activador de voz"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Utilisez une touche modificateur pour le déclencheur vocal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "音声トリガーには修飾キーを使用してください"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "음성 트리거에는 수정 키를 사용하세요"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用修饰键作为语音触发"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "請使用修飾鍵作為語音觸發"
+          }
+        }
+      }
+    },
     "Vault is empty": {
       "extractionState": "manual",
       "localizations": {
@@ -8424,6 +9855,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "Vault 為空"
+          }
+        }
+      }
+    },
+    "Vault panel": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Vault-Panel"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vault panel"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Panel de Vault"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Panneau Vault"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Vault パネル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Vault 패널"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vault 面板"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Vault 面板"
           }
         }
       }
@@ -8583,6 +10067,59 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "語音輸入"
+          }
+        }
+      }
+    },
+    "Voice trigger": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sprach-Trigger"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice trigger"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Activador de voz"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Déclencheur vocal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "音声トリガー"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "음성 트리거"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "语音触发"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "語音觸發"
           }
         }
       }
