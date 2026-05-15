@@ -6,8 +6,8 @@ enum ContextMode: String, Codable, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .none: return "None"
-        case .selectionAndClipboard: return "Selection + Clipboard"
+        case .none: return String(localized: "None")
+        case .selectionAndClipboard: return String(localized: "Selection + Clipboard")
         }
     }
 }

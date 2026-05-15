@@ -17,8 +17,8 @@ final class ScreenshotExporter {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Save"
-        panel.message = "Choose a folder to save the screenshot"
+        panel.prompt = String(localized: "Save")
+        panel.message = String(localized: "Choose a folder to save the screenshot")
 
         let lastDir = UserDefaults.standard.url(forKey: "lastScreenshotSaveDir")
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Desktop")
@@ -64,7 +64,7 @@ final class ScreenshotExporter {
         } catch {
             DispatchQueue.main.async {
                 let alert = NSAlert()
-                alert.messageText = "Save Failed"
+                alert.messageText = String(localized: "Save Failed")
                 alert.informativeText = error.localizedDescription
                 alert.runModal()
                 completion(false)

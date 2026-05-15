@@ -34,7 +34,20 @@ enum AnnotationTool: String, CaseIterable {
         }
     }
 
-    var displayName: String { rawValue }
+    var displayName: String {
+        switch self {
+        case .select: return String(localized: "Select")
+        case .pen: return String(localized: "Pen")
+        case .rect: return String(localized: "Rectangle")
+        case .ellipse: return String(localized: "Ellipse")
+        case .arrow: return String(localized: "Arrow")
+        case .text: return String(localized: "Text")
+        case .highlight: return String(localized: "Highlight")
+        case .mosaic: return String(localized: "Mosaic")
+        case .blur: return String(localized: "Blur")
+        case .ocr: return "OCR"
+        }
+    }
 }
 
 class Annotation: NSCopying {

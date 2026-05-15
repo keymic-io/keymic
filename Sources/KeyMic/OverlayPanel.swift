@@ -156,7 +156,7 @@ final class OverlayPanel: NSPanel {
             pendingToast = ruleName
             return
         }
-        let label = "🔒 \(ruleName) detected — saved to Vault"
+        let label = String(localized: "🔒 \(ruleName) detected — saved to Vault")
         state.isAnimating = false
         smoothedLevel = 0
         state.audioLevel = 0

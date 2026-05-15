@@ -336,7 +336,7 @@ final class SelectionOverlayView: NSView, NSTextFieldDelegate {
     }
 
     private func drawHint() {
-        let hint = "Click and drag to select a region  •  Press Esc to cancel"
+        let hint = String(localized: "Click and drag to select a region  •  Press Esc to cancel")
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.6)
         shadow.shadowBlurRadius = 4

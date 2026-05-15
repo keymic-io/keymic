@@ -100,7 +100,7 @@ final class SpeechEngine {
             speechRecognizer = SFSpeechRecognizer(locale: locale)
             if speechRecognizer == nil {
                 onLocaleUnavailable?(
-                    "Speech recognition is not supported for \(locale.identifier). Please check that the language is downloaded in System Settings → General → Keyboard → Dictation."
+                    String(localized: "Speech recognition is not supported for \(locale.identifier). Please check that the language is downloaded in System Settings → General → Keyboard → Dictation.")
                 )
             }
         }
@@ -141,7 +141,7 @@ final class SpeechEngine {
                             } else {
                                 completion(
                                     false,
-                                    "Microphone access denied.\nGrant in System Settings → Privacy & Security → Microphone."
+                                    String(localized: "Microphone access denied.\nGrant in System Settings → Privacy & Security → Microphone.")
                                 )
                             }
                         }
@@ -149,12 +149,12 @@ final class SpeechEngine {
                 case .denied, .restricted:
                     completion(
                         false,
-                        "Speech recognition denied.\nGrant in System Settings → Privacy & Security → Speech Recognition."
+                        String(localized: "Speech recognition denied.\nGrant in System Settings → Privacy & Security → Speech Recognition.")
                     )
                 case .notDetermined:
-                    completion(false, "Speech recognition permission not determined.")
+                    completion(false, String(localized: "Speech recognition permission not determined."))
                 @unknown default:
-                    completion(false, "Unknown speech recognition authorization status.")
+                    completion(false, String(localized: "Unknown speech recognition authorization status."))
                 }
             }
         }
@@ -171,7 +171,7 @@ final class SpeechEngine {
         firstBufferReceived = false
 
         guard speechRecognizerAvailability(speechRecognizer) else {
-            onError?("Speech recognizer not available for \(locale.identifier)")
+            onError?(String(localized: "Speech recognizer not available for \(locale.identifier)"))
             return
         }
 
@@ -249,7 +249,7 @@ final class SpeechEngine {
             try engine.start()
         } catch {
             recognitionTask?.cancel()
-            onError?("Audio engine failed: \(error.localizedDescription)")
+            onError?(String(localized: "Audio engine failed: \(error.localizedDescription)"))
             cleanup()
             return
         }
