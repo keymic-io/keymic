@@ -1,0 +1,165 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSMicrophoneUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic benötigt Zugriff auf das Mikrofon, um deine Sprache für die Transkription aufzunehmen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KeyMic needs microphone access to record your speech for transcription."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic necesita acceso al micrófono para grabar tu voz y transcribirla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic a besoin de l’accès au microphone pour enregistrer votre voix et la transcrire."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic は音声を録音して文字起こしするためにマイクへのアクセスを必要とします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic는 음성을 녹음하고 텍스트로 변환하기 위해 마이크 접근 권한이 필요합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KeyMic 需要麦克风权限以录制你的语音并进行转写。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic 需要麥克風權限以錄製你的語音並進行轉寫。"
+          }
+        }
+      }
+    },
+    "NSScreenCaptureUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic benötigt die Berechtigung zur Bildschirmaufnahme, um Screenshots aufzunehmen."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KeyMic needs screen recording access to take screenshots."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic necesita el permiso de grabación de pantalla para hacer capturas."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic a besoin de l’autorisation d’enregistrement de l’écran pour effectuer des captures."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic はスクリーンショットを撮影するために画面収録の権限を必要とします。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic는 스크린샷을 캡처하기 위해 화면 기록 권한이 필요합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KeyMic 需要屏幕录制权限以进行截图。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic 需要螢幕錄製權限以進行截圖。"
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "de" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic verwendet Spracherkennung, um deine Sprache in Text umzuwandeln."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KeyMic uses speech recognition to convert your voice to text."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic usa el reconocimiento de voz para convertir tu voz en texto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic utilise la reconnaissance vocale pour convertir votre voix en texte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic は音声をテキストに変換するために音声認識を使用します。"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic는 음성을 텍스트로 변환하기 위해 음성 인식을 사용합니다."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KeyMic 使用语音识别将你的语音转换为文本。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "needs_review",
+            "value" : "KeyMic 使用語音識別將你的語音轉換為文字。"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

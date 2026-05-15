@@ -85,7 +85,7 @@ final class HotkeyRecorder: NSButton {
     }
 
     private func setLabel(_ recording: Bool) {
-        title = recording ? "Press keys…" : (current?.displayString() ?? "Click to record")
+        title = recording ? String(localized: "Press keys…") : (current?.displayString() ?? String(localized: "Click to record"))
     }
 
     private func renderIdle() {
@@ -220,13 +220,13 @@ final class HotkeyRecorder: NSButton {
     }
 
     static let clipboardValidator: Validator = { cfg in
-        if cfg.isPureModifier { return "Need at least one regular key, not just modifiers" }
-        if cfg.modifiers.isEmpty { return "Need at least one modifier" }
-        if cfg.isSystemReserved { return "\(cfg.displayString()) is reserved by macOS" }
+        if cfg.isPureModifier { return String(localized: "Need at least one regular key, not just modifiers") }
+        if cfg.modifiers.isEmpty { return String(localized: "Need at least one modifier") }
+        if cfg.isSystemReserved { return String(localized: "\(cfg.displayString()) is reserved by macOS") }
         return nil
     }
 
     static let voiceValidator: Validator = { cfg in
-        cfg.isPureModifier ? nil : "Voice trigger must be a single modifier key"
+        cfg.isPureModifier ? nil : String(localized: "Voice trigger must be a single modifier key")
     }
 }

@@ -6,7 +6,7 @@ import SwiftUI
 
 @Observable
 final class OverlayState {
-    var text: String = "Listening..."
+    var text: String = String(localized: "Listening...")
     var audioLevel: CGFloat = 0   // 0…1, already smoothed by the panel
     var isAnimating: Bool = false
     var showsText: Bool = true
@@ -64,7 +64,7 @@ final class OverlayPanel: NSPanel {
 
     // MARK: - Public API (unchanged)
 
-    func show(text: String = "Listening...") {
+    func show(text: String = String(localized: "Listening...")) {
         state.text = text
         state.showsText = true
         state.isAnimating = true
