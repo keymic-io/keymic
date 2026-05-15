@@ -16,7 +16,7 @@ final class SwiftUISettingsWindow: NSPanel {
             backing: .buffered,
             defer: false
         )
-        title = "KeyMic Settings"
+        title = String(localized: "KeyMic Settings")
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
@@ -70,6 +70,56 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .shortcuts: "command.square"
         case .clipboard: "doc.on.clipboard"
         case .screenshot: "camera.on.rectangle"
+        }
+    }
+}
+
+// MARK: - App language
+
+enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
+    case system = ""
+    case en = "en"
+    case zhHans = "zh-Hans"
+    case zhHant = "zh-Hant"
+    case ja = "ja"
+    case ko = "ko"
+    case de = "de"
+    case fr = "fr"
+    case es = "es"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .system: return String(localized: "System default")
+        case .en: return "English"
+        case .zhHans: return "简体中文"
+        case .zhHant: return "繁體中文"
+        case .ja: return "日本語"
+        case .ko: return "한국어"
+        case .de: return "Deutsch"
+        case .fr: return "Français"
+        case .es: return "Español"
+        }
+    }
+
+    static var current: AppLanguage {
+        guard let arr = UserDefaults.standard.array(forKey: "AppleLanguages") as? [String],
+              let first = arr.first else {
+            return .system
+        }
+        if first.hasPrefix("zh-Hans") { return .zhHans }
+        if first.hasPrefix("zh-Hant") { return .zhHant }
+        let prefix = first.split(separator: "-").first.map(String.init) ?? first
+        return AppLanguage(rawValue: prefix) ?? .system
+    }
+
+    func apply() {
+        let defaults = UserDefaults.standard
+        if self == .system {
+            defaults.removeObject(forKey: "AppleLanguages")
+        } else {
+            defaults.set([rawValue], forKey: "AppleLanguages")
         }
     }
 }
@@ -196,6 +246,7 @@ private struct GeneralSettingsView: View {
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var launchAtLoginError: String?
     @State private var accessibilityGranted: Bool = AXIsProcessTrusted()
+    @State private var appLanguage: AppLanguage = .current
 
     private let accessibilityTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -226,6 +277,22 @@ private struct GeneralSettingsView: View {
                 }
             } header: {
                 Text("Startup")
+            }
+
+            Section {
+                Picker(selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                } label: {
+                    Text("Language")
+                }
+                .onChange(of: appLanguage) { _, newValue in
+                    newValue.apply()
+                    confirmRestart()
+                }
+            } header: {
+                Text("Appearance")
             }
 
             Section {
@@ -301,6 +368,22 @@ private struct GeneralSettingsView: View {
         )
     }
 
+    private func confirmRestart() {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Restart Required")
+        alert.informativeText = String(localized: "Restart KeyMic to apply the language change.")
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: String(localized: "Restart Now"))
+        alert.addButton(withTitle: String(localized: "Later"))
+        if alert.runModal() == .alertFirstButtonReturn {
+            let path = Bundle.main.bundlePath
+            let task = Process()
+            task.launchPath = "/bin/sh"
+            task.arguments = ["-c", "sleep 1; open \"$1\"", "sh", path]
+            try? task.run()
+            NSApp.terminate(nil)
+        }
+    }
 }
 
 private struct AccessibilityStatusView: View {
@@ -1520,7 +1603,7 @@ private struct AppPickerList: View {
 
     private func pickOtherApp() {
         let panel = NSOpenPanel()
-        panel.title = "Choose an Application"
+        panel.title = String(localized: "Choose an Application")
         panel.allowedContentTypes = [.application]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false

@@ -20,6 +20,8 @@ build:
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
+	xcrun --sdk macosx xcstringstool compile Sources/KeyMic/Resources/Localizable.xcstrings -o $(APP_BUNDLE)/Contents/Resources/
+	xcrun --sdk macosx xcstringstool compile Sources/KeyMic/Resources/InfoPlist.xcstrings -o $(APP_BUNDLE)/Contents/Resources/
 	mkdir -p $(APP_BUNDLE)/Contents/Frameworks
 	rm -rf $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
 	cp -R $(BUILD_DIR)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
@@ -39,6 +41,8 @@ build-arm64:
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
+	xcrun --sdk macosx xcstringstool compile Sources/KeyMic/Resources/Localizable.xcstrings -o $(APP_BUNDLE)/Contents/Resources/
+	xcrun --sdk macosx xcstringstool compile Sources/KeyMic/Resources/InfoPlist.xcstrings -o $(APP_BUNDLE)/Contents/Resources/
 	cp -R $(ARM64_BUILD)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
 	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
 	codesign --force --sign "$(CODESIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
@@ -56,6 +60,8 @@ build-x86_64:
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
+	xcrun --sdk macosx xcstringstool compile Sources/KeyMic/Resources/Localizable.xcstrings -o $(APP_BUNDLE)/Contents/Resources/
+	xcrun --sdk macosx xcstringstool compile Sources/KeyMic/Resources/InfoPlist.xcstrings -o $(APP_BUNDLE)/Contents/Resources/
 	cp -R $(X86_BUILD)/Sparkle.framework $(APP_BUNDLE)/Contents/Frameworks/
 	codesign --force --deep --sign "$(CODESIGN_IDENTITY)" $(APP_BUNDLE)/Contents/Frameworks/Sparkle.framework
 	codesign --force --sign "$(CODESIGN_IDENTITY)" --entitlements $(ENTITLEMENTS) --identifier io.keymic.app $(APP_BUNDLE)
