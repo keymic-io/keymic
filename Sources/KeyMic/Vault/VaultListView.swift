@@ -112,6 +112,11 @@ struct VaultListView: View {
 
     private func row(_ item: VaultItem, index: Int) -> some View {
         HStack(spacing: 10) {
+            Text(quickKeyLabel(for: index))
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 22, alignment: .leading)
+
             Image(systemName: "key.fill")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.yellow.opacity(0.85))
@@ -128,11 +133,6 @@ struct VaultListView: View {
             }
 
             Spacer(minLength: 8)
-
-            Text(quickKeyLabel(for: index))
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 22, alignment: .trailing)
 
             if hoverID == item.id {
                 Button {
