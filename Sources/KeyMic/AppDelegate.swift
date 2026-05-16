@@ -41,7 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cachedFrontBundleID: String?
 
     private let voiceEnabledKey = "voiceEnabled"
-    private let voiceEnabledMenuTitle = "Voice Enabled"
+    private var voiceEnabledMenuTitle: String { String(localized: "Voice Enabled") }
     private(set) var isVoiceEnabled: Bool = UserDefaults.standard.object(forKey: "voiceEnabled") as? Bool ?? true
 
     private var voiceEnabledMenuItem: NSMenuItem!
@@ -97,7 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
             if !granted, let msg = errorMsg {
-                self?.showAlert(title: "Permission Required", message: msg)
+                self?.showAlert(title: String(localized: "Permission Required"), message: msg)
             }
         }
 
@@ -296,7 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         speechEngine.onLocaleUnavailable = { [weak self] msg in
-            self?.showAlert(title: "Language Unavailable", message: msg)
+            self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
         }
     }
 
@@ -344,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             case .failure(let error):
                 logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
-                self.overlayPanel.showMessage("Refine failed: \(error.localizedDescription)")
+                self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                     self.overlayPanel.dismiss()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -410,12 +410,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Edit menu with standard text editing commands
         let editMenu = NSMenu()
-        editMenu.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(withTitle: String(localized: "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        editMenu.addItem(withTitle: String(localized: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        editMenu.addItem(withTitle: String(localized: "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(withTitle: String(localized: "Select All"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
 
-        let editMenuItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        let editMenuItem = NSMenuItem(title: String(localized: "Edit"), action: nil, keyEquivalent: "")
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
@@ -439,7 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyVoiceShortcut(to: voiceEnabledMenuItem)
         menu.addItem(voiceEnabledMenuItem)
 
-        personasRootMenuItem = NSMenuItem(title: "Default Persona", action: nil, keyEquivalent: "")
+        personasRootMenuItem = NSMenuItem(title: String(localized: "Default Persona"), action: nil, keyEquivalent: "")
         personasRootMenuItem.image = symbolImage("person.crop.circle.badge.checkmark")
         let personasMenu = NSMenu()
         personasRootMenuItem.submenu = personasMenu
@@ -450,26 +450,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         // Group 2: Key mapping + Clipboard + Shortcuts
-        keyMappingMenuItem = NSMenuItem(title: "Key Mapping", action: #selector(toggleKeyMapping), keyEquivalent: "")
+        keyMappingMenuItem = NSMenuItem(title: String(localized: "Key Mapping"), action: #selector(toggleKeyMapping), keyEquivalent: "")
         keyMappingMenuItem.target = self
         keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
         keyMappingMenuItem.image = symbolImage("keyboard")
         menu.addItem(keyMappingMenuItem)
 
         clipboardMenuItem = NSMenuItem(
-            title: "Clipboard History", action: #selector(toggleClipboard), keyEquivalent: "")
+            title: String(localized: "Clipboard History"), action: #selector(toggleClipboard), keyEquivalent: "")
         clipboardMenuItem.target = self
         clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
         clipboardMenuItem.image = symbolImage("doc.on.clipboard")
         menu.addItem(clipboardMenuItem)
 
-        shortcutsMenuItem = NSMenuItem(title: "Shortcuts", action: #selector(toggleShortcuts), keyEquivalent: "")
+        shortcutsMenuItem = NSMenuItem(title: String(localized: "Shortcuts"), action: #selector(toggleShortcuts), keyEquivalent: "")
         shortcutsMenuItem.target = self
         shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
         shortcutsMenuItem.image = symbolImage("bolt.horizontal")
         menu.addItem(shortcutsMenuItem)
 
-        settingsMenuItem = NSMenuItem(title: "Settings...", action: #selector(openSettings), keyEquivalent: "")
+        settingsMenuItem = NSMenuItem(title: String(localized: "Settings..."), action: #selector(openSettings), keyEquivalent: "")
         settingsMenuItem.target = self
         settingsMenuItem.image = symbolImage("gearshape")
         applySettingsShortcut(to: settingsMenuItem)
@@ -478,7 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(.separator())
 
         let checkUpdateItem = NSMenuItem(
-            title: "Check for Updates…",
+            title: String(localized: "Check for Updates…"),
             action: #selector(checkForUpdates),
             keyEquivalent: ""
         )
@@ -488,7 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        let quitItem = NSMenuItem(title: "Quit KeyMic", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: String(localized: "Quit KeyMic"), action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
         quitItem.image = symbolImage("power")
         menu.addItem(quitItem)
@@ -724,17 +724,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showAccessibilityAlert() {
         let alert = NSAlert()
-        alert.messageText = "Accessibility Permission Required"
-        alert.informativeText = """
-            KeyMic needs Accessibility permission to monitor configured hotkeys and apply key mappings.
-
-            1. Open System Settings → Privacy & Security → Accessibility
-            2. Add and enable KeyMic
-            3. Restart the app
-            """
+        alert.messageText = String(localized: "Accessibility Permission Required")
+        alert.informativeText = String(localized: "KeyMic needs Accessibility permission to monitor configured hotkeys and apply key mappings.\n\n1. Open System Settings → Privacy & Security → Accessibility\n2. Add and enable KeyMic\n3. Restart the app")
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: String(localized: "Open System Settings"))
+        alert.addButton(withTitle: String(localized: "Quit"))
 
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
@@ -750,7 +744,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = title
         alert.informativeText = message
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: String(localized: "OK"))
         alert.runModal()
     }
 }

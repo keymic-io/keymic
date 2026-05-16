@@ -71,7 +71,10 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
             handledShortcut()
             return
         }
-        if let quickPasteIndex = quickPasteIndex(for: event) {
+        // Don't hijack ⌥+number while typing in the Vault search field — the
+        // SwiftUI view's text-input guard doesn't run at the panel level.
+        let typingInVault = focus.currentTab == .vault && firstResponder is NSText
+        if !typingInVault, let quickPasteIndex = quickPasteIndex(for: event) {
             focus.quickPasteIndex = quickPasteIndex
             focus.quickPasteRequestID += 1
             return

@@ -183,9 +183,9 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
             toolbarPanel?.level = .normal
 
             let alert = NSAlert()
-            alert.messageText = "Discard annotations?"
-            alert.addButton(withTitle: "Discard")
-            alert.addButton(withTitle: "Cancel")
+            alert.messageText = String(localized: "Discard annotations?")
+            alert.addButton(withTitle: String(localized: "Discard"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
             alert.window.level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()) + 2)
             let response = alert.runModal()
 
@@ -220,10 +220,10 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
         lastPermissionAlertAt = now
 
         let alert = NSAlert()
-        alert.messageText = "Screen Recording Permission Required"
-        alert.informativeText = "KeyMic needs Screen Recording permission to take screenshots. Open System Settings → Privacy & Security → Screen Recording."
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Cancel")
+        alert.messageText = String(localized: "Screen Recording Permission Required")
+        alert.informativeText = String(localized: "KeyMic needs Screen Recording permission to take screenshots. Open System Settings → Privacy & Security → Screen Recording.")
+        alert.addButton(withTitle: String(localized: "Open System Settings"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         let resp = alert.runModal()
         if resp == .alertFirstButtonReturn {
             if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {

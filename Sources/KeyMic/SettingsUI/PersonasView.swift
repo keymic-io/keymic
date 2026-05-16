@@ -99,13 +99,13 @@ private struct PersonaDetailForm: View {
                 // Active controls
                 HStack(spacing: 8) {
                     if model.activeId == persona.id {
-                        Label("Active", systemImage: "checkmark.circle.fill")
+                        Label("Default", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     } else {
-                        Button("Set Active") { model.setActive(persona.id) }
+                        Button("Set Default") { model.setActive(persona.id) }
                     }
                     if model.activeId != nil {
-                        Button("Clear Active") { model.setActive(nil) }
+                        Button("Clear Default") { model.setActive(nil) }
                     }
                     Spacer()
                 }
@@ -207,10 +207,10 @@ private struct PersonaDetailForm: View {
 }
 
 private struct FieldLabel<Content: View>: View {
-    let label: String
+    let label: LocalizedStringKey
     let content: () -> Content
 
-    init(_ label: String, @ViewBuilder content: @escaping () -> Content) {
+    init(_ label: LocalizedStringKey, @ViewBuilder content: @escaping () -> Content) {
         self.label = label
         self.content = content
     }

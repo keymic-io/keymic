@@ -16,7 +16,7 @@ final class SwiftUISettingsWindow: NSPanel {
             backing: .buffered,
             defer: false
         )
-        title = "KeyMic Settings"
+        title = String(localized: "KeyMic Settings")
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
@@ -49,14 +49,14 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
 
     var title: String {
         switch self {
-        case .general: "General"
-        case .voice: "Voice"
+        case .general: String(localized: "General")
+        case .voice: String(localized: "Voice")
         case .llm: "LLM"
-        case .personas: "Personas"
-        case .keyMapping: "Key Mapping"
-        case .shortcuts: "Shortcuts"
-        case .clipboard: "Clipboard"
-        case .screenshot: "Screenshot"
+        case .personas: String(localized: "Personas")
+        case .keyMapping: String(localized: "Key Mapping")
+        case .shortcuts: String(localized: "Shortcuts")
+        case .clipboard: String(localized: "Clipboard")
+        case .screenshot: String(localized: "Screenshot")
         }
     }
 
@@ -70,6 +70,60 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .shortcuts: "command.square"
         case .clipboard: "doc.on.clipboard"
         case .screenshot: "camera.on.rectangle"
+        }
+    }
+}
+
+// MARK: - App language
+
+enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
+    case system = ""
+    case en = "en"
+    case zhHans = "zh-Hans"
+    case zhHant = "zh-Hant"
+    case ja = "ja"
+    case ko = "ko"
+    case de = "de"
+    case fr = "fr"
+    case es = "es"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .system: return String(localized: "System default")
+        case .en: return "English"
+        case .zhHans: return "简体中文"
+        case .zhHant: return "繁體中文"
+        case .ja: return "日本語"
+        case .ko: return "한국어"
+        case .de: return "Deutsch"
+        case .fr: return "Français"
+        case .es: return "Español"
+        }
+    }
+
+    /// Dedicated KeyMic-only key so we never confuse the user's explicit choice
+    /// with the macOS-level `AppleLanguages` global, which would leak through
+    /// `UserDefaults.standard` when the app has no override of its own.
+    private static let overrideKey = "appLanguageOverride"
+
+    static var current: AppLanguage {
+        guard let raw = UserDefaults.standard.string(forKey: overrideKey),
+              !raw.isEmpty else {
+            return .system
+        }
+        return AppLanguage(rawValue: raw) ?? .system
+    }
+
+    func apply() {
+        let defaults = UserDefaults.standard
+        if self == .system {
+            defaults.removeObject(forKey: Self.overrideKey)
+            defaults.removeObject(forKey: "AppleLanguages")
+        } else {
+            defaults.set(rawValue, forKey: Self.overrideKey)
+            defaults.set([rawValue], forKey: "AppleLanguages")
         }
     }
 }
@@ -196,6 +250,7 @@ private struct GeneralSettingsView: View {
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var launchAtLoginError: String?
     @State private var accessibilityGranted: Bool = AXIsProcessTrusted()
+    @State private var appLanguage: AppLanguage = .current
 
     private let accessibilityTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
@@ -226,6 +281,22 @@ private struct GeneralSettingsView: View {
                 }
             } header: {
                 Text("Startup")
+            }
+
+            Section {
+                Picker(selection: $appLanguage) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.displayName).tag(lang)
+                    }
+                } label: {
+                    Text("Language")
+                }
+                .onChange(of: appLanguage) { _, newValue in
+                    newValue.apply()
+                    confirmRestart()
+                }
+            } header: {
+                Text("Appearance")
             }
 
             Section {
@@ -301,6 +372,22 @@ private struct GeneralSettingsView: View {
         )
     }
 
+    private func confirmRestart() {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "Restart Required")
+        alert.informativeText = String(localized: "Restart KeyMic to apply the language change.")
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: String(localized: "Restart Now"))
+        alert.addButton(withTitle: String(localized: "Later"))
+        if alert.runModal() == .alertFirstButtonReturn {
+            let path = Bundle.main.bundlePath
+            let task = Process()
+            task.launchPath = "/bin/sh"
+            task.arguments = ["-c", "sleep 1; open \"$1\"", "sh", path]
+            try? task.run()
+            NSApp.terminate(nil)
+        }
+    }
 }
 
 private struct AccessibilityStatusView: View {
@@ -431,8 +518,8 @@ private struct LLMSettingsView: View {
         var text: String {
             switch self {
             case .idle: return ""
-            case .testing: return "Testing…"
-            case .ok(let m): return "OK: \(m)"
+            case .testing: return String(localized: "Testing…")
+            case .ok(let m): return String(localized: "OK: \(m)")
             case .fail(let m): return m
             }
         }
@@ -478,9 +565,9 @@ private struct LLMSettingsView: View {
     }
 
     @ViewBuilder
-    private func llmFieldRow<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+    private func llmFieldRow<Content: View>(_ label: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("\(label):")
+            (Text(label) + Text(verbatim: ":"))
                 .fontWeight(.semibold)
                 .frame(width: 160, alignment: .leading)
 
@@ -1262,10 +1349,10 @@ private struct ActionDraft: Identifiable, Equatable {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .typeText: "Text"
-            case .keyPress: "Key"
-            case .wait: "Wait"
-            case .shell: "Shell"
+            case .typeText: String(localized: "Text")
+            case .keyPress: String(localized: "Key")
+            case .wait: String(localized: "Wait")
+            case .shell: String(localized: "Shell")
             }
         }
     }
@@ -1348,10 +1435,10 @@ private struct ActionDraftRow: View {
 
     private var placeholder: String {
         switch action.kind {
-        case .typeText: "Text to type"
-        case .keyPress: "e.g. cmd+shift+a"
-        case .wait: "Milliseconds"
-        case .shell: "Shell command"
+        case .typeText: String(localized: "Text to type")
+        case .keyPress: String(localized: "e.g. cmd+shift+a")
+        case .wait: String(localized: "Milliseconds")
+        case .shell: String(localized: "Shell command")
         }
     }
 }
@@ -1359,11 +1446,11 @@ private struct ActionDraftRow: View {
 // MARK: - Labeled row helper
 
 private struct LabeledRow<Content: View>: View {
-    let title: String
-    let help: String?
+    let title: LocalizedStringKey
+    let help: LocalizedStringKey?
     let content: Content
 
-    init(_ title: String, help: String? = nil, @ViewBuilder content: () -> Content) {
+    init(_ title: LocalizedStringKey, help: LocalizedStringKey? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.help = help
         self.content = content()
@@ -1520,7 +1607,7 @@ private struct AppPickerList: View {
 
     private func pickOtherApp() {
         let panel = NSOpenPanel()
-        panel.title = "Choose an Application"
+        panel.title = String(localized: "Choose an Application")
         panel.allowedContentTypes = [.application]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false

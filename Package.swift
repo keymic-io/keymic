@@ -3,6 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "KeyMic",
+    defaultLocalization: "en",
     platforms: [.macOS(.v14)],
     dependencies: [
         .package(
@@ -16,7 +17,10 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle")
             ],
-            path: "Sources/KeyMic"
+            path: "Sources/KeyMic",
+            resources: [
+                .process("Resources")
+            ]
         )
     ]
 )

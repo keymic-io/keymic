@@ -60,7 +60,7 @@ struct EditorToolbarView: View {
         .help("\(tool.displayName)")
     }
 
-    private func iconButton(_ symbol: String, help: String, enabled: Bool = true, tint: Color = .primary, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ symbol: String, help: LocalizedStringKey, enabled: Bool = true, tint: Color = .primary, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: 14))
