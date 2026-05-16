@@ -140,13 +140,14 @@ struct HotkeyConfig: Hashable {
 
     // MARK: - Reserved
 
-    var isSystemReserved: Bool {
+    var isSystemReserved: Bool { Self.reservedShortcuts.contains(self) }
+
+    private static let reservedShortcuts: Set<HotkeyConfig> = {
         let cmd: CGEventFlags = .maskCommand
         let cmdShift: CGEventFlags = [.maskCommand, .maskShift]
         let cmdAlt: CGEventFlags = [.maskCommand, .maskAlternate]
         let ctrl: CGEventFlags = .maskControl
-
-        let reserved: Set<HotkeyConfig> = [
+        return [
             HotkeyConfig(modifiers: cmd, keyCode: 0x08), // ⌘C
             HotkeyConfig(modifiers: cmd, keyCode: 0x09), // ⌘V
             HotkeyConfig(modifiers: cmd, keyCode: 0x07), // ⌘X
@@ -172,6 +173,5 @@ struct HotkeyConfig: Hashable {
             HotkeyConfig(modifiers: cmdShift, keyCode: 0x17), // ⌘⇧5
             HotkeyConfig(modifiers: ctrl, keyCode: 0x31), // ⌃Space
         ]
-        return reserved.contains(self)
-    }
+    }()
 }

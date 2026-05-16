@@ -117,12 +117,14 @@ final class ClipboardStore {
             context.delete(item)
             return
         }
-        insertHook?(item)
+        finalizeInsert(item)
+    }
 
+    private func finalizeInsert(_ item: ClipboardItem) {
+        insertHook?(item)
         if cleanupModeProvider() == .count {
             truncate(to: maxHistory)
         }
-
         addCount += 1
         if addCount % 10 == 0 {
             applyCleanup()
@@ -181,11 +183,7 @@ final class ClipboardStore {
             Self.logger.error("add(image:) save failed: \(error.localizedDescription, privacy: .public)")
             return
         }
-        insertHook?(item)
-
-        if cleanupModeProvider() == .count { truncate(to: maxHistory) }
-        addCount += 1
-        if addCount % 10 == 0 { applyCleanup() }
+        finalizeInsert(item)
     }
 
     private func findExistingImage(hash: String) -> ClipboardItem? {
@@ -222,11 +220,7 @@ final class ClipboardStore {
             Self.logger.error("add(fileURL:) save failed: \(error.localizedDescription, privacy: .public)")
             return
         }
-        insertHook?(item)
-
-        if cleanupModeProvider() == .count { truncate(to: maxHistory) }
-        addCount += 1
-        if addCount % 10 == 0 { applyCleanup() }
+        finalizeInsert(item)
     }
 
     private func findExistingFile(path: String) -> ClipboardItem? {
@@ -268,11 +262,7 @@ final class ClipboardStore {
             Self.logger.error("add(richText:) save failed: \(error.localizedDescription, privacy: .public)")
             return
         }
-        insertHook?(item)
-
-        if cleanupModeProvider() == .count { truncate(to: maxHistory) }
-        addCount += 1
-        if addCount % 10 == 0 { applyCleanup() }
+        finalizeInsert(item)
     }
 
     func delete(id: UUID) {

@@ -117,12 +117,16 @@ final class OverlayPanel: NSPanel {
         state.audioLevel = smoothedLevel
     }
 
+    private func resetAudioLevel() {
+        smoothedLevel = 0
+        state.audioLevel = 0
+    }
+
     func showRefining() {
         state.text = ""
         state.showsText = false
         state.isAnimating = true
-        smoothedLevel = 0
-        state.audioLevel = 0
+        resetAudioLevel()
 
         let w = idealWidth(for: nil, showsText: false)
         guard let screen = NSScreen.main else { return }
@@ -140,8 +144,7 @@ final class OverlayPanel: NSPanel {
 
     func showMessage(_ text: String) {
         state.isAnimating = false
-        smoothedLevel = 0
-        state.audioLevel = 0
+        resetAudioLevel()
         updateText(text)
     }
 
@@ -158,8 +161,7 @@ final class OverlayPanel: NSPanel {
         }
         let label = String(localized: "🔒 \(ruleName) detected — saved to Vault")
         state.isAnimating = false
-        smoothedLevel = 0
-        state.audioLevel = 0
+        resetAudioLevel()
         if isVisible {
             updateText(label)
         } else {
@@ -186,8 +188,7 @@ final class OverlayPanel: NSPanel {
 
     func dismiss() {
         state.isAnimating = false
-        smoothedLevel = 0
-        state.audioLevel = 0
+        resetAudioLevel()
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
