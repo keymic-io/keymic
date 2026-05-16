@@ -105,12 +105,7 @@ final class ShellSnapshot {
     }
 
     private func mtimesChanged() -> Bool {
-        let current = currentMtimes()
-        if Set(current.keys) != Set(sourceMtimes.keys) { return true }
-        for (url, mtime) in current {
-            if sourceMtimes[url] != mtime { return true }
-        }
-        return false
+        currentMtimes() != sourceMtimes
     }
 
     private func cleanupOld(keeping: URL) {

@@ -31,6 +31,8 @@ final class ApplicationImageCache {
 
         lock.lock()
         defer { lock.unlock() }
+        // Recheck — another thread may have populated the entry while we were decoding.
+        if let cached = cache[bundleID] { return cached }
         cache[bundleID] = resized
         insertionOrder.append(bundleID)
         if insertionOrder.count > capacity {

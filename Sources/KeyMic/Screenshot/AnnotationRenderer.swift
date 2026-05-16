@@ -8,10 +8,10 @@ enum AnnotationRenderer {
     /// output. If `pointSize == .zero`, falls back to treating the base image dimensions
     /// as the point space (1x).
     static func render(base: CGImage, annotations: [Annotation], pointSize: NSSize = .zero) -> NSImage {
+        let scale = effectiveScale(base: base, pointSize: pointSize)
         let effectRegions = annotations.compactMap { ann -> (CGRect, AnnotationTool)? in
             switch ann.kind {
             case .mosaic, .blur:
-                let scale = effectiveScale(base: base, pointSize: pointSize)
                 let pxRect = CGRect(
                     x: ann.rect.origin.x * scale,
                     y: ann.rect.origin.y * scale,
@@ -23,25 +23,16 @@ enum AnnotationRenderer {
             }
         }
 
-        let baseImage: CGImage
-        if effectRegions.isEmpty {
-            baseImage = base
-        } else if let composited = Pixelator.compositeMaskedRegions(base: base, regions: effectRegions) {
-            baseImage = composited
-        } else {
-            baseImage = base
-        }
+        let baseImage = effectRegions.isEmpty
+            ? base
+            : (Pixelator.compositeMaskedRegions(base: base, regions: effectRegions) ?? base)
 
         let pixelSize = NSSize(width: baseImage.width, height: baseImage.height)
-        let renderPointSize: NSSize = (pointSize == .zero) ? pixelSize : pointSize
-        let scale = effectiveScale(base: base, pointSize: pointSize)
 
         // Render at native pixel resolution but draw annotations in point space via CTM scale.
-        let rendered = NSImage(size: pixelSize, flipped: false) { _ in
+        return NSImage(size: pixelSize, flipped: false) { _ in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return true }
-            // Draw base at pixel size (fills entire image).
             ctx.draw(baseImage, in: CGRect(origin: .zero, size: pixelSize))
-            // Scale CTM so annotation point coords map to pixel positions.
             ctx.saveGState()
             ctx.scaleBy(x: scale, y: scale)
             for ann in annotations {
@@ -50,16 +41,14 @@ enum AnnotationRenderer {
                 case .rect: drawRectAnnotation(ann, in: ctx)
                 case .ellipse: drawEllipseAnnotation(ann, in: ctx)
                 case .arrow: drawArrowAnnotation(ann, in: ctx)
-                case .text: drawTextAnnotation(ann, scale: scale)
+                case .text: drawTextAnnotation(ann)
                 case .highlight: drawHighlightAnnotation(ann, in: ctx)
                 case .pen: drawPenAnnotation(ann, in: ctx)
                 }
             }
             ctx.restoreGState()
-            _ = renderPointSize  // keep capture for clarity
             return true
         }
-        return rendered
     }
 
     private static func effectiveScale(base: CGImage, pointSize: NSSize) -> CGFloat {
@@ -114,7 +103,7 @@ enum AnnotationRenderer {
         ctx.fillPath()
     }
 
-    private static func drawTextAnnotation(_ ann: Annotation, scale: CGFloat) {
+    private static func drawTextAnnotation(_ ann: Annotation) {
         guard !ann.text.isEmpty else { return }
         let shadow = NSShadow()
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.5)
@@ -126,7 +115,6 @@ enum AnnotationRenderer {
             .backgroundColor: NSColor.white.withAlphaComponent(0.75),
             .shadow: shadow,
         ]
-        _ = scale  // CTM scale applied by caller; text draws in point space
         NSAttributedString(string: ann.text, attributes: attrs).draw(at: ann.startPoint)
     }
 

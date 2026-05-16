@@ -45,8 +45,6 @@ final class ClipboardItem {
         self.sourceBundleID = sourceBundleID
         self.sourceAppName = sourceAppName
         self.kindRaw = kind.rawValue
-        self.isPinned = false
-        self.pinnedAt = nil
     }
 }
 

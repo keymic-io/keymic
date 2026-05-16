@@ -129,11 +129,8 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
     }
 
     private func isAltOnlyKeyDown(_ event: NSEvent) -> Bool {
-        event.type == .keyDown
-            && event.modifierFlags.contains(.option)
-            && !event.modifierFlags.contains(.command)
-            && !event.modifierFlags.contains(.control)
-            && !event.modifierFlags.contains(.shift)
+        guard event.type == .keyDown else { return false }
+        return event.modifierFlags.intersection([.option, .command, .control, .shift]) == .option
     }
 
     override func resignKey() {
