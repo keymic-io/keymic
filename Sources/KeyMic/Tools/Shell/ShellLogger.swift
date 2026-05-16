@@ -25,12 +25,8 @@ class ShellLogger {
     }()
 
     init(logURL: URL? = nil, maxBytes: Int = 5 * 1024 * 1024) {
-        if let logURL = logURL {
-            self.logURL = logURL
-        } else {
-            let home = FileManager.default.homeDirectoryForCurrentUser
-            self.logURL = home.appendingPathComponent("Library/Logs/KeyMic.log")
-        }
+        self.logURL = logURL ?? FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/KeyMic.log")
         self.maxBytes = maxBytes
     }
 

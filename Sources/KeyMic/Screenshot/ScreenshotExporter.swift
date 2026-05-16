@@ -2,14 +2,19 @@ import Cocoa
 import UniformTypeIdentifiers
 
 final class ScreenshotExporter {
-    func copyToPasteboard(_ image: NSImage) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
+    private func pngAndTiff(_ image: NSImage) -> (png: Data, tiff: Data)? {
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return }
-        pb.setData(png, forType: .png)
-        pb.setData(tiff, forType: .tiff)
+              let png = rep.representation(using: .png, properties: [:]) else { return nil }
+        return (png, tiff)
+    }
+
+    func copyToPasteboard(_ image: NSImage) {
+        guard let data = pngAndTiff(image) else { return }
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setData(data.png, forType: .png)
+        pb.setData(data.tiff, forType: .tiff)
     }
 
     func saveWithFolderPicker(_ image: NSImage, from window: NSWindow?, completion: @escaping (Bool) -> Void) {
@@ -44,18 +49,14 @@ final class ScreenshotExporter {
     }
 
     func showShareSheet(_ image: NSImage, from view: NSView, relativeTo rect: NSRect) {
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else { return }
-        let item = NSItemProvider(item: png as NSData, typeIdentifier: UTType.png.identifier)
+        guard let data = pngAndTiff(image) else { return }
+        let item = NSItemProvider(item: data.png as NSData, typeIdentifier: UTType.png.identifier)
         let picker = NSSharingServicePicker(items: [item])
         picker.show(relativeTo: rect, of: view, preferredEdge: .minY)
     }
 
     private func writePNG(_ image: NSImage, to url: URL, completion: @escaping (Bool) -> Void) {
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let png = rep.representation(using: .png, properties: [:]) else {
+        guard let png = pngAndTiff(image)?.png else {
             completion(false); return
         }
         do {

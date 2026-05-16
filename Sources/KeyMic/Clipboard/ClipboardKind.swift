@@ -9,9 +9,9 @@ enum ClipboardKind: String, Codable {
     case codeJSON
     case codeXML
     case codeHTML
-    case image  // NEW: raw bitmap bytes from pasteboard
-    case file  // NEW: pasteboard fileURL (path stored only)
-    case richText  // NEW: HTML / RTF representation
+    case image
+    case file
+    case richText
 
     var iconSymbolName: String? {
         switch self {

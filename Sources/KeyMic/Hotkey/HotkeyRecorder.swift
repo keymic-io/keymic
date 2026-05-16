@@ -26,6 +26,9 @@ final class HotkeyRecorder: NSButton {
     /// F-row and arrow keys arrive with `.maskSecondaryFn` already set by macOS,
     /// even when the user did not press fn. The flag is implied by the keyCode
     /// itself, so we drop it from recorded combos to avoid bogus fn+F1 bindings.
+    private static let activeModifierMask: NSEvent.ModifierFlags =
+        [.command, .shift, .control, .option, .function, .capsLock]
+
     private static let implicitFnKeyCodes: Set<CGKeyCode> = [
         // F1-F12
         122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
@@ -166,8 +169,7 @@ final class HotkeyRecorder: NSButton {
         let cfg: HotkeyConfig
         switch (mode, event.type) {
         case (.pureModifier, .flagsChanged):
-            let active: NSEvent.ModifierFlags = [.command, .shift, .control, .option, .function, .capsLock]
-            guard !event.modifierFlags.intersection(active).isEmpty else { return nil }
+            guard !event.modifierFlags.intersection(Self.activeModifierMask).isEmpty else { return nil }
             cfg = HotkeyConfig(modifiers: [], keyCode: CGKeyCode(event.keyCode))
 
         case (.combo, .keyDown):
@@ -189,8 +191,7 @@ final class HotkeyRecorder: NSButton {
             // Caps Lock is a toggle: emits one flagsChanged per physical press, but
             // .capsLock is asserted only on toggle-on. Accept either edge for it.
             if kc != 0x39 {
-                let active: NSEvent.ModifierFlags = [.command, .shift, .control, .option, .function, .capsLock]
-                guard !event.modifierFlags.intersection(active).isEmpty else { return nil }
+                guard !event.modifierFlags.intersection(Self.activeModifierMask).isEmpty else { return nil }
             }
             cfg = HotkeyConfig(modifiers: [], keyCode: kc)
 
