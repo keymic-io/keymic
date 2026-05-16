@@ -516,20 +516,16 @@ private struct KeyEventMonitor: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSView {
         let view = MonitorView()
-        view.isEnabled = isEnabled
-        view.onArrowUp = onArrowUp
-        view.onArrowDown = onArrowDown
-        view.onReturn = onReturn
-        view.onCommandDelete = onCommandDelete
-        view.onTogglePin = onTogglePin
-        view.onEscape = onEscape
-        view.onQuickPaste = onQuickPaste
-        view.onPinnedQuickPaste = onPinnedQuickPaste
+        apply(to: view)
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
         guard let view = nsView as? MonitorView else { return }
+        apply(to: view)
+    }
+
+    private func apply(to view: MonitorView) {
         view.isEnabled = isEnabled
         view.onArrowUp = onArrowUp
         view.onArrowDown = onArrowDown

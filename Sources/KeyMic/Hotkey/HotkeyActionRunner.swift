@@ -63,6 +63,4 @@ final class HotkeyActionRunner {
         down.post(tap: .cgAnnotatedSessionEventTap)
         up.post(tap: .cgAnnotatedSessionEventTap)
     }
-
-
 }

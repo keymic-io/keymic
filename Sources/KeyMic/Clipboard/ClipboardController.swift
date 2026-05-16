@@ -139,12 +139,7 @@ final class ClipboardController {
         let writeChangeCount = pasteboard.write(plain)
         monitor.markIgnored(text: plain)
         panel.dismiss()
-        if let target = pasteTargetApplication, !target.isTerminated {
-            target.activate(options: [])
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            Self.synthesizeCommandV()
-        }
+        activateTargetAndSendCommandV()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
             if let savedText {

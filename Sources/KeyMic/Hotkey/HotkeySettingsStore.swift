@@ -81,20 +81,19 @@ final class HotkeySettingsStore {
     }
 
     func setHotkey(_ config: HotkeyConfig, for feature: HotkeyFeature) throws {
-        try Self.validateStored(config, owner: .feature(feature))
-        try validateFeatureConflict(config, owner: .feature(feature))
-        try validatePersonaConflict(config, owner: .feature(feature))
-        var next = snapshot
-        next.featureHotkeys[feature.rawValue] = config.encode()
-        snapshot = next
+        try assignFeature(config, raw: config.encode(), feature: feature)
     }
 
     func resetHotkey(for feature: HotkeyFeature) throws {
         let raw = Self.defaultRawHotkey(for: feature)
-        let config = HotkeyConfig.parse(raw)!
-        try Self.validateStored(config, owner: .feature(feature))
-        try validateFeatureConflict(config, owner: .feature(feature))
-        try validatePersonaConflict(config, owner: .feature(feature))
+        try assignFeature(HotkeyConfig.parse(raw)!, raw: raw, feature: feature)
+    }
+
+    private func assignFeature(_ config: HotkeyConfig, raw: String, feature: HotkeyFeature) throws {
+        let owner: Owner = .feature(feature)
+        try Self.validateStored(config, owner: owner)
+        try validateFeatureConflict(config, owner: owner)
+        try validatePersonaConflict(config, owner: owner)
         var next = snapshot
         next.featureHotkeys[feature.rawValue] = raw
         snapshot = next
@@ -173,12 +172,10 @@ final class HotkeySettingsStore {
     private static let legacyVoiceTriggerKey = "voiceTriggerKey"
 
     private static func loadOrCreate(defaults: UserDefaults, personas: [Persona]) -> HotkeySettingsSnapshot {
-        if let data = defaults.data(forKey: userDefaultsKey),
-           let decoded = try? JSONDecoder().decode(HotkeySettingsSnapshot.self, from: data) {
-            return sanitize(decoded)
-        }
-
-        if defaults.data(forKey: userDefaultsKey) != nil {
+        if let data = defaults.data(forKey: userDefaultsKey) {
+            if let decoded = try? JSONDecoder().decode(HotkeySettingsSnapshot.self, from: data) {
+                return sanitize(decoded)
+            }
             hotkeySettingsLogger.error("failed to decode persisted hotkey settings; rebuilding defaults")
         }
 

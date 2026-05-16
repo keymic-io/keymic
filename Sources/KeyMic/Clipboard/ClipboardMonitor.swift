@@ -76,12 +76,11 @@ final class ClipboardMonitor {
             return
         }
 
-        if ignoreConfidential() {
-            let types = Set(pasteboard.types())
-            if !types.isDisjoint(with: ConfidentialClipboardType.all) {
-                ignoredToken = nil
-                return
-            }
+        let types = Set(pasteboard.types())
+
+        if ignoreConfidential(), !types.isDisjoint(with: ConfidentialClipboardType.all) {
+            ignoredToken = nil
+            return
         }
 
         let source = sourceAppProvider()
@@ -90,25 +89,15 @@ final class ClipboardMonitor {
             return
         }
 
-        let types = Set(pasteboard.types())
-
-        // Priority 1: image
         if types.contains("public.png") || types.contains("public.tiff") {
             captureImage(types: types, source: source)
-            return
-        }
-        // Priority 2: file URL
-        if types.contains("public.file-url") || !pasteboard.fileURLs().isEmpty {
+        } else if types.contains("public.file-url") || !pasteboard.fileURLs().isEmpty {
             captureFile(source: source)
-            return
-        }
-        // Priority 3: rich text
-        if types.contains("public.html") || types.contains("public.rtf") {
+        } else if types.contains("public.html") || types.contains("public.rtf") {
             captureRichText(types: types, source: source)
-            return
+        } else {
+            capturePlainText(source: source)
         }
-        // Priority 4: plain text (existing path)
-        capturePlainText(source: source)
     }
 
     private func captureImage(types: Set<String>, source: (bundleID: String?, name: String?)) {

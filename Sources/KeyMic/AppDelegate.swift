@@ -9,14 +9,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let keyMonitor = KeyMonitor()
     private let secureInputMonitor = SecureInputMonitor()
     private let speechEngine: SpeechEngine = {
-        let saved = UserDefaults.standard.string(forKey: "selectedLocaleCode")
+        let saved = UserDefaults.standard.string(forKey: AppDelegate.selectedLocaleCodeKey)
         let code: String
         if let saved, !saved.isEmpty {
             code = saved
         } else {
-            // First launch: derive from system language and persist it.
             code = AppDelegate.defaultSpeechLocaleCode()
-            UserDefaults.standard.set(code, forKey: "selectedLocaleCode")
+            UserDefaults.standard.set(code, forKey: AppDelegate.selectedLocaleCodeKey)
         }
         return SpeechEngine(locale: Locale(identifier: code))
     }()
@@ -32,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastPartialResult = ""
     private var finalResultTimer: Timer?
     private var singleInstanceLockURL: URL?
+    private var personaObserverToken: NSObjectProtocol?
 
     /// Cached frontmost-app bundle ID. Updated via `NSWorkspace.didActivateApplicationNotification`.
     /// KeyMonitor's event-tap callback reads this O(1); calling
@@ -40,9 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (which presents as system-wide kbd/mouse freezes).
     private var cachedFrontBundleID: String?
 
-    private let voiceEnabledKey = "voiceEnabled"
+    private static let voiceEnabledKey = "voiceEnabled"
+    private static let selectedLocaleCodeKey = "selectedLocaleCode"
+    private static let clipboardSchemaVersionKey = "clipboardSchemaVersion"
+    private static let clipboardSchemaVersion = 2
+
     private var voiceEnabledMenuTitle: String { String(localized: "Voice Enabled") }
-    private(set) var isVoiceEnabled: Bool = UserDefaults.standard.object(forKey: "voiceEnabled") as? Bool ?? true
+    private(set) var isVoiceEnabled: Bool =
+        UserDefaults.standard.object(forKey: AppDelegate.voiceEnabledKey) as? Bool ?? true
 
     private var voiceEnabledMenuItem: NSMenuItem!
     private var personasRootMenuItem: NSMenuItem!
@@ -53,8 +58,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsMenuItem: NSMenuItem!
     private lazy var settingsWindow = SwiftUISettingsWindow()
     var selectedLocaleCode: String {
-        get { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "selectedLocaleCode") }
+        get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }
     }
 
     /// Pick a speech locale identifier matching the system language on first launch.
@@ -86,10 +91,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if activateExistingInstanceIfNeeded() { return }
 
         AppScreen.refresh()
-
-        let savedCode = selectedLocaleCode
-        speechEngine.locale =
-            savedCode.isEmpty ? Locale(identifier: Self.defaultSpeechLocaleCode()) : Locale(identifier: savedCode)
 
         setupMainMenu()
         setupStatusBar()
@@ -126,14 +127,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardController = ClipboardController()
         clipboardController.overlayPanel = overlayPanel
 
-        let schemaKey = "clipboardSchemaVersion"
-        let installedVersion = UserDefaults.standard.integer(forKey: schemaKey)
-        if installedVersion < 2 {
-            logger.info("Clipboard schema upgrade to v2: wiping legacy ClipboardItem rows")
+        let installedVersion = UserDefaults.standard.integer(forKey: Self.clipboardSchemaVersionKey)
+        if installedVersion < Self.clipboardSchemaVersion {
+            logger.info("Clipboard schema upgrade to v\(Self.clipboardSchemaVersion): wiping legacy ClipboardItem rows")
             clipboardController.performSchemaWipe()
-            UserDefaults.standard.set(2, forKey: schemaKey)
+            UserDefaults.standard.set(Self.clipboardSchemaVersion, forKey: Self.clipboardSchemaVersionKey)
         } else {
-            // Boot-time orphan sweep handles cleanup from crashes / kills.
             clipboardController.sweepOrphanCacheFiles()
         }
 
@@ -160,23 +159,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
         let registry = HotkeyRegistry.shared
         let hotkeys = HotkeySettingsStore.shared
-        if let cfg = hotkeys.hotkey(for: .voiceTrigger) {
-            registry.register(cfg, owner: .voiceTrigger, purpose: "Voice trigger")
-        }
-        if let cfg = hotkeys.hotkey(for: .clipboardPanel) {
-            registry.register(cfg, owner: .clipboardPanel, purpose: "Clipboard panel")
-        }
-        if let cfg = hotkeys.hotkey(for: .vaultPanel) {
-            registry.register(cfg, owner: .vaultPanel, purpose: "Vault panel")
-        }
-        if let cfg = hotkeys.hotkey(for: .settingsWindow) {
-            registry.register(cfg, owner: .settingsWindow, purpose: "Settings window")
-        }
-        if let cfg = hotkeys.hotkey(for: .screenshot) {
-            registry.register(cfg, owner: .screenshot, purpose: "Screenshot")
+        let builtIns: [(HotkeyFeature, HotkeyRegistry.Owner, String)] = [
+            (.voiceTrigger, .voiceTrigger, "Voice trigger"),
+            (.clipboardPanel, .clipboardPanel, "Clipboard panel"),
+            (.vaultPanel, .vaultPanel, "Vault panel"),
+            (.settingsWindow, .settingsWindow, "Settings window"),
+            (.screenshot, .screenshot, "Screenshot"),
+        ]
+        for (feature, owner, purpose) in builtIns {
+            if let cfg = hotkeys.hotkey(for: feature) {
+                registry.register(cfg, owner: owner, purpose: purpose)
+            }
         }
         AppDelegate.syncPersonaHotkeysToRegistry()
-        NotificationCenter.default.addObserver(
+        personaObserverToken = NotificationCenter.default.addObserver(
             forName: PersonaStore.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             AppDelegate.syncPersonaHotkeysToRegistry()
@@ -208,6 +204,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         HIDRemapper.reset()
+        if let token = personaObserverToken {
+            NotificationCenter.default.removeObserver(token)
+            personaObserverToken = nil
+        }
         if let singleInstanceLockURL {
             SingleInstance.releaseLock(at: singleInstanceLockURL)
         }
@@ -320,10 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 logger.info("LLM not ready; passthrough")
             }
             overlayPanel.dismiss()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.textInjector.inject(text)
-                NSSound(named: .init("Pop"))?.play()
-            }
+            injectAfterPop(text)
             lastPartialResult = ""
             return
         }
@@ -338,19 +335,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .success(let refined):
                 let finalText = refined.isEmpty ? text : refined
                 self.overlayPanel.dismiss()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.textInjector.inject(finalText)
-                    NSSound(named: .init("Pop"))?.play()
-                }
+                self.injectAfterPop(finalText)
             case .failure(let error):
                 logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
                 self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    self.overlayPanel.dismiss()
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        self.textInjector.inject(text)
-                        NSSound(named: .init("Pop"))?.play()
-                    }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    self?.overlayPanel.dismiss()
+                    self?.injectAfterPop(text)
                 }
             }
             self.lastPartialResult = ""
@@ -374,16 +365,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if !selection.isEmpty {
             sections.append("[Selected text]\n\(selection)")
-            // Omit [User said] if transcript equals selected text (redundant).
-            if transcript == selection {
-                includeTranscript = false
-            }
-            // Omit [User said] if selected text exceeds 2000 UTF-16 units.
-            if selection.utf16.count > 2000 {
+            if transcript == selection || selection.utf16.count > 2000 {
                 includeTranscript = false
             }
         }
-        // Omit clipboard if identical to selection (avoid redundancy).
         if !clipboard.isEmpty && clipboard != selection {
             sections.append("[Recent clipboard]\n\(clipboard)")
         }
@@ -391,16 +376,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sections.append("[User said]\n\(transcript)")
         }
 
-        var result = sections.joined(separator: "\n\n")
-        // Cap total output at 7500 UTF-16 units, truncating from end.
+        let result = sections.joined(separator: "\n\n")
+        // Cap at 7500 UTF-16 units, snapped to character boundary (avoids splitting surrogate pairs).
         if result.utf16.count > 7500 {
-            let units = result.utf16
-            let cutIdx = units.index(units.startIndex, offsetBy: 7500)
-            result =
-                String(units[units.startIndex..<cutIdx])
-                ?? String(result[..<result.unicodeScalars.index(result.startIndex, offsetBy: 7500)])
+            var trimmed = ""
+            for ch in result {
+                if trimmed.utf16.count + ch.utf16.count > 7500 { break }
+                trimmed.append(ch)
+            }
+            return trimmed
         }
         return result
+    }
+
+    private func injectAfterPop(_ text: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.textInjector.inject(text)
+            NSSound(named: .init("Pop"))?.play()
+        }
     }
 
     // MARK: - Main Menu
@@ -408,7 +401,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupMainMenu() {
         let mainMenu = NSMenu()
 
-        // Edit menu with standard text editing commands
         let editMenu = NSMenu()
         editMenu.addItem(withTitle: String(localized: "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
         editMenu.addItem(withTitle: String(localized: "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
@@ -430,7 +422,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Group 1: Voice + Personas
         voiceEnabledMenuItem = NSMenuItem(
             title: voiceEnabledMenuTitle, action: #selector(toggleVoiceEnabled), keyEquivalent: "")
         voiceEnabledMenuItem.target = self
@@ -449,7 +440,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        // Group 2: Key mapping + Clipboard + Shortcuts
         keyMappingMenuItem = NSMenuItem(title: String(localized: "Key Mapping"), action: #selector(toggleKeyMapping), keyEquivalent: "")
         keyMappingMenuItem.target = self
         keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
@@ -538,7 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func setVoiceEnabled(_ enabled: Bool) {
         guard enabled != isVoiceEnabled else { return }
         isVoiceEnabled = enabled
-        UserDefaults.standard.set(enabled, forKey: voiceEnabledKey)
+        UserDefaults.standard.set(enabled, forKey: Self.voiceEnabledKey)
         voiceEnabledMenuItem.state = enabled ? .on : .off
 
         if !enabled, isRecording {
@@ -580,7 +570,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
         applySettingsShortcut(to: settingsMenuItem)
 
-        let defaultsVoice = UserDefaults.standard.object(forKey: voiceEnabledKey) as? Bool ?? true
+        let defaultsVoice = UserDefaults.standard.object(forKey: Self.voiceEnabledKey) as? Bool ?? true
         if defaultsVoice != isVoiceEnabled {
             setVoiceEnabled(defaultsVoice)
         }
