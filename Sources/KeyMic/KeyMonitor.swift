@@ -48,10 +48,14 @@ final class KeyMonitor {
 
     /// Start monitoring. Returns false if accessibility permission is missing.
     func start() -> Bool {
+        // NX_SUBTYPE_AUX_CONTROL_BUTTONS systemDefined events are the only way
+        // to receive F1-F12 when "Use F1, F2… as standard function keys" is
+        // disabled in System Settings — F-row keyDowns are never generated.
         let mask = CGEventMask(
             (1 << CGEventType.flagsChanged.rawValue) |
             (1 << CGEventType.keyDown.rawValue) |
-            (1 << CGEventType.keyUp.rawValue)
+            (1 << CGEventType.keyUp.rawValue) |
+            (1 << HotkeyConfig.cgSystemDefinedRawValue)
         )
         let refcon = Unmanaged.passUnretained(self).toOpaque()
 
@@ -194,10 +198,15 @@ final class KeyMonitor {
         }
 
         // Bypass app-level hotkey dispatch while a HotkeyRecorder is capturing input.
-        // The session CGEventTap runs before NSEvent local monitors; without this,
-        // recording a hotkey would be intercepted by existing voice/clipboard/persona
-        // bindings and never reach the recorder.
+        // Forward the raw CGEvent directly to the active recorder — this is more
+        // reliable than NSEvent.addLocalMonitorForEvents, which silently drops bare
+        // F-row keyDowns and some media-key systemDefined events even when the app
+        // is frontmost. Mirrors how skhd captures F1-F12.
         if HotkeyRecorder.isAnyRecording {
+            if let recorder = HotkeyRecorder.activeRecorder,
+               recorder.handleCGEvent(type: type, event: event) {
+                return nil
+            }
             return Unmanaged.passRetained(event)
         }
 
@@ -217,6 +226,13 @@ final class KeyMonitor {
                 }
                 return nil
             }
+        }
+
+        if let fKey = HotkeyConfig.decodeMediaFKey(type: type, event: event) {
+            if dispatchFRowHotkey(keyCode: fKey, flags: event.flags) {
+                return nil
+            }
+            return Unmanaged.passRetained(event)
         }
 
         if type == .keyDown {
@@ -327,6 +343,45 @@ final class KeyMonitor {
         }
 
         return Unmanaged.passRetained(event)
+    }
+
+    /// Match a synthetic F-row keyDown (built from a systemDefined media-key
+    /// event) against the same hotkey set the regular keyDown path checks.
+    /// Skips push-to-talk / persona logic — those rely on a paired keyUp that
+    /// media events don't deliver.
+    private func dispatchFRowHotkey(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {
+        if HotkeyPreferences.enabled {
+            let frontBundleID = currentFrontBundleID?()
+            for binding in actionBindings {
+                if binding.config.matches(keyCode: keyCode, flags: flags) {
+                    if !binding.appBundleIDs.isEmpty {
+                        guard let bid = frontBundleID, binding.appBundleIDs.contains(bid) else { continue }
+                    }
+                    let actions = binding.actions
+                    DispatchQueue.main.async { [weak self] in self?.onAction?(actions) }
+                    return true
+                }
+            }
+        }
+        if let cfg = clipboardHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
+            return true
+        }
+        if let cfg = vaultHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async { [weak self] in self?.onVaultHotkey?() }
+            return true
+        }
+        if let cfg = settingsHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async { [weak self] in self?.onSettingsHotkey?() }
+            return true
+        }
+        if let cfg = screenshotHotkey, !cfg.isPureModifier,
+           cfg.matches(keyCode: keyCode, flags: flags),
+           UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
+            DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
+            return true
+        }
+        return false
     }
 
     private func computeTriggerActive(type: CGEventType, event: CGEvent) -> Bool {

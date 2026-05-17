@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 
@@ -17,6 +18,79 @@ struct HotkeyConfig: Hashable {
     static let modifierKeyCodes: Set<CGKeyCode> = [
         0x36, 0x37, 0x38, 0x39, 0x3A, 0x3B, 0x3C, 0x3D, 0x3E, 0x3F
     ]
+
+    static let cgModifierMask: CGEventFlags =
+        [.maskCommand, .maskShift, .maskControl, .maskAlternate, .maskSecondaryFn]
+
+    /// `CGEventType` in Swift has no `.systemDefined` case; NSEvent defines it
+    /// with raw value 14. Used for media-key (volume/brightness/play) events.
+    static let cgSystemDefinedRawValue: UInt32 = 14
+
+    /// `NSEvent.systemDefined` subtype for the aux-control buttons (volume,
+    /// brightness, play/pause, etc.) that ride on top of F1-F12 when "Use F1,
+    /// F2…" is disabled in System Settings.
+    static let auxControlSubtype: Int16 = 8
+
+    /// F-row keyCodes only — F1 through F20.
+    private static let fRowKeyCodes: [CGKeyCode] = [
+        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111, // F1-F12
+        105, 107, 113, 106, 64, 79, 80, 90,                     // F13-F20
+    ]
+
+    /// Arrow keys + navigation cluster (page up/down, home, end, fwd-delete).
+    private static let navKeyCodes: [CGKeyCode] = [
+        123, 124, 125, 126, 115, 116, 117, 119, 121,
+    ]
+
+    /// keyCodes for which macOS asserts `.maskSecondaryFn` on the keyDown even
+    /// when the user did not press fn. Must be stripped from event flags before
+    /// comparing against a recorded HotkeyConfig (which is itself recorded with
+    /// fn stripped). See AGENTS.md for the underlying HID gotcha.
+    static let implicitFnKeyCodes: Set<CGKeyCode> = Set(fRowKeyCodes + navKeyCodes)
+
+    /// F1-F20 keyCodes — allowed as standalone hotkey (no modifier required).
+    static let functionRowKeyCodes: Set<CGKeyCode> = Set(fRowKeyCodes)
+
+    /// NX_KEYTYPE_* → F-row keyCode. F3 (Mission Control) / F4 (Spotlight or
+    /// Launchpad) are consumed by WindowServer/Dock before reaching app event
+    /// taps — they have no NX_KEYTYPE entry and cannot be captured in media mode.
+    static let nxKeyTypeToFKey: [Int32: CGKeyCode] = [
+        0:  111, // NX_KEYTYPE_SOUND_UP        → F12
+        1:  103, // NX_KEYTYPE_SOUND_DOWN      → F11
+        2:  120, // NX_KEYTYPE_BRIGHTNESS_UP   → F2
+        3:  122, // NX_KEYTYPE_BRIGHTNESS_DOWN → F1
+        7:  109, // NX_KEYTYPE_MUTE            → F10
+        16: 100, // NX_KEYTYPE_PLAY            → F8
+        17: 101, // NX_KEYTYPE_NEXT            → F9
+        18:  98, // NX_KEYTYPE_PREVIOUS        → F7
+        21:  97, // NX_KEYTYPE_ILLUMINATION_UP → F6
+        22:  96, // NX_KEYTYPE_ILLUMINATION_DOWN → F5
+    ]
+
+    /// Recorded modifier flags for a press: masks to the five tracked modifier
+    /// bits and strips the implicit fn that macOS asserts for F-row, arrows,
+    /// and the nav cluster.
+    static func recordedFlags(event: CGEvent, keyCode: CGKeyCode) -> CGEventFlags {
+        var f = event.flags.intersection(cgModifierMask)
+        if implicitFnKeyCodes.contains(keyCode) {
+            f.remove(.maskSecondaryFn)
+        }
+        return f
+    }
+
+    /// Decode an aux-control systemDefined CGEvent into the underlying F-row
+    /// keyCode (only on key-down). Returns nil for unrelated events or key-up.
+    static func decodeMediaFKey(type: CGEventType, event: CGEvent) -> CGKeyCode? {
+        guard type.rawValue == cgSystemDefinedRawValue,
+              let ns = NSEvent(cgEvent: event),
+              ns.subtype.rawValue == auxControlSubtype else { return nil }
+        let data1 = ns.data1
+        let nxKeyType = Int32((data1 & 0xFFFF0000) >> 16)
+        let keyFlags = Int32(data1 & 0x0000FFFF)
+        let pressed = ((keyFlags & 0xFF00) >> 8) == 0x0A  // NX_KEYDOWN
+        guard pressed else { return nil }
+        return nxKeyTypeToFKey[nxKeyType]
+    }
 
     var isPureModifier: Bool {
         modifiers.isEmpty && Self.modifierKeyCodes.contains(keyCode)
@@ -89,7 +163,14 @@ struct HotkeyConfig: Hashable {
         guard !isPureModifier else { return false }
         guard otherKey == keyCode else { return false }
         let mask: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate, .maskSecondaryFn]
-        return flags.intersection(mask) == modifiers
+        var eventModifiers = flags.intersection(mask)
+        // F-row / arrow / nav keys arrive with .maskSecondaryFn asserted by
+        // macOS even without a real fn press. Recorded configs are normalized
+        // by dropping the implicit fn; the runtime comparison must match.
+        if Self.implicitFnKeyCodes.contains(otherKey) {
+            eventModifiers.remove(.maskSecondaryFn)
+        }
+        return eventModifiers == modifiers
     }
 
     // MARK: - Tables

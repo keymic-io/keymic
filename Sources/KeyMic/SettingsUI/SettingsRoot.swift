@@ -1130,7 +1130,9 @@ private struct ShortcutsSettingsSection: View {
 
     private func validate(_ cfg: HotkeyConfig, excluding id: UUID?) -> String? {
         if cfg.isPureModifier { return "Modifier-only triggers are not allowed" }
-        if cfg.modifiers.isEmpty { return "Need at least one modifier" }
+        if cfg.modifiers.isEmpty, !HotkeyConfig.functionRowKeyCodes.contains(cfg.keyCode) {
+            return "Need at least one modifier"
+        }
 
         let hotkeyStore = HotkeySettingsStore.shared
         let voiceKey = hotkeyStore.rawHotkey(for: .voiceTrigger)
