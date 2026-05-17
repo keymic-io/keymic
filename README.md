@@ -1,217 +1,250 @@
-# KeyMic
+<h1 align="center">KeyMic</h1>
+
+<hr>
 
 <p align="center">
-  <img src="assets/logo.png" alt="KeyMic logo" width="128" height="128">
+  <a href="https://twitter.com/intent/tweet?text=Check%20out%20KeyMic%20%E2%80%94%20keyboard,%20mic,%20clipboard%20for%20macOS&url=https%3A%2F%2Fgithub.com%2Fkeymic-io%2Fkeymic">
+    <img alt="Tweet" src="https://img.shields.io/twitter/url?style=social&url=https%3A%2F%2Fgithub.com%2Fkeymic-io%2Fkeymic">
+  </a>
 </p>
 
-**KeyMic is a macOS menu-bar app for voice input, clipboard history, key remapping, hotkeys, secret-aware clipboard storage, and screenshot annotation.**
+<p align="center">
+  ⌨️ <strong>Keyboard-first macOS productivity</strong> 🎙️<br>
+  A signed, open-source menu-bar app that bundles voice input, clipboard history, key remapping, hotkey actions, and secret-aware vault — all driven by one shared event tap.
+</p>
 
-It combines several keyboard-first productivity tools into one open-source desktop app: speak into any text field, search your clipboard, remap awkward keys, trigger app actions with shortcuts, keep secrets out of plain clipboard history, and annotate screenshots without leaving your workflow.
+<p align="center">
+  Available for macOS 14 Sonoma and later.
+</p>
+
+<p align="center">
+  <a href="https://github.com/keymic-io/keymic/releases"><img alt="Release" src="https://img.shields.io/github/v/release/keymic-io/keymic"></a>
+  <a href="https://github.com/keymic-io/keymic/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/keymic-io/keymic/total"></a>
+  <a href="https://github.com/keymic-io/keymic/releases/latest"><img alt="Downloads@latest" src="https://img.shields.io/github/downloads/keymic-io/keymic/latest/total?label=downloads%40latest"></a>
+  <a href="https://github.com/keymic-io/keymic/stargazers"><img alt="Stars" src="https://img.shields.io/github/stars/keymic-io/keymic?style=social"></a>
+</p>
+
+<p align="center">
+  <a href="https://keymic.io"><strong>Website</strong></a>
+  &nbsp;|&nbsp;
+  <a href="#features"><strong>Features</strong></a>
+  &nbsp;|&nbsp;
+  <a href="#downloads"><strong>Downloads</strong></a>
+  &nbsp;|&nbsp;
+  <a href="#development"><strong>Development</strong></a>
+  &nbsp;|&nbsp;
+  <a href="#contribution"><strong>Contribution</strong></a>
+</p>
+
+<p align="center">
+  This keyboard-first stack that could. Built with ❤️ by <a href="https://github.com/keymic-io">keymic-io</a> and <a href="https://github.com/keymic-io/keymic/graphs/contributors">contributors</a>.
+</p>
+
+---
+
+## Why KeyMic
+
+Most keyboard-first Mac workflows stitch together Karabiner + Maccy + Raycast + a dictation app. Each one ships its own update channel, its own permission prompts, its own event tap. KeyMic collapses that stack:
+
+- **One signed binary, one event tap.** Lower CPU, fewer privacy dialogs.
+- **Built for the hold-and-talk loop.** Voice input feels native, not bolted on.
+- **Secrets stay out of clipboard history.** Tokens hit Keychain, not SwiftData.
+
+---
 
 ## Features
 
-### Voice input anywhere
+### Remap — Unlock every forgotten key
 
-Hold a trigger key, speak, and KeyMic pastes the transcription into the focused app.
+Karabiner-style remaps without a separate daemon.
 
-- Trigger with **Fn** or **Right Option**
-- Live transcription overlay while speaking
-- Paste result through simulated `Cmd+V`
-- Optional LLM refinement through an OpenAI-compatible chat-completions endpoint
-- IME-safe paste path for non-ASCII input sources such as Pinyin
+```
+ ┌──────────┐                ┌────────────────┐
+ │ Caps Lock│  ───────────►  │  Left Control  │
+ └──────────┘                └────────────────┘
 
-### Clipboard history
+ ┌──────────┐                ┌────────────────┐
+ │  Right ⌘ │  ───────────►  │ Forward Delete │
+ └──────────┘                └────────────────┘
+```
 
-Keep a searchable text clipboard history in a fast keyboard panel.
+Session-level `CGEvent` tap. Modifier→modifier and modifier→key mappings. Auto-repeat handled for non-modifier targets.
 
-- Open with `⌥V`
-- Search previous clips
-- Navigate with arrow keys
-- Quick paste with `⌥1`–`⌥0`
-- Deduplicates repeated clips
-- Skips transient, concealed, and self-generated clipboard writes
+---
 
-### Keyboard remapping
+### Voice — Hold, talk, paste
 
-Use Karabiner-style key remaps without running a separate remapping daemon.
+Hold a trigger key, speak, KeyMic transcribes and (optionally) routes through an LLM to clean up filler, punctuation, and casing before pasting.
 
-- Session-level `CGEvent` tap
-- Modifier-to-modifier and modifier-to-key mappings
-- Examples: Right Cmd → Forward Delete, Caps Lock → Left Control
-- Auto-repeat support for modifier-to-key mappings
+```
+   Hold ⌥R                              Release ⌥R
+   ──────►                              ─────────►
 
-### Custom hotkey actions
+  ┌────────────────────────────────────────────────────────┐
+  │  ● Listening…                                          │
+  │  "um so can you uh write a function that returns       │
+  │   the first n fibonacci numbers in python thanks"      │
+  └────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+              ┌─────────────────────────────┐
+              │  LLMRefiner                 │
+              │  POST /v1/chat/completions  │
+              │  model: gpt-4o-mini         │
+              └──────────────┬──────────────┘
+                             │
+                             ▼
+  ┌────────────────────────────────────────────────────────┐
+  │  Refined transcript                              ⌘V    │
+  │                                                        │
+  │  Write a Python function that returns the first N      │
+  │  Fibonacci numbers.                                    │
+  └────────────────────────────────────────────────────────┘
+```
 
-Bind shortcuts to app actions from KeyMic settings.
+Configurable system prompt (e.g. "Clean up speech-to-text. Keep meaning, fix grammar, drop filler"). Any OpenAI-compatible chat-completions endpoint works — OpenAI, Anthropic via gateway, local Ollama, vLLM, etc. Disable refinement to paste raw speech transcripts. IME-safe paste path for Pinyin and other non-ASCII input sources.
 
-- Toggle clipboard history
-- Start screenshot capture
-- Run other built-in `HotkeyAction` commands
-- Persisted in `UserDefaults`
+---
 
-### Vault for secrets
+### Clipboard — Searchable history at `⌥V`
 
-KeyMic scans clipboard text for secrets before saving it to history.
+```
+ ⌥V  ►  ┌───────────────────────────────────────────────┐
+        │  🔍  Search clips…                            │
+        ├───────────────────────────────────────────────┤
+        │  ⌥1   https://keymic.io                  3m   │
+        │  ⌥2   ~/code/keymic/Sources/KeyMic      11m   │
+        │  ⌥3   let store = ModelContainer(…)      1h   │
+        │  ⌥4   Quarterly review draft             2h   │
+        │  ⌥5   #FF6A2C                            4h   │
+        ├───────────────────────────────────────────────┤
+        │  ↑ ↓  navigate   ⏎  paste    esc  close       │
+        └───────────────────────────────────────────────┘
+```
 
-- Detects API keys, tokens, and similar secret patterns
-- Uses bundled `gitleaks.toml` rules
-- Stores detected secrets in macOS Keychain
-- Keeps secret values out of normal SwiftData clipboard history
-- Displays masked values in the Vault list
+Dedups repeats. Skips transient, concealed, and self-generated clipboard writes. SwiftData store, in-memory fallback if disk init fails.
+
+---
+
+### Vault — Secrets never hit history
+
+Every clipboard write runs through a gitleaks-derived scanner. Matches divert to macOS Keychain, plain text never lands in SwiftData history.
+
+```
+   Copy             ┌───────────────────┐
+   "sk-proj-abc…"   │  SecretScanner    │
+   ─────────────►   │  gitleaks rules   │
+                    └─────────┬─────────┘
+                              │ match
+                              ▼
+        ┌────────────────────────────────────────┐
+        │  📋  Plain History                     │
+        │      ─ urls, snippets, paths           │
+        │                                        │
+        │  🔒  Vault  (macOS Keychain)           │
+        │      ─ sk-pro•••••••••••  masked       │
+        └────────────────────────────────────────┘
+```
+
+Bundled `gitleaks.toml` ruleset. Service id `io.keymic.app.vault`. Masked display in the Vault list view.
+
+---
+
+### Shortcuts — Bind any hotkey to a sequence
+
+Wire a hotkey to a typed string + keypress chain. Scope by app.
+
+```
+   ⌥K   ►   ┌──────────────────────────────────────┐
+            │  Sequence                            │
+            │  ─────────────────────────────────── │
+            │  1.  type   "/clear"                 │
+            │  2.  press  ⏎                        │
+            │                                      │
+            │  Scope:  Terminal · VSCode · Zed     │
+            │          · Claude                    │
+            └──────────────────────────────────────┘
+
+   In Claude Code:
+   ┌───────────────────────────────┐
+   │ > /clear                      │
+   │ (context cleared)             │
+   └───────────────────────────────┘
+```
+
+Persisted in `UserDefaults`. Configure from the settings window.
+
+---
 
 ### Screenshot annotation
 
-Capture part of the screen, annotate it, and export it.
+Selection overlay → annotate → pixelate → export PNG to disk or clipboard.
 
-- Selection overlay
-- Annotation tools
-- Pixelation support
-- Export to PNG file or clipboard
-- Toolbar stays visible near screen edges
-
-### Auto-update ready
-
-KeyMic includes Sparkle 2 integration for signed app updates.
-
-- Sparkle 2 updater controller
-- EdDSA-signed appcast support
-- Release script can build, sign, package, tag, publish, and update the appcast
-
-## Requirements
-
-- macOS 14.0 Sonoma or later
-- Xcode Command Line Tools for source builds
-- Accessibility permission for global keyboard features
-- Microphone and Speech Recognition permissions for voice input
-- Screen Recording permission for screenshot capture
-
-## Quick Start from Source
-
-KeyMic uses Swift Package Manager plus a Makefile. There is no Xcode project.
-
-```bash
-make build   # release build for host architecture → ./KeyMic.app
-make run     # build and launch KeyMic.app
-make install # copy KeyMic.app to /Applications
+```
+   ┌───────── Screen ──────────────────────────────────────┐
+   │                                                       │
+   │     ┌─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐       │
+   │     │                                          │       │
+   │     │           selection region               │       │
+   │     │                                          │       │
+   │     └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘       │
+   │              ┌─────────────────────┐                  │
+   │              │  ✎  A  ▢  ◯  🟦  ░  ⤓  │              │
+   │              └─────────────────────┘                  │
+   │                                                       │
+   └───────────────────────────────────────────────────────┘
 ```
 
-First launch may ask for macOS privacy permissions. Enable them in **System Settings → Privacy & Security**.
+Toolbar repositions against screen edges. PNG filenames prefixed `KeyMic-`.
 
-## Permissions
+---
 
-| Permission | Required for |
-|---|---|
-| Accessibility | Global event tap for voice trigger, clipboard hotkey, hotkey actions, and key remapping |
-| Microphone | Voice input |
-| Speech Recognition | Speech-to-text transcription |
-| Screen Recording | Screenshot capture |
+### Auto-update
 
-KeyMic is intentionally **not sandboxed**. A session-level `CGEvent` tap is incompatible with the App Sandbox.
+Sparkle 2 with an EdDSA-signed appcast. The release script builds, signs, packages, tags, publishes, and pushes the appcast to GitHub Pages in one command.
 
-After rebuilding, macOS may invalidate previous privacy approvals because the binary's code directory hash changes. Re-grant permissions in System Settings, or reset them with:
+---
 
-```bash
-tccutil reset Accessibility io.keymic.app
-tccutil reset Microphone io.keymic.app
-tccutil reset SpeechRecognition io.keymic.app
-tccutil reset ScreenCapture io.keymic.app
-```
+## Downloads
 
-## Build Commands
+Grab a signed build from [Releases](https://github.com/keymic-io/keymic/releases), or build from source (see [Development](#development)).
 
 ```bash
-make build        # release build for host architecture → ./KeyMic.app
-make build-arm64  # arm64-only build
-make build-x86_64 # x86_64-only build
-make run          # build and launch
-make install      # copy bundle to /Applications
-make clean        # swift package clean + remove app bundle
+make build   # release build → ./KeyMic.app
+make run     # build and launch
+make install # copy to /Applications
 ```
 
-Both `make build` and release packaging use `CODESIGN_IDENTITY`. If it is not set, the Makefile falls back to ad-hoc signing with `"-"`.
+First launch will request **Accessibility**, **Microphone**, **Speech Recognition**, and **Screen Recording** permissions in System Settings.
 
-```bash
-CODESIGN_IDENTITY="-" make build
-CODESIGN_IDENTITY="KeyMic Dev" make build
-```
+---
 
-For a stable local development identity, create a self-signed code-signing certificate in Keychain Access and set:
+## Development
 
-```bash
-export CODESIGN_IDENTITY="KeyMic Dev"
-make build
-```
+KeyMic is a single menu-bar app (`LSUIElement`) built with Swift, AppKit, SwiftUI, SwiftData, ScreenCaptureKit, Keychain Services, and Sparkle. No Xcode project — SwiftPM plus a Makefile.
 
-For distribution outside your own machine, use an Apple Developer ID Application certificate and notarization.
+Source layout:
 
-## Tests
+- `Sources/KeyMic/AppDelegate.swift` — wires long-lived services together
+- `Sources/KeyMic/KeyMonitor.swift` — shared global event tap
+- `Sources/KeyMic/Clipboard/` — monitor, store, controller, panel
+- `Sources/KeyMic/Hotkey/` — actions, bindings, recorder, persistence
+- `Sources/KeyMic/Vault/` — secret scanning, Keychain storage, masking, UI
+- `Sources/KeyMic/Screenshot/` — capture, selection, annotation, export
+- `Sources/KeyMic/Updater/` — Sparkle integration
 
-Tests are standalone `swiftc` runners, not XCTest targets. Run them through Make:
+Build, code-signing, permissions, tests, and release flow → [`docs/BUILDING.md`](docs/BUILDING.md).
 
-```bash
-make test-all               # run every standalone test suite
-make test                   # KeyMappingManager tests
-make test-clipboard-store   # ClipboardStore tests
-make test-clipboard-monitor # ClipboardMonitor tests
-```
+Deeper implementation notes: [`CLAUDE.md`](CLAUDE.md). macOS HID, event-tap, and TCC gotchas: [`AGENTS.md`](AGENTS.md).
 
-`swift test` will fail because `Package.swift` does not define a test target.
+---
 
-## Release
+## Contribution
 
-```bash
-make release VERSION=1.2.3
-make release VERSION=1.2.3 FORCE=1
-# or directly:
-scripts/release.sh 1.2.3
-scripts/release.sh -f 1.2.3
-```
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — basics
+- [`SECURITY.md`](SECURITY.md) — vulnerability reporting
+- Run `make test-all` before opening a pull request
 
-Release packaging performs these steps:
+Keep patches small. KeyMic touches macOS privacy, keyboard input, clipboard state, and signing — small reviewable changes are easier to land.
 
-1. Updates `CFBundleShortVersionString` and `CFBundleVersion` in `Info.plist`
-2. Builds arm64 and x86_64 binaries
-3. Merges them into a universal binary with `lipo`
-4. Assembles and signs `KeyMic.app`
-5. Creates `.release/KeyMic-<version>.zip`
-6. Generates a Sparkle appcast with EdDSA signatures
-7. Commits `Info.plist`
-8. Deploys `appcast.xml` to the `gh-pages` branch
-9. Tags `v<version>` and publishes a GitHub release with the zip attached
-
-Release prerequisites:
-
-- Sparkle command-line tools in `~/.sparkle-tools/`
-- EdDSA private key available to Sparkle's `generate_appcast`
-- Authenticated `gh` CLI
-- `CODESIGN_IDENTITY` set to an appropriate signing identity
-
-## Architecture
-
-KeyMic is a single macOS menu-bar app (`LSUIElement`) built with Swift, AppKit, SwiftUI, SwiftData, ScreenCaptureKit, Keychain Services, and Sparkle.
-
-Core areas:
-
-- `Sources/KeyMic/AppDelegate.swift` wires long-lived services together
-- `Sources/KeyMic/KeyMonitor.swift` owns the shared global event tap
-- `Sources/KeyMic/Clipboard/` contains clipboard monitor, store, controller, and panel UI
-- `Sources/KeyMic/Hotkey/` contains action definitions, bindings, recorder UI, and persistence
-- `Sources/KeyMic/Vault/` contains secret scanning, Keychain storage, masking, and Vault UI
-- `Sources/KeyMic/Screenshot/` contains capture, selection, annotation, rendering, and export
-- `Sources/KeyMic/Updater/` wraps Sparkle update integration
-
-For deeper implementation notes, see [`CLAUDE.md`](CLAUDE.md). For macOS HID, event-tap, and TCC gotchas, see [`AGENTS.md`](AGENTS.md).
-
-## Contributing
-
-Contributions are welcome. Start with:
-
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) for contribution basics
-- [`SECURITY.md`](SECURITY.md) for vulnerability reporting
-- `make test-all` before opening a pull request
-
-Keep changes focused. This project touches macOS privacy, keyboard input, clipboard state, and signing behavior, so small reviewable patches are easier to validate.
-
-## License
-
-KeyMic is licensed under the MIT License. See [`LICENSE`](LICENSE).
+Licensed under MIT. See [`LICENSE`](LICENSE).
