@@ -8,42 +8,31 @@ final class HotkeyRecorder: NSButton {
 
     /// Tracks how many recorders are currently capturing input. KeyMonitor reads this
     /// to bypass app-level hotkey dispatch while the user is recording, so the session
-    /// CGEventTap doesn't swallow the keystroke before our local NSEvent monitor sees it.
+    /// CGEventTap doesn't swallow the keystroke before our local monitor sees it.
     private static var activeRecordingCount: Int = 0
     static var isAnyRecording: Bool { activeRecordingCount > 0 }
+
+    /// The currently-recording recorder, if any. KeyMonitor's CGEventTap consults
+    /// this and routes raw events here directly — bypassing NSEvent dispatch,
+    /// which silently drops bare F1-F12 keyDowns on some macOS configurations
+    /// even when the app is frontmost. Same approach as skhd.
+    static weak var activeRecorder: HotkeyRecorder?
 
     private var current: HotkeyConfig?
     private let validator: Validator
     private let mode: Mode
     private let onCommit: (HotkeyConfig) -> Void
-    private var localMonitor: Any?
-    private var globalMonitor: Any?
     private var errorTimer: Timer?
+    private var recording = false
 
     override var canBecomeKeyView: Bool { true }
     override var acceptsFirstResponder: Bool { true }
 
-    /// F-row and arrow keys arrive with `.maskSecondaryFn` already set by macOS,
-    /// even when the user did not press fn. The flag is implied by the keyCode
-    /// itself, so we drop it from recorded combos to avoid bogus fn+F1 bindings.
-    private static let activeModifierMask: NSEvent.ModifierFlags =
-        [.command, .shift, .control, .option, .function, .capsLock]
-
-    private static let implicitFnKeyCodes: Set<CGKeyCode> = [
-        // F1-F12
-        122, 120, 99, 118, 96, 97, 98, 100, 101, 109, 103, 111,
-        // F13-F20
-        105, 107, 113, 106, 64, 79, 80, 90,
-        // Arrows + nav cluster
-        123, 124, 125, 126, 115, 116, 117, 119, 121,
-    ]
-
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
         // SwiftUI may pull the NSView out of its window without deallocating it
-        // (sheet dismiss, tab switch, view hidden). Without this hook the local +
-        // global NSEvent monitors stay armed and activeRecordingCount leaks,
-        // permanently bypassing app-level hotkey dispatch.
+        // (sheet dismiss, tab switch, view hidden). Without this hook the
+        // activeRecordingCount leaks, permanently bypassing hotkey dispatch.
         if newWindow == nil, isRecording {
             cancelRecording()
         }
@@ -65,23 +54,21 @@ final class HotkeyRecorder: NSButton {
     required init?(coder: NSCoder) { fatalError() }
 
     deinit {
-        removeMonitors()
+        stopRecording()
         errorTimer?.invalidate()
     }
 
-    private func removeMonitors() {
-        let wasRecording = (localMonitor != nil) || (globalMonitor != nil)
-        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
-        if let m = globalMonitor { NSEvent.removeMonitor(m); globalMonitor = nil }
-        if wasRecording {
-            Self.activeRecordingCount = max(0, Self.activeRecordingCount - 1)
-        }
+    private func stopRecording() {
+        guard recording else { return }
+        Self.activeRecordingCount = max(0, Self.activeRecordingCount - 1)
+        if Self.activeRecorder === self { Self.activeRecorder = nil }
+        recording = false
     }
 
     func updateValue(_ cfg: HotkeyConfig?) {
         // If a parent state push lands while we are still recording, cancel the
-        // session first so monitors are torn down — otherwise renderIdle() would
-        // make the button look idle while activeRecordingCount stays elevated.
+        // session first so renderIdle() doesn't show idle while the static
+        // activeRecordingCount stays elevated.
         if isRecording { cancelRecording() }
         current = cfg
         renderIdle()
@@ -125,80 +112,70 @@ final class HotkeyRecorder: NSButton {
         renderRecording()
         window?.makeFirstResponder(self)
         Self.activeRecordingCount += 1
-        let mask: NSEvent.EventTypeMask
-        switch mode {
-        case .pureModifier: mask = .flagsChanged
-        case .combo, .singleKey: mask = [.keyDown, .flagsChanged]
-        }
-        // Local monitor: intercepts and swallows events before they reach any responder.
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            guard let self, self.isRecording else { return event }
-            return self.handle(event)
-        }
-        // Global monitor: observes events meant for *other* apps so we can react when
-        // the user's keypress goes outside our window.  Global monitors cannot swallow
-        // events — they are read-only — so we still rely on the local monitor for that.
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
-            guard let self, self.isRecording else { return }
-            // Cancel recording if the user interacted with a different app.
-            self.cancelRecording()
-        }
+        Self.activeRecorder = self
+        recording = true
     }
 
-    private var isRecording: Bool { localMonitor != nil }
+    private var isRecording: Bool { recording }
 
     private func cancelRecording() {
-        removeMonitors()
+        stopRecording()
         renderIdle()
     }
 
-    private func handle(_ event: NSEvent) -> NSEvent? {
+    /// Called from KeyMonitor's CGEventTap callback for every event while a
+    /// recorder is active. Returns true if the recorder consumed the event.
+    @discardableResult
+    func handleCGEvent(type: CGEventType, event: CGEvent) -> Bool {
+        guard isRecording else { return false }
+
+        let kc = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+
         // Esc cancels in every mode. singleKey additionally treats Return / Delete as cancel.
-        if event.type == .keyDown {
-            let kc = CGKeyCode(event.keyCode)
-            if kc == 0x35 {
-                cancelRecording()
-                return nil
-            }
+        if type == .keyDown {
+            if kc == 0x35 { cancelRecording(); return true }
             if mode == .singleKey, kc == 0x24 || kc == 0x33 {
-                cancelRecording()
-                return nil
+                cancelRecording(); return true
             }
         }
 
+        // Media-mode F-keys arrive as systemDefined / NX_SUBTYPE_AUX_CONTROL_BUTTONS.
+        if mode != .pureModifier, let fKey = HotkeyConfig.decodeMediaFKey(type: type, event: event) {
+            // singleKey mode (key remap target) ignores modifiers — match the
+            // (.singleKey, .keyDown) branch below to keep behavior consistent.
+            let mods: CGEventFlags = (mode == .singleKey) ? [] : HotkeyConfig.recordedFlags(event: event, keyCode: fKey)
+            commit(HotkeyConfig(modifiers: mods, keyCode: fKey))
+            return true
+        }
+
         let cfg: HotkeyConfig
-        switch (mode, event.type) {
+        switch (mode, type) {
         case (.pureModifier, .flagsChanged):
-            guard !event.modifierFlags.intersection(Self.activeModifierMask).isEmpty else { return nil }
-            cfg = HotkeyConfig(modifiers: [], keyCode: CGKeyCode(event.keyCode))
+            guard !event.flags.intersection(HotkeyConfig.cgModifierMask).isEmpty else { return false }
+            cfg = HotkeyConfig(modifiers: [], keyCode: kc)
 
         case (.combo, .keyDown):
-            var cgFlags = cgEventFlags(from: event.modifierFlags)
-            let kc = CGKeyCode(event.keyCode)
-            // F-row / arrows arrive with .function asserted by the system even when
-            // the user did not press fn. Drop it so single F1 doesn't record as fn+F1.
-            if Self.implicitFnKeyCodes.contains(kc) {
-                cgFlags.remove(.maskSecondaryFn)
-            }
-            cfg = HotkeyConfig(modifiers: cgFlags, keyCode: kc)
+            cfg = HotkeyConfig(modifiers: HotkeyConfig.recordedFlags(event: event, keyCode: kc), keyCode: kc)
 
         case (.singleKey, .keyDown):
-            cfg = HotkeyConfig(modifiers: [], keyCode: CGKeyCode(event.keyCode))
+            cfg = HotkeyConfig(modifiers: [], keyCode: kc)
 
         case (.singleKey, .flagsChanged):
-            let kc = CGKeyCode(event.keyCode)
-            guard HotkeyConfig.modifierKeyCodes.contains(kc) else { return nil }
-            // Caps Lock is a toggle: emits one flagsChanged per physical press, but
-            // .capsLock is asserted only on toggle-on. Accept either edge for it.
+            guard HotkeyConfig.modifierKeyCodes.contains(kc) else { return false }
             if kc != 0x39 {
-                guard !event.modifierFlags.intersection(Self.activeModifierMask).isEmpty else { return nil }
+                guard !event.flags.intersection(HotkeyConfig.cgModifierMask).isEmpty else { return false }
             }
             cfg = HotkeyConfig(modifiers: [], keyCode: kc)
 
         default:
-            return nil
+            return false
         }
 
+        commit(cfg)
+        return true
+    }
+
+    private func commit(_ cfg: HotkeyConfig) {
         if let msg = validator(cfg) {
             cancelRecording()
             renderError(msg)
@@ -207,22 +184,13 @@ final class HotkeyRecorder: NSButton {
             cancelRecording()
             onCommit(cfg)
         }
-        return nil
-    }
-
-    private func cgEventFlags(from ns: NSEvent.ModifierFlags) -> CGEventFlags {
-        var f: CGEventFlags = []
-        if ns.contains(.command)  { f.insert(.maskCommand) }
-        if ns.contains(.shift)    { f.insert(.maskShift) }
-        if ns.contains(.control)  { f.insert(.maskControl) }
-        if ns.contains(.option)   { f.insert(.maskAlternate) }
-        if ns.contains(.function) { f.insert(.maskSecondaryFn) }
-        return f
     }
 
     static let clipboardValidator: Validator = { cfg in
         if cfg.isPureModifier { return String(localized: "Need at least one regular key, not just modifiers") }
-        if cfg.modifiers.isEmpty { return String(localized: "Need at least one modifier") }
+        if cfg.modifiers.isEmpty, !HotkeyConfig.functionRowKeyCodes.contains(cfg.keyCode) {
+            return String(localized: "Need at least one modifier")
+        }
         if cfg.isSystemReserved { return String(localized: "\(cfg.displayString()) is reserved by macOS") }
         return nil
     }

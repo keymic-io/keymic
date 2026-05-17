@@ -234,7 +234,7 @@ final class HotkeySettingsStore {
             if config.isPureModifier {
                 throw ValidationError(message: String(localized: "Need a key, not just modifiers"))
             }
-            if config.modifiers.isEmpty {
+            if config.modifiers.isEmpty, !HotkeyConfig.functionRowKeyCodes.contains(config.keyCode) {
                 throw ValidationError(message: String(localized: "Need at least one modifier"))
             }
         }
