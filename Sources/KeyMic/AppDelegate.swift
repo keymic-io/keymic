@@ -196,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for entry in registry.all() {
             if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
         }
-        for persona in PersonaStore.shared.personas {
+        for persona in PersonaStore.shared.visiblePersonas {
             guard let cfg = hotkeys.personaHotkey(personaId: persona.id) else { continue }
             registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
         }
