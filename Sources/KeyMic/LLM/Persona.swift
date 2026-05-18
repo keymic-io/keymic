@@ -21,13 +21,66 @@ struct Persona: Codable, Identifiable, Equatable {
     var hotkey: String?        // HotkeyConfig.encode() format, e.g. "alt+q"
     var contextMode: ContextMode
     var builtIn: Bool
+    var hidden: Bool           // true → never surface in UI lists (e.g. shortcut-config persona)
     var createdAt: Date
     var updatedAt: Date
 
     static let temperatureRange: ClosedRange<Double> = 0.0 ... 2.0
 
+    /// Restored memberwise init — `hidden` is trailing-with-default so every existing
+    /// call site (PersonaStore.duplicate, PersonasView.addCustom, PersonaStoreTests,
+    /// PersonaTests) compiles unchanged after `init(from:)` removes the synthesized one.
+    init(
+        id: String,
+        name: String,
+        icon: String,
+        stylePrompt: String,
+        temperature: Double,
+        hotkey: String?,
+        contextMode: ContextMode,
+        builtIn: Bool,
+        hidden: Bool = false,
+        createdAt: Date,
+        updatedAt: Date
+    ) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.stylePrompt = stylePrompt
+        self.temperature = temperature
+        self.hotkey = hotkey
+        self.contextMode = contextMode
+        self.builtIn = builtIn
+        self.hidden = hidden
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    // Custom Codable to default `hidden = false` on pre-Phase-1 JSON (additive schema,
+    // no envelope version bump — `decodeIfPresent ?? false` covers backwards compat).
+    // `encode(to:)` is intentionally NOT defined — Swift continues to synthesize it.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, icon, stylePrompt, temperature, hotkey
+        case contextMode, builtIn, hidden, createdAt, updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id          = try c.decode(String.self,           forKey: .id)
+        self.name        = try c.decode(String.self,           forKey: .name)
+        self.icon        = try c.decode(String.self,           forKey: .icon)
+        self.stylePrompt = try c.decode(String.self,           forKey: .stylePrompt)
+        self.temperature = try c.decode(Double.self,           forKey: .temperature)
+        self.hotkey      = try c.decodeIfPresent(String.self,  forKey: .hotkey)
+        self.contextMode = try c.decode(ContextMode.self,      forKey: .contextMode)
+        self.builtIn     = try c.decode(Bool.self,             forKey: .builtIn)
+        self.hidden      = try c.decodeIfPresent(Bool.self,    forKey: .hidden) ?? false
+        self.createdAt   = try c.decode(Date.self,             forKey: .createdAt)
+        self.updatedAt   = try c.decode(Date.self,             forKey: .updatedAt)
+    }
+
     /// Built-in personas seeded on first launch. Order is stable.
-    /// Built-ins: name + builtIn flag are immutable in UI; stylePrompt + icon + temperature + hotkey + contextMode editable.
+    /// Built-ins: name + builtIn + hidden are immutable in UI / restored from seed on load; stylePrompt + icon + temperature + hotkey + contextMode editable.
     static func builtInSeeds() -> [Persona] {
         let now = Date()
         return [
@@ -101,6 +154,22 @@ struct Persona: Codable, Identifiable, Equatable {
                 hotkey: nil,
                 contextMode: .selectionAndClipboard,
                 builtIn: true,
+                createdAt: now,
+                updatedAt: now
+            ),
+            Persona(
+                id: "builtin-shortcut-config",
+                name: "Shortcut Config",
+                icon: "command",
+                stylePrompt: """
+                    # Configured in Phase 6.
+                    Output YAML only. No prose. No fences.
+                    """,
+                temperature: 0.0,
+                hotkey: nil,
+                contextMode: .none,
+                builtIn: true,
+                hidden: true,
                 createdAt: now,
                 updatedAt: now
             ),
