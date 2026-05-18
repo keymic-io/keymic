@@ -11,7 +11,7 @@ struct PersonaStoreTestRunner {
 
         // First load on empty disk → seeds 5 built-ins, active = nil
         let store1 = PersonaStore(storeURL: url)
-        expect(store1.personas.count == 5, "first load seeds 5 built-ins")
+        expect(store1.allPersonas.count == 5, "first load seeds 5 built-ins")
         expect(store1.activePersonaId == nil,
                "first launch leaves active persona empty")
         expect(FileManager.default.fileExists(atPath: url.path),
@@ -19,7 +19,7 @@ struct PersonaStoreTestRunner {
 
         // Persistence: re-load same URL retains state
         let store2 = PersonaStore(storeURL: url)
-        expect(store2.personas.count == 5, "reload keeps 5 personas")
+        expect(store2.allPersonas.count == 5, "reload keeps 5 personas")
         expect(store2.activePersonaId == nil, "reload keeps empty active persona")
 
         // setActive(nil) → passthrough mode
@@ -36,7 +36,7 @@ struct PersonaStoreTestRunner {
             createdAt: now, updatedAt: now
         )
         store3.add(custom)
-        expect(store3.personas.count == 6, "add appends (5 built-ins + 1 custom)")
+        expect(store3.allPersonas.count == 6, "add appends (5 built-ins + 1 custom)")
         expect(store3.persona(id: "user-1") != nil, "lookup by id works")
 
         // delete: built-in cannot be deleted

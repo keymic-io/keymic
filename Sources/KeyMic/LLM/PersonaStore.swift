@@ -17,7 +17,7 @@ final class PersonaStore {
     /// Posted whenever the persona list or active id changes. No userInfo.
     static let didChangeNotification = Notification.Name("io.keymic.app.PersonaStore.didChange")
 
-    private(set) var personas: [Persona] = []
+    private var personas: [Persona] = []
     private(set) var activePersonaId: String?
 
     private let storeURL: URL
@@ -32,6 +32,19 @@ final class PersonaStore {
         return persona(id: id)
     }
 
+    /// All personas with `hidden == false`. Single source of truth for every
+    /// UI surface (settings list, menu bar, hotkey-conflict view) and runtime
+    /// iteration (persona-hotkey dispatch, registry sync).
+    var visiblePersonas: [Persona] { personas.filter { !$0.hidden } }
+
+    /// Full underlying array including hidden personas. Escape hatch for
+    /// legitimate internal needs (importer / audit / debugging). UI must NEVER use this.
+    var allPersonas: [Persona] { personas }
+
+    /// The seeded hidden persona for shortcut voice config. Nil only if the
+    /// seed has been physically removed (shouldn't happen — mergeWithBuiltIns re-injects on load).
+    var shortcutConfigPersona: Persona? { personas.first { $0.id == "builtin-shortcut-config" } }
+
     func persona(id: String) -> Persona? {
         personas.first { $0.id == id }
     }
@@ -41,7 +54,13 @@ final class PersonaStore {
     }
 
     func setActive(_ id: String?) {
-        activePersonaId = id.flatMap { persona(id: $0) == nil ? nil : $0 }
+        if let id, let p = persona(id: id) {
+            if p.hidden { return }   // silent reject; activePersonaId unchanged; no save
+            activePersonaId = id
+            save()
+            return
+        }
+        activePersonaId = nil
         save()
     }
 
@@ -118,14 +137,21 @@ final class PersonaStore {
         }
     }
 
-    /// Ensures all 4 built-ins exist (preserves user edits to existing built-ins;
-    /// adds any built-in seed not yet on disk). Custom personas pass through unchanged.
+    /// Ensures all 5 built-ins exist; restores immutable seed fields
+    /// ({id, builtIn, hidden}) for any disk persona whose id matches a seed.
+    /// User-editable fields (stylePrompt, icon, temperature, hotkey,
+    /// contextMode, name, createdAt, updatedAt) from disk are preserved.
+    /// Custom personas pass through unchanged.
     private func mergeWithBuiltIns(loaded: [Persona]) -> [Persona] {
         let seeds = Persona.builtInSeeds()
         var result: [Persona] = []
         for seed in seeds {
             if let existing = loaded.first(where: { $0.id == seed.id }) {
-                result.append(existing)
+                var merged = existing
+                merged.id = seed.id            // identity guard (no-op on match, defensive)
+                merged.builtIn = seed.builtIn  // immutable — restore from seed
+                merged.hidden = seed.hidden    // immutable — restore from seed (PERS-07)
+                result.append(merged)
             } else {
                 result.append(seed)
             }
