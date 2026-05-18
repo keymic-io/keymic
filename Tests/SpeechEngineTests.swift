@@ -8,6 +8,7 @@ private final class SpeechEngineTests {
         testStartFailureCancelsRecognitionTaskAndCleansUpAudioSession()
         testStartRecognitionTaskUsesCurrentRecognizerAfterLocaleChange()
         testStartSessionThrowsWhenMicDenied()
+        testCancelingStaleSessionDoesNotTearDownNewSession()
         print("SpeechEngineTests passed")
     }
 
@@ -94,6 +95,46 @@ private final class SpeechEngineTests {
         _ = try? engine.startSession()
 
         precondition(observedLocales == ["en_US", "ja_JP"], "Expected recognition to use the current recognizer after locale changes")
+    }
+
+    private static func testCancelingStaleSessionDoesNotTearDownNewSession() {
+        let factory = FakeAudioEngineFactory()
+        let engine = SpeechEngine(
+            locale: Locale(identifier: "en_US"),
+            audioEngineFactory: factory.makeEngine,
+            speechRecognizerAvailability: { _ in true },
+            startRecognitionTask: { _, _, _ in FakeRecognitionTask() },
+            microphoneAuthorizationProbe: { .authorized }
+        )
+
+        // Step 1: Start first session (engine 1 created)
+        let session1 = try? engine.startSession()
+        precondition(factory.engines.count == 1, "Expected exactly one engine after first startSession")
+
+        // Step 2: endAudio (simulates listening → transcribing: audio torn down, recognition still alive)
+        engine.endAudio()
+
+        // Step 3: Start second session (engine 2 created, generation bumped). Hold a strong
+        // reference so that session2's deinit does not fire during this test.
+        let session2 = try? engine.startSession()
+        precondition(factory.engines.count == 2, "Expected a second engine after second startSession")
+
+        let engine2 = factory.engines[1]
+
+        // Step 4: Cancel the FIRST session (its closeHook should no-op due to generation mismatch)
+        session1?.cancel()
+
+        // Step 5: Engine 2 must still be alive
+        precondition(engine2.stopCalls == 0, "Canceling stale session must not stop the new audio engine")
+        precondition(engine2.fakeInputNode.removeTapCalls.isEmpty, "Canceling stale session must not remove tap from new engine")
+
+        // Step 6: Engine 1 was already torn down by endAudio + startSession cleanup
+        let engine1 = factory.engines[0]
+        precondition(engine1.stopCalls >= 1, "Engine 1 should have been stopped during cleanup")
+
+        // Keep session2 alive until assertions are complete so its deinit
+        // does not fire early and tear down engine2 before we can check it.
+        _ = session2
     }
 
     private static func testStartSessionThrowsWhenMicDenied() {

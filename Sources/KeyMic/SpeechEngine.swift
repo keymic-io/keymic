@@ -248,8 +248,10 @@ final class SpeechEngine {
         audioWatchdog = watchdog
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: watchdog)
 
+        let sessionGeneration = myGeneration
         return VoiceSession { [weak self] in
-            self?.endSession()
+            guard let self, self.taskGeneration == sessionGeneration else { return }
+            self.endSession()
         }
     }
 
