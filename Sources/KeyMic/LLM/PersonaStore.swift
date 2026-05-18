@@ -17,7 +17,7 @@ final class PersonaStore {
     /// Posted whenever the persona list or active id changes. No userInfo.
     static let didChangeNotification = Notification.Name("io.keymic.app.PersonaStore.didChange")
 
-    private(set) var personas: [Persona] = []
+    private var personas: [Persona] = []
     private(set) var activePersonaId: String?
 
     private let storeURL: URL
@@ -31,6 +31,19 @@ final class PersonaStore {
         guard let id = activePersonaId else { return nil }
         return persona(id: id)
     }
+
+    /// All personas with `hidden == false`. Single source of truth for every
+    /// UI surface (settings list, menu bar, hotkey-conflict view) and runtime
+    /// iteration (persona-hotkey dispatch, registry sync).
+    var visiblePersonas: [Persona] { personas.filter { !$0.hidden } }
+
+    /// Full underlying array including hidden personas. Escape hatch for
+    /// legitimate internal needs (importer / audit / debugging). UI must NEVER use this.
+    var allPersonas: [Persona] { personas }
+
+    /// The seeded hidden persona for shortcut voice config. Nil only if the
+    /// seed has been physically removed (shouldn't happen — mergeWithBuiltIns re-injects on load).
+    var shortcutConfigPersona: Persona? { personas.first { $0.id == "builtin-shortcut-config" } }
 
     func persona(id: String) -> Persona? {
         personas.first { $0.id == id }
