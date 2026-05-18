@@ -157,6 +157,22 @@ struct Persona: Codable, Identifiable, Equatable {
                 createdAt: now,
                 updatedAt: now
             ),
+            Persona(
+                id: "builtin-shortcut-config",
+                name: "Shortcut Config",
+                icon: "command",
+                stylePrompt: """
+                    # Configured in Phase 6.
+                    Output YAML only. No prose. No fences.
+                    """,
+                temperature: 0.0,
+                hotkey: nil,
+                contextMode: .none,
+                builtIn: true,
+                hidden: true,
+                createdAt: now,
+                updatedAt: now
+            ),
         ]
     }
 }
