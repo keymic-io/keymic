@@ -56,10 +56,16 @@ final class PersonaStore {
     func setActive(_ id: String?) {
         if let id, let p = persona(id: id) {
             if p.hidden { return }   // silent reject; activePersonaId unchanged; no save
+            guard activePersonaId != id else { return }
             activePersonaId = id
             save()
             return
         }
+        // Avoid writing when already nil — every save() posts didChangeNotification
+        // which triggers rebuildPersonasMenu + syncPersonaHotkeysToRegistry. The
+        // togglePersona deselect flow + "Clear Default" button repeatedly hit this
+        // path (WR-02 write-amplification fix).
+        guard activePersonaId != nil else { return }
         activePersonaId = nil
         save()
     }
