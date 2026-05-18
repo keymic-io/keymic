@@ -54,7 +54,13 @@ final class PersonaStore {
     }
 
     func setActive(_ id: String?) {
-        activePersonaId = id.flatMap { persona(id: $0) == nil ? nil : $0 }
+        if let id, let p = persona(id: id) {
+            if p.hidden { return }   // silent reject; activePersonaId unchanged; no save
+            activePersonaId = id
+            save()
+            return
+        }
+        activePersonaId = nil
         save()
     }
 
