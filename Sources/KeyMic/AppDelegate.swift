@@ -297,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .overlayDismiss:
                 overlayPanel.dismiss()
             case .overlayShowError(let err):
-                overlayPanel.updateText(err.displayMessage)
+                overlayPanel.showMessage(err.displayMessage)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlayPanel.dismiss() }
             case .injectAndFinish(let text):
                 finishTranscription(text: text)
