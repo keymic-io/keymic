@@ -232,6 +232,7 @@ final class SpeechEngine {
         do {
             try engine.start()
         } catch {
+            // cleanup() nils recognitionTask but does NOT cancel it — order matters.
             recognitionTask?.cancel()
             cleanup()
             throw VoiceError.audioEngineFailed(error.localizedDescription)
@@ -239,6 +240,8 @@ final class SpeechEngine {
 
         let watchdog = DispatchWorkItem { [weak self] in
             guard let self, !self.firstBufferReceived else { return }
+            logger.error(
+                "No audio frames in 800ms — Bluetooth SCO cold-start failure (device: \(deviceName, privacy: .public))")
             self.cleanup()
             self.onError?("麦克风未响应，请松开后稍候再试")
         }
