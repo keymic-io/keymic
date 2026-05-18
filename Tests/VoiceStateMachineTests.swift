@@ -17,6 +17,7 @@ struct VoiceStateMachineTestRunner {
         testTranscribingErrorClearsSession()
         testTranscribingVoiceDisabledCancelsSession()
         testIdleIgnoresStrayEvents()
+        testIdleErrorShowsOverlay()
         print("VoiceStateMachineTests passed")
     }
 
@@ -185,6 +186,18 @@ struct VoiceStateMachineTestRunner {
         expect(contains(effects, .cancelGraceTimer), "missing cancelGraceTimer")
         expect(contains(effects, .cancelSession(s)), "missing cancelSession")
         expect(contains(effects, .overlayDismiss), "missing overlayDismiss")
+    }
+
+    static func testIdleErrorShowsOverlay() {
+        var sm = VoiceStateMachine()
+        let effects = sm.handle(.error(.microphoneAccessDenied(.denied)))
+        expect(effects.count == 1, "idle/error should produce exactly one effect (overlayShowError)")
+        if case .overlayShowError(let err) = effects[0] {
+            if case .microphoneAccessDenied = err {} else { expect(false, "wrong VoiceError kind in overlayShowError") }
+        } else {
+            expect(false, "expected overlayShowError effect, got \(effects[0])")
+        }
+        if case .idle = sm.state {} else { expect(false, "must remain idle after preflight error") }
     }
 
     static func testIdleIgnoresStrayEvents() {
