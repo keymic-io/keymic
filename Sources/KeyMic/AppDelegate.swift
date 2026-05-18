@@ -196,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for entry in registry.all() {
             if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
         }
-        for persona in PersonaStore.shared.personas {
+        for persona in PersonaStore.shared.visiblePersonas {
             guard let cfg = hotkeys.personaHotkey(personaId: persona.id) else { continue }
             registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
         }
@@ -611,7 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildPersonasMenu() {
         guard let personasMenu else { return }
-        let personas = PersonaStore.shared.personas
+        let personas = PersonaStore.shared.visiblePersonas
 
         // Fast path: if persona identity + title + hotkey are unchanged, just redraw
         // existing views (preserves NSMenu tracking state while the submenu is open).

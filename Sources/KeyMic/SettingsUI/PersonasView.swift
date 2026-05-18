@@ -392,7 +392,7 @@ final class PersonasViewModel: ObservableObject {
     }
 
     func reload() {
-        personas = store.personas
+        personas = store.visiblePersonas
         activeId = store.activePersonaId
         // Keep selection valid
         if let id = selectedId, !personas.contains(where: { $0.id == id }) {
