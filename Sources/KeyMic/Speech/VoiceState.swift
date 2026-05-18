@@ -64,4 +64,9 @@ enum VoiceState {
         if case .idle = self { return false }
         return true
     }
+
+    var isListening: Bool {
+        if case .listening = self { return true }
+        return false
+    }
 }
