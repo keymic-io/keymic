@@ -299,7 +299,9 @@ test-single-instance:
 
 test-speech-engine:
 	mkdir -p .build
-	swiftc Sources/KeyMic/SpeechEngine.swift \
+	swiftc Sources/KeyMic/Speech/VoiceError.swift \
+	       Sources/KeyMic/Speech/VoiceState.swift \
+	       Sources/KeyMic/SpeechEngine.swift \
 	       Tests/SpeechEngineTests.swift \
 	       -o .build/speech-engine-tests
 	.build/speech-engine-tests
