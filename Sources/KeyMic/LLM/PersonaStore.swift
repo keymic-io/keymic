@@ -145,10 +145,17 @@ final class PersonaStore {
     }
 
     /// Ensures all 5 built-ins exist; restores immutable seed fields
-    /// ({id, builtIn, hidden}) for any disk persona whose id matches a seed.
+    /// ({id, name, builtIn, hidden}) for any disk persona whose id matches a seed.
     /// User-editable fields (stylePrompt, icon, temperature, hotkey,
-    /// contextMode, name, createdAt, updatedAt) from disk are preserved.
+    /// contextMode, createdAt, updatedAt) from disk are preserved.
     /// Custom personas pass through unchanged.
+    ///
+    /// `name` is restored from seed because (a) the Persona.builtInSeeds()
+    /// docstring promises name is immutable for built-ins, (b) PersonasView
+    /// disables the name TextField for built-ins (UI honors the same invariant),
+    /// and (c) a stable canonical name is a future localization key candidate —
+    /// letting it drift via disk tampering would break a later String(localized:)
+    /// lookup keyed on the seed name.
     private func mergeWithBuiltIns(loaded: [Persona]) -> [Persona] {
         let seeds = Persona.builtInSeeds()
         var result: [Persona] = []
@@ -156,6 +163,7 @@ final class PersonaStore {
             if let existing = loaded.first(where: { $0.id == seed.id }) {
                 var merged = existing
                 merged.id = seed.id            // identity guard (no-op on match, defensive)
+                merged.name = seed.name        // immutable — restore from seed (CR-02)
                 merged.builtIn = seed.builtIn  // immutable — restore from seed
                 merged.hidden = seed.hidden    // immutable — restore from seed (PERS-07)
                 result.append(merged)

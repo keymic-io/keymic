@@ -211,8 +211,12 @@ struct PersonaHiddenTestRunner {
                "temperature preserved from disk")
         expect(shortcut?.icon == "wrench",
                "icon preserved from disk")
-        expect(shortcut?.name == "Tampered Name",
-               "name preserved from disk")
+        // CR-02: name is immutable for built-ins — must be restored from seed,
+        // not preserved from disk. Matches the docstring on Persona.builtInSeeds()
+        // ("name + builtIn + hidden are immutable") and the UI (PersonasView
+        // disables the name TextField for built-ins).
+        expect(shortcut?.name == "Shortcut Config",
+               "name restored from seed (was \"Tampered Name\" on disk)")
     }
 
     // MARK: - D-10 #7
