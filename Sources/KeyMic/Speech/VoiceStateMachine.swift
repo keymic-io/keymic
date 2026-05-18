@@ -93,6 +93,9 @@ struct VoiceStateMachine {
                 .startRecordingTimeoutTimer(session),
             ]
 
+        case (.idle, .error(let err)):
+            return [.overlayShowError(err)]
+
         case (.idle, _):
             return []  // ignore stray events
 
