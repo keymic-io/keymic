@@ -311,6 +311,15 @@ test-voice-session:
 	       -o .build/voice-session-tests
 	.build/voice-session-tests
 
+test-voice-state-machine:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/VoiceError.swift \
+	       Sources/KeyMic/Speech/VoiceState.swift \
+	       Sources/KeyMic/Speech/VoiceStateMachine.swift \
+	       Tests/VoiceStateMachineTests.swift \
+	       -o .build/voice-state-machine-tests
+	.build/voice-state-machine-tests
+
 test-annotation-model:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Screenshot/AnnotationModel.swift \
@@ -419,7 +428,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-voice-state-machine
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
