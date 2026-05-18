@@ -17,7 +17,7 @@ final class PersonaStore {
     /// Posted whenever the persona list or active id changes. No userInfo.
     static let didChangeNotification = Notification.Name("io.keymic.app.PersonaStore.didChange")
 
-    private(set) var personas: [Persona] = []
+    private var personas: [Persona] = []
     private(set) var activePersonaId: String?
 
     private let storeURL: URL
@@ -32,16 +32,37 @@ final class PersonaStore {
         return persona(id: id)
     }
 
+    /// All personas with `hidden == false`. Single source of truth for every
+    /// UI surface (settings list, menu bar, hotkey-conflict view) and runtime
+    /// iteration (persona-hotkey dispatch, registry sync).
+    var visiblePersonas: [Persona] { personas.filter { !$0.hidden } }
+
+    /// Full underlying array including hidden personas. Escape hatch for
+    /// legitimate internal needs (importer / audit / debugging). UI must NEVER use this.
+    var allPersonas: [Persona] { personas }
+
+    /// The seeded hidden persona for shortcut voice config. Nil only if the
+    /// seed has been physically removed (shouldn't happen — mergeWithBuiltIns re-injects on load).
+    var shortcutConfigPersona: Persona? { personas.first { $0.id == "builtin-shortcut-config" } }
+
     func persona(id: String) -> Persona? {
         personas.first { $0.id == id }
     }
 
-    func persona(forHotkey hotkey: String) -> Persona? {
-        personas.first { $0.hotkey == hotkey }
-    }
-
     func setActive(_ id: String?) {
-        activePersonaId = id.flatMap { persona(id: $0) == nil ? nil : $0 }
+        if let id, let p = persona(id: id) {
+            if p.hidden { return }   // silent reject; activePersonaId unchanged; no save
+            guard activePersonaId != id else { return }
+            activePersonaId = id
+            save()
+            return
+        }
+        // Avoid writing when already nil — every save() posts didChangeNotification
+        // which triggers rebuildPersonasMenu + syncPersonaHotkeysToRegistry. The
+        // togglePersona deselect flow + "Clear Default" button repeatedly hit this
+        // path (WR-02 write-amplification fix).
+        guard activePersonaId != nil else { return }
+        activePersonaId = nil
         save()
     }
 
@@ -68,7 +89,12 @@ final class PersonaStore {
 
     @discardableResult
     func duplicate(id: String) -> Persona? {
-        guard let source = persona(id: id) else { return nil }
+        // Reject hidden source personas. The current UI never reaches this path
+        // (PersonasView only shows visiblePersonas), but the API is the choke
+        // point — any future caller (Phase 6 shortcut-config UI, importer,
+        // debug menu) must not be able to clone the hidden persona into a
+        // visible custom copy (WR-03).
+        guard let source = persona(id: id), !source.hidden else { return nil }
         let now = Date()
         let copy = Persona(
             id: "user-\(UUID().uuidString.prefix(8))",
@@ -105,10 +131,35 @@ final class PersonaStore {
         do {
             let data = try Data(contentsOf: storeURL)
             let envelope = try Self.decoder.decode(Envelope.self, from: data)
+            // Schema-version dispatcher (WR-06). Phase 01 added `hidden` additively
+            // via decodeIfPresent ?? false, so currentVersion stayed at 1. Future
+            // non-additive changes (or additive changes with a non-default default)
+            // must bump currentVersion and add a case here. The clipboard subsystem
+            // solved this with clipboardSchemaVersion + an explicit wipe path
+            // (AppDelegate.swift:130-137); this mirrors that discipline for personas.
+            switch envelope.version {
+            case Self.currentVersion:
+                break  // current — no migration
+            case ..<Self.currentVersion:
+                // No migrations yet — Phase 01 added `hidden` additively via
+                // decodeIfPresent. Older envelopes flow through unchanged.
+                break
+            default:
+                logger.error("envelope.version \(envelope.version) > currentVersion \(Self.currentVersion); reseeding")
+                seedFirstLaunch()
+                return
+            }
             self.personas = mergeWithBuiltIns(loaded: envelope.personas)
             self.activePersonaId = envelope.activePersonaId
-            // If active id no longer exists, drop it.
-            if let id = activePersonaId, persona(id: id) == nil {
+            // Drop active id if the persona no longer exists OR is hidden.
+            // Hidden personas must never be active — same invariant as setActive(_:).
+            // Without this, a hand-edited or legacy personas.json with
+            // activePersonaId = "builtin-shortcut-config" would silently leave the
+            // hidden persona active on next launch, bypassing the setActive guard.
+            if let id = activePersonaId,
+               let p = persona(id: id), !p.hidden {
+                // OK — visible persona, keep it.
+            } else if activePersonaId != nil {
                 activePersonaId = nil
                 save()
             }
@@ -118,14 +169,29 @@ final class PersonaStore {
         }
     }
 
-    /// Ensures all 4 built-ins exist (preserves user edits to existing built-ins;
-    /// adds any built-in seed not yet on disk). Custom personas pass through unchanged.
+    /// Ensures all 5 built-ins exist; restores immutable seed fields
+    /// ({id, name, builtIn, hidden}) for any disk persona whose id matches a seed.
+    /// User-editable fields (stylePrompt, icon, temperature, hotkey,
+    /// contextMode, createdAt, updatedAt) from disk are preserved.
+    /// Custom personas pass through unchanged.
+    ///
+    /// `name` is restored from seed because (a) the Persona.builtInSeeds()
+    /// docstring promises name is immutable for built-ins, (b) PersonasView
+    /// disables the name TextField for built-ins (UI honors the same invariant),
+    /// and (c) a stable canonical name is a future localization key candidate —
+    /// letting it drift via disk tampering would break a later String(localized:)
+    /// lookup keyed on the seed name.
     private func mergeWithBuiltIns(loaded: [Persona]) -> [Persona] {
         let seeds = Persona.builtInSeeds()
         var result: [Persona] = []
         for seed in seeds {
             if let existing = loaded.first(where: { $0.id == seed.id }) {
-                result.append(existing)
+                var merged = existing
+                merged.id = seed.id            // identity guard (no-op on match, defensive)
+                merged.name = seed.name        // immutable — restore from seed (CR-02)
+                merged.builtIn = seed.builtIn  // immutable — restore from seed
+                merged.hidden = seed.hidden    // immutable — restore from seed (PERS-07)
+                result.append(merged)
             } else {
                 result.append(seed)
             }

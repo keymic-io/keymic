@@ -308,7 +308,7 @@ final class KeyMonitor {
                state.personaHotkeyKeyDown == nil,
                !state.triggerActive {
                 let hotkeys = HotkeySettingsStore.shared
-                for persona in PersonaStore.shared.personas {
+                for persona in PersonaStore.shared.visiblePersonas {
                     guard let cfg = hotkeys.personaHotkey(personaId: persona.id),
                           !cfg.isPureModifier,
                           cfg.matches(keyCode: keyCode, flags: event.flags) else { continue }

@@ -9,9 +9,9 @@ struct PersonaStoreTestRunner {
         defer { try? FileManager.default.removeItem(at: tmp) }
         let url = tmp.appendingPathComponent("personas.json")
 
-        // First load on empty disk → seeds 4 built-ins, active = nil
+        // First load on empty disk → seeds 5 built-ins, active = nil
         let store1 = PersonaStore(storeURL: url)
-        expect(store1.personas.count == 4, "first load seeds 4 built-ins")
+        expect(store1.allPersonas.count == 5, "first load seeds 5 built-ins")
         expect(store1.activePersonaId == nil,
                "first launch leaves active persona empty")
         expect(FileManager.default.fileExists(atPath: url.path),
@@ -19,7 +19,7 @@ struct PersonaStoreTestRunner {
 
         // Persistence: re-load same URL retains state
         let store2 = PersonaStore(storeURL: url)
-        expect(store2.personas.count == 4, "reload keeps 4 personas")
+        expect(store2.allPersonas.count == 5, "reload keeps 5 personas")
         expect(store2.activePersonaId == nil, "reload keeps empty active persona")
 
         // setActive(nil) → passthrough mode
@@ -36,7 +36,7 @@ struct PersonaStoreTestRunner {
             createdAt: now, updatedAt: now
         )
         store3.add(custom)
-        expect(store3.personas.count == 5, "add appends")
+        expect(store3.allPersonas.count == 6, "add appends (5 built-ins + 1 custom)")
         expect(store3.persona(id: "user-1") != nil, "lookup by id works")
 
         // delete: built-in cannot be deleted
@@ -78,15 +78,6 @@ struct PersonaStoreTestRunner {
         expect(dup.id != "builtin-translate", "duplicate gets new id")
         expect(!dup.builtIn, "duplicate is not built-in")
         expect(dup.name.contains("Auto Translate"), "duplicate name derived from source")
-
-        // persona(forHotkey:)
-        var withHotkey = dup
-        withHotkey.hotkey = "alt+q"
-        store3.update(withHotkey)
-        expect(store3.persona(forHotkey: "alt+q")?.id == dup.id,
-               "lookup by hotkey works")
-        expect(store3.persona(forHotkey: "alt+w") == nil,
-               "missing hotkey returns nil")
 
         print("✅ PersonaStoreTests passed")
     }
