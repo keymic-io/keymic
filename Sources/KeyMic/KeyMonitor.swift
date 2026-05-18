@@ -10,6 +10,14 @@ final class KeyMonitor {
     var onTriggerDown: (() -> Void)?
     var onTriggerUp: (() -> Void)?
     var onTriggerInterrupted: (() -> Void)?
+    /// Fired on the main queue when a non-trigger keyDown arrives while voice
+    /// state is `.listening` or `.transcribing`. The event itself is still
+    /// forwarded to the system unchanged — only the in-flight voice session
+    /// should be aborted by the consumer.
+    var onExtraneousKeyDuringVoice: (() -> Void)?
+    /// O(1) lookup of whether the voice state machine is non-idle. Used by
+    /// the extraneous-key branch so it doesn't need to track session state.
+    var isVoiceActive: (() -> Bool)?
     var onClipboardHotkey: (() -> Void)?
     var onVaultHotkey: (() -> Void)?
     var onClipboardQuickPaste: ((Int) -> Void)?
@@ -241,6 +249,14 @@ final class KeyMonitor {
 
             if state.triggerActive && !isAutoRepeat {
                 DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
+            }
+
+            if !isAutoRepeat,
+               isVoiceActive?() == true,
+               keyCode != voiceTriggerHotkey?.keyCode,
+               keyCode != state.personaHotkeyKeyDown {
+                DispatchQueue.main.async { [weak self] in self?.onExtraneousKeyDuringVoice?() }
+                return Unmanaged.passRetained(event)
             }
 
             if isClipboardPanelVisible?() == true,
