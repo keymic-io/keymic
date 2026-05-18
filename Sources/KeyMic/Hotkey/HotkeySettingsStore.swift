@@ -39,7 +39,7 @@ struct HotkeySettingsSnapshot: Codable, Equatable {
 
 @Observable
 final class HotkeySettingsStore {
-    static let shared = HotkeySettingsStore(personasProvider: { PersonaStore.shared.personas })
+    static let shared = HotkeySettingsStore(personasProvider: { PersonaStore.shared.visiblePersonas })
     static let userDefaultsKey = "hotkeySettings.v1"
 
     struct ValidationError: Error, Equatable {
