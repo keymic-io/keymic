@@ -79,15 +79,6 @@ struct PersonaStoreTestRunner {
         expect(!dup.builtIn, "duplicate is not built-in")
         expect(dup.name.contains("Auto Translate"), "duplicate name derived from source")
 
-        // persona(forHotkey:)
-        var withHotkey = dup
-        withHotkey.hotkey = "alt+q"
-        store3.update(withHotkey)
-        expect(store3.persona(forHotkey: "alt+q")?.id == dup.id,
-               "lookup by hotkey works")
-        expect(store3.persona(forHotkey: "alt+w") == nil,
-               "missing hotkey returns nil")
-
         print("✅ PersonaStoreTests passed")
     }
 

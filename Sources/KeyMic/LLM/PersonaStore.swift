@@ -49,10 +49,6 @@ final class PersonaStore {
         personas.first { $0.id == id }
     }
 
-    func persona(forHotkey hotkey: String) -> Persona? {
-        personas.first { $0.hotkey == hotkey }
-    }
-
     func setActive(_ id: String?) {
         if let id, let p = persona(id: id) {
             if p.hidden { return }   // silent reject; activePersonaId unchanged; no save
