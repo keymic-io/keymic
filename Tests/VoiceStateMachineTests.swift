@@ -9,11 +9,13 @@ struct VoiceStateMachineTestRunner {
         testListeningRecordingTimeoutEntersTranscribing()
         testListeningErrorClearsSession()
         testListeningVoiceDisabledCancelsSession()
+        testListeningFinalResultInjectsDirectly()
         testTranscribingFinalResultInjectsAndReturnsToIdle()
         testTranscribingGraceTimeoutInjectsLastPartial()
         testTranscribingExtraneousKeyDiscardsResult()
         testTranscribingTriggerDownAbortsAndRestarts()
         testTranscribingErrorClearsSession()
+        testTranscribingVoiceDisabledCancelsSession()
         testIdleIgnoresStrayEvents()
         print("VoiceStateMachineTests passed")
     }
@@ -92,6 +94,19 @@ struct VoiceStateMachineTestRunner {
         expect(contains(effects, .cancelSession(s)), "missing cancel on disable")
     }
 
+    static func testListeningFinalResultInjectsDirectly() {
+        var sm = VoiceStateMachine()
+        let s = makeSession()
+        _ = sm.handle(.triggerDown(session: s))
+        let effects = sm.handle(.finalResult("short utterance"))
+        if case .idle = sm.state {} else { expect(false, "expected idle after listening+finalResult, got \(sm.state)") }
+        expect(contains(effects, .cancelRecordingTimeoutTimer), "missing cancelRecordingTimeoutTimer")
+        expect(contains(effects, .cancelSession(s)), "missing cancelSession")
+        expect(contains(effects, .updateStatusIcon(recording: false)), "missing updateStatusIcon false")
+        expect(contains(effects, .injectAndFinish(text: "short utterance")), "missing injectAndFinish")
+        expect(sm.lastPartial.isEmpty, "lastPartial must reset after final")
+    }
+
     static func testTranscribingFinalResultInjectsAndReturnsToIdle() {
         var sm = VoiceStateMachine()
         let s = makeSession()
@@ -142,6 +157,12 @@ struct VoiceStateMachineTestRunner {
         }
         expect(contains(effects, .cancelSession(s1)), "missing cancel of old session")
         expect(contains(effects, .startRecordingTimeoutTimer(s2)), "missing new timeout timer")
+        let cancelIdx = effects.firstIndex(where: { $0 == .cancelSession(s1) })
+        let newTimerIdx = effects.firstIndex(where: { $0 == .startRecordingTimeoutTimer(s2) })
+        expect(cancelIdx != nil && newTimerIdx != nil, "expected both cancel and new timer effects")
+        if let c = cancelIdx, let t = newTimerIdx {
+            expect(c < t, "cancelSession(oldSession) must precede startRecordingTimeoutTimer(newSession); got cancelIdx=\(c), newTimerIdx=\(t)")
+        }
     }
 
     static func testTranscribingErrorClearsSession() {
@@ -152,6 +173,18 @@ struct VoiceStateMachineTestRunner {
         let effects = sm.handle(.error(.recognizerUnavailable("en-US")))
         if case .idle = sm.state {} else { expect(false, "expected idle, got \(sm.state)") }
         expect(contains(effects, .cancelSession(s)), "missing cancelSession on error")
+    }
+
+    static func testTranscribingVoiceDisabledCancelsSession() {
+        var sm = VoiceStateMachine()
+        let s = makeSession()
+        _ = sm.handle(.triggerDown(session: s))
+        _ = sm.handle(.triggerUp)
+        let effects = sm.handle(.voiceDisabled)
+        if case .idle = sm.state {} else { expect(false, "expected idle after transcribing+voiceDisabled, got \(sm.state)") }
+        expect(contains(effects, .cancelGraceTimer), "missing cancelGraceTimer")
+        expect(contains(effects, .cancelSession(s)), "missing cancelSession")
+        expect(contains(effects, .overlayDismiss), "missing overlayDismiss")
     }
 
     static func testIdleIgnoresStrayEvents() {
