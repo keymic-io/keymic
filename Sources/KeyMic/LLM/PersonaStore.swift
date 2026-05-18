@@ -137,14 +137,21 @@ final class PersonaStore {
         }
     }
 
-    /// Ensures all 4 built-ins exist (preserves user edits to existing built-ins;
-    /// adds any built-in seed not yet on disk). Custom personas pass through unchanged.
+    /// Ensures all 5 built-ins exist; restores immutable seed fields
+    /// ({id, builtIn, hidden}) for any disk persona whose id matches a seed.
+    /// User-editable fields (stylePrompt, icon, temperature, hotkey,
+    /// contextMode, name, createdAt, updatedAt) from disk are preserved.
+    /// Custom personas pass through unchanged.
     private func mergeWithBuiltIns(loaded: [Persona]) -> [Persona] {
         let seeds = Persona.builtInSeeds()
         var result: [Persona] = []
         for seed in seeds {
             if let existing = loaded.first(where: { $0.id == seed.id }) {
-                result.append(existing)
+                var merged = existing
+                merged.id = seed.id            // identity guard (no-op on match, defensive)
+                merged.builtIn = seed.builtIn  // immutable — restore from seed
+                merged.hidden = seed.hidden    // immutable — restore from seed (PERS-07)
+                result.append(merged)
             } else {
                 result.append(seed)
             }
