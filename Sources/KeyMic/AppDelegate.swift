@@ -611,7 +611,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func rebuildPersonasMenu() {
         guard let personasMenu else { return }
-        let personas = PersonaStore.shared.personas
+        let personas = PersonaStore.shared.visiblePersonas
 
         // Fast path: if persona identity + title + hotkey are unchanged, just redraw
         // existing views (preserves NSMenu tracking state while the submenu is open).
