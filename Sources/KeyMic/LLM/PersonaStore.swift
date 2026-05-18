@@ -93,7 +93,12 @@ final class PersonaStore {
 
     @discardableResult
     func duplicate(id: String) -> Persona? {
-        guard let source = persona(id: id) else { return nil }
+        // Reject hidden source personas. The current UI never reaches this path
+        // (PersonasView only shows visiblePersonas), but the API is the choke
+        // point — any future caller (Phase 6 shortcut-config UI, importer,
+        // debug menu) must not be able to clone the hidden persona into a
+        // visible custom copy (WR-03).
+        guard let source = persona(id: id), !source.hidden else { return nil }
         let now = Date()
         let copy = Persona(
             id: "user-\(UUID().uuidString.prefix(8))",
