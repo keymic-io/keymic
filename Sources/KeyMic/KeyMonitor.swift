@@ -25,6 +25,17 @@ final class KeyMonitor {
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    /// Periodic main-queue probe that re-enables (or fully rebuilds) the event tap
+    /// if it has been silently disabled — covers cases where the system stops
+    /// delivering `tapDisabledByTimeout` callbacks at all (e.g. across wake from
+    /// sleep, prolonged main-thread stalls). Without this, a single timeout can
+    /// kill every hotkey path until the user quits and relaunches.
+    private var healthCheckTimer: DispatchSourceTimer?
+    private let healthCheckInterval: TimeInterval = 5
+    /// Lifecycle guard for recovery paths. A queued health-check tick can fire
+    /// after `stop()` cancels its timer; without this flag the recovery code
+    /// would happily reinstall a tap on a stopped monitor.
+    private var isRunning = false
     private var state = InputState()
     /// When `true`, app-level hotkey dispatch (clipboard/vault/settings/screenshot/persona/action/voice trigger)
     /// is bypassed. Set on Secure Input enter, cleared on Secure Input exit.
@@ -48,6 +59,30 @@ final class KeyMonitor {
 
     /// Start monitoring. Returns false if accessibility permission is missing.
     func start() -> Bool {
+        guard installTap() else { return false }
+        isRunning = true
+        reloadHotkeys()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(userDefaultsChanged),
+            name: UserDefaults.didChangeNotification,
+            object: nil
+        )
+        startHealthCheck()
+        return true
+    }
+
+    func stop() {
+        isRunning = false
+        stopHealthCheck()
+        teardownTap()
+        NotificationCenter.default.removeObserver(self, name: UserDefaults.didChangeNotification, object: nil)
+        resetAllInputState(reason: .stop)
+    }
+
+    /// Create the event tap + run-loop source and enable it. Idempotent only via
+    /// `teardownTap()` first — call sites must ensure no prior tap is installed.
+    private func installTap() -> Bool {
         // NX_SUBTYPE_AUX_CONTROL_BUTTONS systemDefined events are the only way
         // to receive F1-F12 when "Use F1, F2… as standard function keys" is
         // disabled in System Settings — F-row keyDowns are never generated.
@@ -75,13 +110,6 @@ final class KeyMonitor {
         }
 
         eventTap = tap
-        reloadHotkeys()
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(userDefaultsChanged),
-            name: UserDefaults.didChangeNotification,
-            object: nil
-        )
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
         runLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
@@ -89,17 +117,67 @@ final class KeyMonitor {
         return true
     }
 
-    func stop() {
+    private func teardownTap() {
         if let source = runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-        NotificationCenter.default.removeObserver(self, name: UserDefaults.didChangeNotification, object: nil)
         runLoopSource = nil
         eventTap = nil
-        resetAllInputState(reason: .stop)
+    }
+
+    /// Tear down the current tap and create a fresh one. Used when
+    /// `CGEvent.tapEnable(..., true)` alone fails to revive a tap that was
+    /// disabled by timeout — observed empirically after long main-thread stalls
+    /// (e.g. ReplayKit / system sleep). Must run on the main queue so it doesn't
+    /// race with the tap callback (which runs on the main run loop).
+    ///
+    /// Always clears `state`/timers via `resetAllInputState(.tapRebuild)` before
+    /// reinstalling. Otherwise stale modifier/persona/repeat state from before
+    /// the tap died would survive into the new tap and produce phantom key
+    /// repeats, stuck push-to-talk, or combos matched against ghost modifiers.
+    private func rebuildTap() {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard isRunning else { return }
+        resetAllInputState(reason: .tapRebuild)
+        teardownTap()
+        let ok = installTap()
+        log.notice("event tap rebuild result success=\(ok, privacy: .public)")
+    }
+
+    private func startHealthCheck() {
+        stopHealthCheck()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + healthCheckInterval, repeating: healthCheckInterval)
+        timer.setEventHandler { [weak self] in self?.healthCheck() }
+        timer.resume()
+        healthCheckTimer = timer
+    }
+
+    private func stopHealthCheck() {
+        healthCheckTimer?.cancel()
+        healthCheckTimer = nil
+    }
+
+    private func healthCheck() {
+        guard isRunning else { return }
+        guard let tap = eventTap else {
+            log.notice("health check — eventTap is nil, rebuilding")
+            rebuildTap()
+            return
+        }
+        if CGEvent.tapIsEnabled(tap: tap) { return }
+        log.notice("health check — tap disabled, re-enabling")
+        // Tap was silently disabled — same lost-events contract as the
+        // tapDisabledByTimeout callback path. Clear state before re-enabling.
+        resetAllInputState(reason: .tapHealthCheckReenable)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        if !CGEvent.tapIsEnabled(tap: tap) {
+            log.notice("health check — re-enable failed, rebuilding")
+            rebuildTap()
+        }
     }
 
     /// Central reset for every piece of mutable input state owned by `KeyMonitor`.
@@ -182,7 +260,17 @@ final class KeyMonitor {
             if let tap = eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
                 let stillEnabled = CGEvent.tapIsEnabled(tap: tap)
-                log.info("event tap re-enable result enabled=\(stillEnabled, privacy: .public)")
+                // `.notice` (not `.info`) so the result actually persists in the
+                // unified log — `.info` is memory-only by default and made this
+                // exact failure mode invisible in past incidents.
+                log.notice("event tap re-enable result enabled=\(stillEnabled, privacy: .public)")
+                if !stillEnabled {
+                    // tapEnable alone can't always revive a tap killed by a long
+                    // main-thread stall. Tear down + recreate on the main queue
+                    // — must be async because this callback is currently
+                    // executing on the run-loop source we're about to remove.
+                    DispatchQueue.main.async { [weak self] in self?.rebuildTap() }
+                }
             }
             return Unmanaged.passRetained(event)
         }
@@ -191,11 +279,15 @@ final class KeyMonitor {
             return remapped
         }
 
-        // While Secure Input is active, key-up events can be missed. Pass events through
-        // unchanged and skip hotkey dispatch entirely until Secure Input exits.
-        if secureInputSuspended {
-            return Unmanaged.passRetained(event)
-        }
+        // NOTE on Secure Input: the prior implementation early-returned here whenever
+        // `secureInputSuspended` was true, which killed every hotkey (clipboard, vault,
+        // settings, screenshot, action bindings) any time a misbehaving app held Secure
+        // Input — Chrome in particular keeps it engaged for long stretches and frequently
+        // fails to release. The blanket gate is overkill: single-shot hotkeys read only
+        // keyDown and don't care about lost keyUps. The actual risk (lost keyUp leaving
+        // a session stuck) only applies to the voice-trigger and persona push-to-talk
+        // state machines, so we now gate just those two activation paths below and let
+        // single-shot dispatch run normally.
 
         // Bypass app-level hotkey dispatch while a HotkeyRecorder is capturing input.
         // Forward the raw CGEvent directly to the active recorder — this is more
@@ -303,8 +395,12 @@ final class KeyMonitor {
             // start a voice session; the matching keyUp ends it. Swallow the event
             // to prevent dead-key side effects (e.g. ⌥E → ´). Gate on no other
             // voice session being active so fn-trigger and persona-trigger don't
-            // overlap.
+            // overlap. Also gate on `!secureInputSuspended` so we never *start* a
+            // push-to-talk session whose keyUp might be eaten by Secure Input,
+            // leaving a session logically stuck. Already-running sessions still
+            // get their keyUp handled above — that path is intentionally ungated.
             if !isAutoRepeat,
+               !secureInputSuspended,
                state.personaHotkeyKeyDown == nil,
                !state.triggerActive {
                 let hotkeys = HotkeySettingsStore.shared
@@ -332,7 +428,12 @@ final class KeyMonitor {
         if state.personaHotkeyKeyDown != nil {
             return Unmanaged.passRetained(event)
         }
-        if nowActive && !state.triggerActive {
+        // Voice trigger: gate *activation* on `!secureInputSuspended` so we
+        // never start a recording session whose release keyUp could be lost,
+        // but always honour *deactivation* — if Secure Input toggles on while
+        // a session is already running, releasing the trigger must still stop
+        // the recording cleanly.
+        if nowActive && !state.triggerActive && !secureInputSuspended {
             state.triggerActive = true
             DispatchQueue.main.async { [weak self] in self?.onTriggerDown?() }
             return nil

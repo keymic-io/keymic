@@ -6,6 +6,8 @@ import Foundation
 enum InputResetReason: String, CustomStringConvertible {
     case tapDisabledByTimeout
     case tapDisabledByUserInput
+    case tapRebuild
+    case tapHealthCheckReenable
     case secureInputEnter
     case settingsReload
     case stop
