@@ -236,6 +236,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func triggerDown() {
         guard isVoiceEnabled else { return }
+        guard !voice.state.isListening else { return }
         LLMRefiner.shared.cancel()
         do {
             let session = try speechEngine.startSession()
@@ -269,7 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch e {
             case .cancelSession(let s):
                 s.cancel()
-            case .stopAudio:
+            case .stopAudio(_):
                 speechEngine.endAudio()
             case .startGraceTimer:
                 graceTimer?.invalidate()
@@ -278,7 +279,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             case .cancelGraceTimer:
                 graceTimer?.invalidate(); graceTimer = nil
-            case .startRecordingTimeoutTimer:
+            case .startRecordingTimeoutTimer(_):
                 recordingTimeoutTimer?.invalidate()
                 recordingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: Self.recordingMaxDuration, repeats: false) { [weak self] _ in
                     self?.apply(self?.voice.handle(.recordingTimeout) ?? [])
@@ -312,19 +313,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupSpeechCallbacks() {
         speechEngine.onPartialResult = { [weak self] text in
-            self?.apply(self?.voice.handle(.partialResult(text)) ?? [])
+            DispatchQueue.main.async { [weak self] in
+                self?.apply(self?.voice.handle(.partialResult(text)) ?? [])
+            }
         }
         speechEngine.onFinalResult = { [weak self] text in
-            self?.apply(self?.voice.handle(.finalResult(text)) ?? [])
+            DispatchQueue.main.async { [weak self] in
+                self?.apply(self?.voice.handle(.finalResult(text)) ?? [])
+            }
         }
         speechEngine.onError = { [weak self] msg in
-            self?.apply(self?.voice.handle(.error(.audioEngineFailed(msg))) ?? [])
+            DispatchQueue.main.async { [weak self] in
+                self?.apply(self?.voice.handle(.error(.audioEngineFailed(msg))) ?? [])
+            }
         }
         speechEngine.onAudioLevel = { [weak self] level in
             self?.overlayPanel.updateAudioLevel(level)
         }
         speechEngine.onLocaleUnavailable = { [weak self] msg in
-            self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
+            DispatchQueue.main.async { [weak self] in
+                self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
+            }
         }
     }
 
