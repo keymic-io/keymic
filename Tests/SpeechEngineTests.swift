@@ -7,6 +7,7 @@ private final class SpeechEngineTests {
         testCancelRemovesTapAndStopsEngine()
         testStartFailureCancelsRecognitionTaskAndCleansUpAudioSession()
         testStartRecognitionTaskUsesCurrentRecognizerAfterLocaleChange()
+        testStartSessionThrowsWhenMicDenied()
         print("SpeechEngineTests passed")
     }
 
@@ -16,15 +17,16 @@ private final class SpeechEngineTests {
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
-            startRecognitionTask: { _, _, _ in FakeRecognitionTask() }
+            startRecognitionTask: { _, _, _ in FakeRecognitionTask() },
+            microphoneAuthorizationProbe: { .authorized }
         )
 
-        engine.startRecording()
-        engine.stopRecording()
-        engine.startRecording()
+        _ = try? engine.startSession()
+        engine.endAudio()
+        _ = try? engine.startSession()
 
-        precondition(factory.engines.count == 2, "Expected a fresh audio engine for each recording session")
-        precondition(factory.engines[0] !== factory.engines[1], "Expected recordings not to reuse AVAudioEngine instances")
+        precondition(factory.engines.count == 2, "Expected a fresh audio engine for each startSession")
+        precondition(factory.engines[0] !== factory.engines[1], "Expected startSession not to reuse AVAudioEngine instances")
         precondition(factory.engines[0].fakeInputNode.removeTapCalls == [0], "Expected first engine tap to be removed after stop")
         precondition(factory.engines[1].fakeInputNode.installTapCalls.count == 1, "Expected second engine to install one tap")
         precondition(factory.engines[1].fakeInputNode.installTapCalls[0].format == nil, "Expected tap format nil so AVFAudio chooses active input format")
@@ -36,11 +38,12 @@ private final class SpeechEngineTests {
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
-            startRecognitionTask: { _, _, _ in FakeRecognitionTask() }
+            startRecognitionTask: { _, _, _ in FakeRecognitionTask() },
+            microphoneAuthorizationProbe: { .authorized }
         )
 
-        engine.startRecording()
-        engine.cancel()
+        let session = try? engine.startSession()
+        session?.cancel()
 
         let audioEngine = factory.engines[0]
         precondition(audioEngine.stopCalls == 1, "Expected cancel to stop the active audio engine")
@@ -54,10 +57,15 @@ private final class SpeechEngineTests {
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
-            startRecognitionTask: { _, _, _ in recognitionTask }
+            startRecognitionTask: { _, _, _ in recognitionTask },
+            microphoneAuthorizationProbe: { .authorized }
         )
 
-        engine.startRecording()
+        do {
+            _ = try engine.startSession()
+        } catch {
+            // expected throw — VoiceError.audioEngineFailed
+        }
 
         let audioEngine = factory.engines[0]
         precondition(recognitionTask.cancelCalls == 1, "Expected failed engine start to cancel the recognition task")
@@ -76,15 +84,41 @@ private final class SpeechEngineTests {
             startRecognitionTask: { recognizer, _, _ in
                 observedLocales.append(recognizer?.locale.identifier ?? "nil")
                 return FakeRecognitionTask()
-            }
+            },
+            microphoneAuthorizationProbe: { .authorized }
         )
 
-        engine.startRecording()
-        engine.stopRecording()
+        _ = try? engine.startSession()
+        engine.endAudio()
         engine.locale = Locale(identifier: "ja_JP")
-        engine.startRecording()
+        _ = try? engine.startSession()
 
         precondition(observedLocales == ["en_US", "ja_JP"], "Expected recognition to use the current recognizer after locale changes")
+    }
+
+    private static func testStartSessionThrowsWhenMicDenied() {
+        let factory = FakeAudioEngineFactory()
+        let engine = SpeechEngine(
+            locale: Locale(identifier: "en_US"),
+            audioEngineFactory: factory.makeEngine,
+            speechRecognizerAvailability: { _ in true },
+            startRecognitionTask: { _, _, _ in FakeRecognitionTask() },
+            microphoneAuthorizationProbe: { .denied }
+        )
+
+        do {
+            _ = try engine.startSession()
+            preconditionFailure("expected microphoneAccessDenied to throw")
+        } catch let err as VoiceError {
+            guard case .microphoneAccessDenied(let s) = err else {
+                preconditionFailure("expected .microphoneAccessDenied, got \(err)")
+            }
+            precondition(s == .denied)
+        } catch {
+            preconditionFailure("expected VoiceError, got \(error)")
+        }
+
+        precondition(factory.engines.isEmpty, "audio engine must NOT be built when permission is denied")
     }
 }
 
