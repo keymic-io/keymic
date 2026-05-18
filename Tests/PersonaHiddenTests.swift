@@ -34,6 +34,13 @@ struct PersonaHiddenTestRunner {
         // D-10 #6: visiblePersonas excludes the hidden seed; allPersonas includes it.
         testVisiblePersonasFiltersHidden(tmpDir: tmp)
 
+        // D-10 #7: a hand-edited / legacy personas.json that sets
+        //          activePersonaId = "builtin-shortcut-config" must NOT leave the hidden
+        //          persona active after load — load() must nullify the active id when
+        //          it points at a hidden persona (mirrors the setActive guard at the
+        //          loader boundary; CR-01 regression).
+        testActivePersonaIdHiddenIsNullifiedOnLoad(tmpDir: tmp)
+
         print("✅ PersonaHiddenTests passed")
     }
 
@@ -206,6 +213,54 @@ struct PersonaHiddenTestRunner {
                "icon preserved from disk")
         expect(shortcut?.name == "Tampered Name",
                "name preserved from disk")
+    }
+
+    // MARK: - D-10 #7
+
+    static func testActivePersonaIdHiddenIsNullifiedOnLoad(tmpDir: URL) {
+        let url = tmpDir.appendingPathComponent("\(UUID().uuidString)-personas.json")
+        // Hand-edited / legacy envelope: activePersonaId points at the hidden seed.
+        // The seed only carries id/builtIn=false/hidden=false on disk (tampered), so
+        // mergeWithBuiltIns will re-inject the canonical hidden built-in; without
+        // CR-01's load-side guard, activePersonaId would be retained because the
+        // persona DOES exist post-merge.
+        let hiddenActiveJSON = """
+        {
+          "activePersonaId" : "builtin-shortcut-config",
+          "personas" : [
+            {
+              "builtIn" : false,
+              "contextMode" : "none",
+              "createdAt" : "2024-01-01T00:00:00.000Z",
+              "hidden" : false,
+              "hotkey" : null,
+              "icon" : "command",
+              "id" : "builtin-shortcut-config",
+              "name" : "Shortcut Config",
+              "stylePrompt" : "tampered prompt",
+              "temperature" : 0.0,
+              "updatedAt" : "2024-01-01T00:00:00.000Z"
+            }
+          ],
+          "version" : 1
+        }
+        """
+        try! hiddenActiveJSON.write(to: url, atomically: true, encoding: .utf8)
+
+        let store = PersonaStore(storeURL: url)
+
+        // CR-01: load() nullifies activePersonaId when it points at a hidden persona.
+        expect(store.activePersonaId == nil,
+               "load() nullifies activePersonaId when it points at the hidden persona")
+
+        // Sanity: the hidden persona is still re-merged into allPersonas (seed re-injection)
+        // — only the active-id pointer was cleared.
+        expect(store.allPersonas.contains { $0.id == "builtin-shortcut-config" && $0.hidden },
+               "hidden persona still present in allPersonas after load (re-merged from seed)")
+
+        // Sanity: visiblePersonas still excludes the hidden persona.
+        expect(store.visiblePersonas.contains { $0.id == "builtin-shortcut-config" } == false,
+               "hidden persona excluded from visiblePersonas after load")
     }
 
     // MARK: - D-10 #6
