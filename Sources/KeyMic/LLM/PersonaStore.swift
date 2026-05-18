@@ -131,6 +131,24 @@ final class PersonaStore {
         do {
             let data = try Data(contentsOf: storeURL)
             let envelope = try Self.decoder.decode(Envelope.self, from: data)
+            // Schema-version dispatcher (WR-06). Phase 01 added `hidden` additively
+            // via decodeIfPresent ?? false, so currentVersion stayed at 1. Future
+            // non-additive changes (or additive changes with a non-default default)
+            // must bump currentVersion and add a case here. The clipboard subsystem
+            // solved this with clipboardSchemaVersion + an explicit wipe path
+            // (AppDelegate.swift:130-137); this mirrors that discipline for personas.
+            switch envelope.version {
+            case Self.currentVersion:
+                break  // current — no migration
+            case ..<Self.currentVersion:
+                // No migrations yet — Phase 01 added `hidden` additively via
+                // decodeIfPresent. Older envelopes flow through unchanged.
+                break
+            default:
+                logger.error("envelope.version \(envelope.version) > currentVersion \(Self.currentVersion); reseeding")
+                seedFirstLaunch()
+                return
+            }
             self.personas = mergeWithBuiltIns(loaded: envelope.personas)
             self.activePersonaId = envelope.activePersonaId
             // Drop active id if the persona no longer exists OR is hidden.
