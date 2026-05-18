@@ -21,11 +21,11 @@ struct PersonaTestRunner {
         expect(decoded == p, "Codable round-trip preserves equality")
         expect(decoded.contextMode == .selectionAndClipboard, "contextMode round-trips")
 
-        // Built-in seeds: exactly 4, ids stable
+        // Built-in seeds: exactly 5, ids stable (four originals + hidden shortcut-config)
         let seeds = Persona.builtInSeeds()
-        expect(seeds.count == 4, "exactly 4 built-in seeds")
+        expect(seeds.count == 5, "exactly 5 built-in seeds")
         let ids = seeds.map(\.id)
-        expect(ids == ["builtin-default", "builtin-translate", "builtin-cli", "builtin-context"],
+        expect(ids == ["builtin-default", "builtin-translate", "builtin-cli", "builtin-context", "builtin-shortcut-config"],
                "built-in ids in canonical order")
         expect(seeds.allSatisfy { $0.builtIn }, "all seeds marked builtIn")
         expect(seeds[3].contextMode == .selectionAndClipboard, "上下文 persona uses selectionAndClipboard")
