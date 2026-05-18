@@ -126,8 +126,15 @@ final class PersonaStore {
             let envelope = try Self.decoder.decode(Envelope.self, from: data)
             self.personas = mergeWithBuiltIns(loaded: envelope.personas)
             self.activePersonaId = envelope.activePersonaId
-            // If active id no longer exists, drop it.
-            if let id = activePersonaId, persona(id: id) == nil {
+            // Drop active id if the persona no longer exists OR is hidden.
+            // Hidden personas must never be active — same invariant as setActive(_:).
+            // Without this, a hand-edited or legacy personas.json with
+            // activePersonaId = "builtin-shortcut-config" would silently leave the
+            // hidden persona active on next launch, bypassing the setActive guard.
+            if let id = activePersonaId,
+               let p = persona(id: id), !p.hidden {
+                // OK — visible persona, keep it.
+            } else if activePersonaId != nil {
                 activePersonaId = nil
                 save()
             }
