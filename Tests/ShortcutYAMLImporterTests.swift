@@ -25,6 +25,9 @@ struct ShortcutYAMLImporterTestRunner {
 
         // P-06: IMP-11 (undo) + AUD-05 (rotation) + AUD-06 (terminate) + TEST-06 sweep.
         try testRemoveLastImportUndoes(tmp: tmp)
+        try testRemoveLastImportSilentOnMismatch(tmp: tmp)
+        try testBindingBindingConflictClearsTrigger(tmp: tmp)
+        try testAuditLogRotationAt5MB(tmp: tmp)
 
         print("ShortcutYAMLImporterTests passed")
     }
@@ -731,6 +734,281 @@ struct ShortcutYAMLImporterTestRunner {
         importer.terminate()  // idempotency check
 
         print("testRemoveLastImportUndoes: ok")
+    }
+
+    /// IMP-11 defensive id-match (D-F-1/2): `removeLastImport(id:)` is a
+    /// silent no-op when:
+    ///   (a) `id` does not match `lastImportedBindingId` (e.g. UI raced two
+    ///       imports and clicked Undo on the wrong toast), or
+    ///   (b) `lastImportedBindingId == nil` (e.g. called twice after the
+    ///       first call cleared the state).
+    ///
+    /// Silent means: NO store mutation AND NO audit line written. Asserted
+    /// across both branches.
+    private static func testRemoveLastImportSilentOnMismatch(tmp: URL) throws {
+        let suiteName = "test.ShortcutYAMLImporter.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let auditURL = tmp.appendingPathComponent("audit-undo-mismatch.log")
+        let auditLog = ShortcutAuditLog(logURL: auditURL, maxBytes: 5 * 1024 * 1024)
+        let store = HotkeyBindingsStore(defaults: defaults)
+        let importer = ShortcutYAMLImporter(
+            store: store,
+            registry: HotkeyRegistry.shared,
+            auditLog: auditLog,
+            userDefaults: defaults
+        )
+
+        let yaml = """
+        version: 1
+        shortcut: "alt+h"
+        label: "Hello"
+        actions:
+          - text: "hi"
+        """
+        let outcome = importer.importYAML(yaml, transcript: "mismatch test")
+        auditLog.flushForTesting()
+        expect(outcome.bindingId != nil, "happy import must return non-nil bindingId")
+        let bindingId = outcome.bindingId!
+
+        // Branch (a): mismatched id is silent.
+        importer.removeLastImport(id: UUID())
+        auditLog.flushForTesting()
+        expect(store.bindings.count == 1,
+               "store unchanged on mismatched undo (got \(store.bindings.count))")
+        let content1 = try String(contentsOf: auditURL, encoding: .utf8)
+        let lines1 = content1.split(separator: "\n", omittingEmptySubsequences: true)
+        expect(lines1.count == 1,
+               "no follow-up audit line on mismatched undo (got \(lines1.count))")
+
+        // Now perform the correct undo so we can verify the post-undo branch (b).
+        importer.removeLastImport(id: bindingId)
+        auditLog.flushForTesting()
+        expect(store.bindings.isEmpty, "binding removed after correct undo")
+        let content2 = try String(contentsOf: auditURL, encoding: .utf8)
+        let lines2 = content2.split(separator: "\n", omittingEmptySubsequences: true)
+        expect(lines2.count == 2, "import + undo = 2 audit lines (got \(lines2.count))")
+
+        // Branch (b): second call with the same id is a no-op because
+        // lastImportedBindingId == nil after the first call cleared it.
+        importer.removeLastImport(id: bindingId)
+        auditLog.flushForTesting()
+        expect(store.bindings.isEmpty, "store still empty on second undo")
+        let content3 = try String(contentsOf: auditURL, encoding: .utf8)
+        let lines3 = content3.split(separator: "\n", omittingEmptySubsequences: true)
+        expect(lines3.count == 2,
+               "second undo MUST NOT write a third audit line (got \(lines3.count))")
+
+        print("testRemoveLastImportSilentOnMismatch: ok")
+    }
+
+    /// TEST-06 scenario 3 (binding-binding conflict): pre-register a
+    /// `.hotkeyBinding(id:)` owner with the fixture's trigger; the importer's
+    /// gate-4 (registry-collision) must classify `conflictSource == "binding"`
+    /// because ALL colliding owners are bindings (none are features).
+    ///
+    /// Distinct from `testRegistryConflictClearsTrigger` (which pre-registers
+    /// `.clipboardPanel` — a feature — yielding `conflictSource == "feature"`).
+    /// The classification predicate is in ShortcutYAMLImporter.swift:399-403:
+    /// `let isFeature = collisions.contains { ... !.hotkeyBinding }`.
+    private static func testBindingBindingConflictClearsTrigger(tmp: URL) throws {
+        guard let cfg = HotkeyConfig.parse("alt+f7") else {
+            fail("alt+f7 should be a valid HotkeyConfig — check tokenToKeyCode table")
+        }
+        // Sanity: ensure gates 1-3 do NOT fire so the test isolates gate 4.
+        expect(!cfg.isPureModifier, "alt+f7 must not be pure-modifier (gate-4 isolation)")
+        expect(!cfg.isSystemReserved, "alt+f7 must not be system-reserved (gate-4 isolation)")
+
+        // Pre-register `.hotkeyBinding(id:)` with the SAME trigger as the
+        // fixture so the registry-collision gate fires AND the predicate
+        // classifies the conflict as "binding" (not "feature").
+        let phantomBindingId = UUID()
+        let beforeCount = HotkeyRegistry.shared.all().count
+        HotkeyRegistry.shared.register(
+            cfg,
+            owner: .hotkeyBinding(id: phantomBindingId),
+            purpose: "test gate 4 binding-binding fixture"
+        )
+        defer {
+            HotkeyRegistry.shared.unregister(owner: .hotkeyBinding(id: phantomBindingId))
+            expect(HotkeyRegistry.shared.all().count == beforeCount,
+                   "registry must be clean post-test (got \(HotkeyRegistry.shared.all().count), expected \(beforeCount))")
+        }
+
+        try runGateTest(
+            tmp: tmp,
+            fixture: "importer-conflict-registered.yaml",
+            expectedSource: "binding",
+            preImport: nil,
+            testName: "testBindingBindingConflictClearsTrigger"
+        )
+    }
+
+    /// AUD-05: when the audit log exceeds `maxBytes`, the writer renames
+    /// `<path>` → `<path>.1` (single-backup policy — `.2` MUST NOT exist)
+    /// and continues writing to a fresh `<path>`.
+    ///
+    /// Strategy — TWO-PHASE assertion to cover both single-rotation and
+    /// multi-rotation invariants without conflating them:
+    ///
+    ///   PHASE A — single-rotation, no-loss invariant.
+    ///   Inject a small `maxBytes` and write JUST enough lines so exactly
+    ///   ONE rotation happens. Then assert combined line count across
+    ///   `.log` + `.log.1` == total writes (no lines dropped).
+    ///
+    ///   PHASE B — multi-rotation, single-backup invariant.
+    ///   Continue writing until at least 2 rotations have occurred. Assert:
+    ///     - `.log.1` exists (most recent backup);
+    ///     - `.log.2` does NOT exist (single-backup policy — older backups
+    ///       are overwritten, NOT accumulated);
+    ///     - every line in BOTH files is still valid JSON
+    ///       (open-fresh-per-write means no partial-line corruption can
+    ///       leak across the rename boundary).
+    ///
+    /// The "lines may be dropped on second+ rotation" behavior is INTENTIONAL
+    /// per AUD-05 D-G-3 — bounded disk usage trumps unbounded history;
+    /// audit log is operational telemetry, not legal evidence.
+    ///
+    /// Per AUD-05 + 03-RESEARCH §3: rotation is safe because the writer
+    /// opens a fresh FileHandle per write — there is no long-lived handle
+    /// that could dangle after the rename.
+    private static func testAuditLogRotationAt5MB(tmp: URL) throws {
+        let suiteName = "test.ShortcutYAMLImporter.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let logName = "audit-rotation.log"
+        let auditURL = tmp.appendingPathComponent(logName)
+        let backupURL = tmp.appendingPathComponent(logName + ".1")
+        let backup2URL = tmp.appendingPathComponent(logName + ".2")
+
+        // Pre-flight: clean state (the test may have run in a prior session).
+        try? FileManager.default.removeItem(at: auditURL)
+        try? FileManager.default.removeItem(at: backupURL)
+        try? FileManager.default.removeItem(at: backup2URL)
+
+        // Inject a small threshold so rotation triggers within a handful of
+        // writes. The ShortcutAuditLog init exposes `maxBytes:` for exactly
+        // this test pattern (RESEARCH §3 — open-fresh-per-write makes
+        // rotation verifiable at any threshold without behavioral change
+        // at 5 MB).
+        let maxBytes = 2048
+        let fm = FileManager.default
+        let auditLog = ShortcutAuditLog(logURL: auditURL, maxBytes: maxBytes)
+        let store = HotkeyBindingsStore(defaults: defaults)
+        let importer = ShortcutYAMLImporter(
+            store: store,
+            registry: HotkeyRegistry.shared,
+            auditLog: auditLog,
+            userDefaults: defaults
+        )
+
+        // Local helper: run one import, drain, undo the binding, drain.
+        // Produces 2 audit lines per call. Use unique triggers so the
+        // safety-gate stack doesn't classify them as conflictCleared.
+        let triggers = "abcdefghijklmnopqrstuvwxyz".map { "alt+\($0)" }
+        var triggerIdx = 0
+        var totalLinesWritten = 0
+
+        func writeOneImport(label: String) {
+            let trig = triggers[triggerIdx % triggers.count]
+            triggerIdx += 1
+            let yaml = """
+            version: 1
+            shortcut: "\(trig)"
+            label: "\(label)"
+            actions:
+              - text: "\(label) body"
+            """
+            let outcome = importer.importYAML(yaml, transcript: "rotation \(label)")
+            auditLog.flushForTesting()
+            totalLinesWritten += 1
+            if let bid = outcome.bindingId {
+                importer.removeLastImport(id: bid)
+                auditLog.flushForTesting()
+                totalLinesWritten += 1
+            }
+        }
+
+        // PHASE A — write until exactly one rotation has happened. Detect
+        // by polling `fm.fileExists(atPath: backupURL.path)`.
+        var phaseALines = 0
+        while !fm.fileExists(atPath: backupURL.path) {
+            writeOneImport(label: "phaseA-\(phaseALines)")
+            phaseALines = totalLinesWritten
+            // Safety bound — should fire well before this.
+            if phaseALines > 200 {
+                fail("phase A: rotation never triggered after 200 lines (maxBytes=\(maxBytes))")
+            }
+        }
+
+        // Phase A invariant: combined line count across `.log` + `.log.1`
+        // == totalLinesWritten so far (the FIRST rotation MUST NOT drop
+        // any line — the rename is atomic, the next write opens fresh).
+        let mainContentA = try String(contentsOf: auditURL, encoding: .utf8)
+        let mainLinesA = mainContentA.split(separator: "\n", omittingEmptySubsequences: true)
+        let backupContentA = try String(contentsOf: backupURL, encoding: .utf8)
+        let backupLinesA = backupContentA.split(separator: "\n", omittingEmptySubsequences: true)
+        let combinedA = mainLinesA.count + backupLinesA.count
+        expect(combinedA == phaseALines,
+               "[phase A] first rotation must not drop lines (expected \(phaseALines), got main=\(mainLinesA.count) + backup=\(backupLinesA.count) = \(combinedA))")
+
+        // PHASE B — continue writing until at least ONE more rotation has
+        // happened (i.e. `.log.1` was overwritten — detect by inode change
+        // or, more portably, by size shrink: when `.log` rotates, the
+        // NEW `.log.1` content is whatever the OLD `.log` had, which is
+        // smaller than the cumulative phaseA total). Simpler signal: just
+        // write `2 * phaseALines` more lines — that's guaranteed > one
+        // more threshold-crossing.
+        let phaseBTargetLines = totalLinesWritten + (2 * phaseALines)
+        while totalLinesWritten < phaseBTargetLines {
+            writeOneImport(label: "phaseB-\(totalLinesWritten)")
+        }
+        auditLog.flushForTesting()
+
+        // (1) Original path still exists (writer opened fresh post-rename).
+        expect(fm.fileExists(atPath: auditURL.path),
+               "original audit log must exist post-rotation")
+
+        // (2) Rotated `.1` file exists.
+        expect(fm.fileExists(atPath: backupURL.path),
+               "rotated backup .log.1 must exist")
+
+        // (3) Single-backup policy — `.2` MUST NOT exist (AUD-05).
+        expect(!fm.fileExists(atPath: backup2URL.path),
+               "rotated .log.2 MUST NOT exist (single-backup policy violated)")
+
+        // (4) Current `.log` size is bounded — each line is well under 1 KB,
+        //     so post-rotation size should be a small multiple of maxBytes.
+        let attrs = try fm.attributesOfItem(atPath: auditURL.path)
+        let size = (attrs[.size] as? Int) ?? Int.max
+        expect(size < maxBytes * 2,
+               "post-rotation .log size bounded (got \(size), expected < \(maxBytes * 2))")
+
+        // (5) Every line in BOTH files must parse as valid JSON — the rename
+        //     happens between writes (open-fresh-per-write), so no
+        //     partial-line corruption can leak across the rotation boundary.
+        let mainContentB = try String(contentsOf: auditURL, encoding: .utf8)
+        let mainLinesB = mainContentB.split(separator: "\n", omittingEmptySubsequences: true)
+        let backupContentB = try String(contentsOf: backupURL, encoding: .utf8)
+        let backupLinesB = backupContentB.split(separator: "\n", omittingEmptySubsequences: true)
+        for (idx, line) in mainLinesB.enumerated() {
+            guard let data = line.data(using: .utf8),
+                  let _ = try? JSONSerialization.jsonObject(with: data, options: [])
+            else {
+                fail("[phase B] post-rotation main line \(idx) is not valid JSON: \(line)")
+            }
+        }
+        for (idx, line) in backupLinesB.enumerated() {
+            guard let data = line.data(using: .utf8),
+                  let _ = try? JSONSerialization.jsonObject(with: data, options: [])
+            else {
+                fail("[phase B] backup line \(idx) is not valid JSON: \(line)")
+            }
+        }
+
+        print("testAuditLogRotationAt5MB: ok")
     }
 
     // MARK: - Helpers (copied verbatim from project-wide test idiom)
