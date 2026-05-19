@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-hidden test-hotkey-registry test-hotkey-settings-store test-shortcut-yaml-parser
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-hidden test-hotkey-registry test-hotkey-settings-store test-shortcut-yaml-parser test-shortcut-yaml-importer
 
 
 build:
@@ -408,6 +408,51 @@ test-shortcut-yaml-parser:
 	       -o .build/shortcut-yaml-parser-tests
 	.build/shortcut-yaml-parser-tests
 
+test-shortcut-yaml-importer:
+	mkdir -p .build
+	swiftc -target arm64-apple-macos14 \
+	       Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
+	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
+	       Sources/KeyMic/Hotkey/ShortcutYAML.swift \
+	       Sources/KeyMic/Hotkey/ShortcutImporterError.swift \
+	       Sources/KeyMic/Hotkey/ShortcutAuditLog.swift \
+	       Sources/KeyMic/Hotkey/ShortcutYAMLImporter.swift \
+	       Tests/ShortcutYAMLImporterTests.swift \
+	       -o .build/shortcut-yaml-importer-tests-arm64-probe
+	swiftc -target x86_64-apple-macos14 \
+	       Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
+	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
+	       Sources/KeyMic/Hotkey/ShortcutYAML.swift \
+	       Sources/KeyMic/Hotkey/ShortcutImporterError.swift \
+	       Sources/KeyMic/Hotkey/ShortcutAuditLog.swift \
+	       Sources/KeyMic/Hotkey/ShortcutYAMLImporter.swift \
+	       Tests/ShortcutYAMLImporterTests.swift \
+	       -o .build/shortcut-yaml-importer-tests-x86_64-probe
+	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
+	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
+	       Sources/KeyMic/Hotkey/ShortcutYAML.swift \
+	       Sources/KeyMic/Hotkey/ShortcutImporterError.swift \
+	       Sources/KeyMic/Hotkey/ShortcutAuditLog.swift \
+	       Sources/KeyMic/Hotkey/ShortcutYAMLImporter.swift \
+	       Tests/ShortcutYAMLImporterTests.swift \
+	       -o .build/shortcut-yaml-importer-tests
+	.build/shortcut-yaml-importer-tests
+
 test-hotkey-registry:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
@@ -454,7 +499,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-hidden test-shortcut-yaml-parser test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-hidden test-shortcut-yaml-parser test-shortcut-yaml-importer test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
