@@ -396,6 +396,7 @@ struct ShortcutYAMLParserTestRunner {
             "error-09-unclosed-think",
             "error-10-unclosed-string",
             "error-11-duplicate-field",
+            "error-12-wait-nan",
         ]
         for name in errorFixtures {
             let raw = try FixtureLoader.read("\(name).yaml")
@@ -416,7 +417,36 @@ struct ShortcutYAMLParserTestRunner {
                 fail("\(name): unexpected non-ShortcutYAMLError thrown: \(error)")
             }
         }
-        print("runErrorFixtures: 11 fixtures verified")
+        print("runErrorFixtures: \(errorFixtures.count) fixtures verified")
+
+        // CR-01 regression: `wait:` parser MUST reject every non-finite,
+        // negative, and absurd-magnitude Double-parseable token without
+        // trapping on the downstream Int(*) conversion. `Double("inf")`,
+        // `Double("nan")`, and `Double("1e30")` all succeed; the parser-side
+        // guard is the only thing standing between attacker input and a
+        // process crash.
+        for badWait in ["inf", "-inf", "1e30", "-1.0"] {
+            let yaml = """
+                version: 1
+                shortcut: "alt+g"
+                actions:
+                  - wait: \(badWait)
+                """
+            do {
+                _ = try ShortcutYAMLParser.parse(yaml)
+                fail("CR-01: wait: \(badWait) should throw .invalidValue but parse succeeded")
+            } catch let err as ShortcutYAMLError {
+                switch err {
+                case .invalidValue(let field, _, _):
+                    expect(field == "wait",
+                           "CR-01: wait: \(badWait) threw .invalidValue with wrong field — expected 'wait', got '\(field)'")
+                default:
+                    fail("CR-01: wait: \(badWait) threw wrong variant: \(err)")
+                }
+            } catch {
+                fail("CR-01: wait: \(badWait) threw non-ShortcutYAMLError: \(error)")
+            }
+        }
     }
 
     /// Exhaustive matcher for `ShortcutYAMLError` vs the JSON shape in

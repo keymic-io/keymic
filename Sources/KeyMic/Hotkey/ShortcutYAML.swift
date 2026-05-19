@@ -885,7 +885,21 @@ enum ShortcutYAMLParser {
             // Numeric-only seconds (CONTEXT.md "Claude's Discretion"). Convert
             // to milliseconds per RESEARCH.md Pattern 11. HotkeyAction.wait
             // stores `ms: Int` (HotkeyAction.swift:6).
-            guard let seconds = Double(rhs) else {
+            //
+            // Safety: `Double(rhs)` accepts "nan", "inf", "-inf", and
+            // astronomically large scientific-notation values. `Int(.nan)` /
+            // `Int(.infinity)` / `Int(1e30)` all TRAP at runtime — a single
+            // malformed binding would crash the host process. Per the
+            // security threat model T-02-02 ("never crash on attacker input"),
+            // reject non-finite, negative, and absurd-magnitude values up
+            // front. The 86 400 s cap (1 day) is far beyond any legitimate
+            // user-authored value and keeps the downstream `Int(*)` conversion
+            // safely inside `Int.max` on all supported architectures.
+            guard let seconds = Double(rhs),
+                  seconds.isFinite,
+                  seconds >= 0,
+                  seconds <= 86_400
+            else {
                 throw ShortcutYAMLError.invalidValue(
                     field: "wait",
                     line: line,
