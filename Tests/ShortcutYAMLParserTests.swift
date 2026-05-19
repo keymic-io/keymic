@@ -659,6 +659,13 @@ struct ShortcutYAMLParserTestRunner {
             let reparsed = try ShortcutYAMLParser.parse(encoded)
             expect(equalIgnoringId(reparsed, parsed),
                    "\(name): round-trip mismatch.\nORIG  binding=\(parsed.binding) label=\(String(describing: parsed.label))\nENCODED=\n\(encoded)\nREPARSED binding=\(reparsed.binding) label=\(String(describing: reparsed.label))")
+            // WR-06: the runRoundTrip docstring asserts "id is regenerated on
+            // every parse via UUID()" but `equalIgnoringId` only proves the
+            // NON-id fields match — it cannot detect a regression where a
+            // future change accidentally hashes input into a deterministic
+            // UUID. Lock the contract explicitly.
+            expect(parsed.binding.id != reparsed.binding.id,
+                   "\(name): expected binding.id to be regenerated on reparse, got identical UUIDs (\(parsed.binding.id)) — UUID() regression?")
         }
 
         // Round-trip identity for .wait(ms:) — the seconds-vs-ms boundary the
