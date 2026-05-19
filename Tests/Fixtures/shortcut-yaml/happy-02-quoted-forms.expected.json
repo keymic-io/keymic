@@ -1,0 +1,12 @@
+{
+  "binding": {
+    "trigger": "alt+g",
+    "actions": [
+      {"type": "typeText", "text": "literal\\nshown\\nas\\nbackslash-n"},
+      {"type": "keyPress", "keyCode": 49, "modifiers": 1048576}
+    ],
+    "enabled": true,
+    "appBundleIDs": []
+  },
+  "label": "She said \"hi\"\nthen left"
+}

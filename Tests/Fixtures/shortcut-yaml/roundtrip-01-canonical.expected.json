@@ -1,0 +1,14 @@
+{
+  "binding": {
+    "trigger": "alt+g",
+    "actions": [
+      {"type": "keyPress", "keyCode": 49, "modifiers": 1048576},
+      {"type": "typeText", "text": "chrome"},
+      {"type": "wait", "ms": 1500},
+      {"type": "shell", "command": "echo hi"}
+    ],
+    "enabled": true,
+    "appBundleIDs": ["com.google.Chrome"]
+  },
+  "label": "Round-trip canonical"
+}

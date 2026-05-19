@@ -1,0 +1,7 @@
+version: 1
+shortcut: "alt+g"
+label: "打开 Chrome 🚀"
+enabled: true
+actions:
+  - text: "héllo, 你好"
+  - wait: 0.5

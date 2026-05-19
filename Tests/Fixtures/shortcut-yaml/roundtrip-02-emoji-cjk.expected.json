@@ -1,0 +1,12 @@
+{
+  "binding": {
+    "trigger": "alt+g",
+    "actions": [
+      {"type": "typeText", "text": "héllo, 你好"},
+      {"type": "wait", "ms": 500}
+    ],
+    "enabled": true,
+    "appBundleIDs": []
+  },
+  "label": "打开 Chrome 🚀"
+}

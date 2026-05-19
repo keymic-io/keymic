@@ -1,0 +1,7 @@
+version: 1
+shortcut: "alt+g"
+label: "She said \"hi\"\nthen left"
+enabled: true
+actions:
+  - text: 'literal\nshown\nas\nbackslash-n'
+  - key: cmd+space

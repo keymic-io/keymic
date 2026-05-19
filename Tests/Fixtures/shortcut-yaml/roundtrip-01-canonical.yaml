@@ -1,0 +1,11 @@
+version: 1
+shortcut: "alt+g"
+label: "Round-trip canonical"
+enabled: true
+appBundleIDs:
+  - "com.google.Chrome"
+actions:
+  - key: "cmd+space"
+  - text: "chrome"
+  - wait: 1.5
+  - shell: "echo hi"
