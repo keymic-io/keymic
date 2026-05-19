@@ -16,7 +16,7 @@ enum OutputError: Error {
     case notSupportedYet
 }
 
-final class OutputRouter {
+class OutputRouter {
     private let focusedText: OutputStrategyHandler
     private let replaceSelection: OutputStrategyHandler
     private let clipboard: OutputStrategyHandler
