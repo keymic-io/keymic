@@ -32,12 +32,12 @@ enum OutputStrategy: Codable, Equatable {
 struct Persona: Codable, Identifiable, Equatable {
     var id: String
     var name: String
-    var icon: String
+    var icon: String           // SF Symbol name
     var stylePrompt: String
-    var temperature: Double
-    var hotkey: String?
+    var temperature: Double    // 0.0 ... 2.0
+    var hotkey: String?        // HotkeyConfig.encode() format, e.g. "alt+q"
     var contextMode: ContextMode
-    var contextCount: Int
+    var contextCount: Int      // used when contextMode == .clipboardHistory
     var outputStrategy: OutputStrategy
     var builtIn: Bool
     var createdAt: Date
@@ -45,6 +45,9 @@ struct Persona: Codable, Identifiable, Equatable {
 
     static let temperatureRange: ClosedRange<Double> = 0.0 ... 2.0
 
+    /// Built-in personas seeded on first launch. Order is stable.
+    /// Built-ins: name + builtIn flag are immutable in UI; stylePrompt + icon
+    /// + temperature + hotkey + contextMode + contextCount + outputStrategy editable.
     static func builtInSeeds() -> [Persona] {
         let now = Date()
         return [
