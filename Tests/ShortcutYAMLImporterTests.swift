@@ -23,7 +23,8 @@ struct ShortcutYAMLImporterTestRunner {
         try testInvalidBundleIDSoftDropped(tmp: tmp)
         try testSelfTriggerRejectsWithoutInsert(tmp: tmp)
 
-        // P-06 will append additional try testX(tmp:) calls here.
+        // P-06: IMP-11 (undo) + AUD-05 (rotation) + AUD-06 (terminate) + TEST-06 sweep.
+        try testRemoveLastImportUndoes(tmp: tmp)
 
         print("ShortcutYAMLImporterTests passed")
     }
@@ -621,6 +622,115 @@ struct ShortcutYAMLImporterTestRunner {
         expect(isBindingIdNull, "audit bindingId is null on self-trigger reject")
 
         print("testSelfTriggerRejectsWithoutInsert: ok")
+    }
+
+    // MARK: - P-06 tests (IMP-11 undo + AUD-05 rotation + AUD-06 terminate + TEST-06 sweep)
+
+    /// IMP-11: `removeLastImport(id:)` undoes the most recent voice-imported
+    /// binding via defensive id-match.
+    /// - Happy path: `id == lastImportedBindingId` → remove from store,
+    ///   set `lastImportedBindingId = nil`, write a follow-up audit line
+    ///   with `action: "undo"`, `bindingId: <original uuid>`, all other
+    ///   AUD-03 fields at their defaults (empty transcript/yaml, all bools
+    ///   false, all optionals nil, empty arrays).
+    /// - Post-conditions asserted on this RED test:
+    ///   - `store.bindings.isEmpty` after undo
+    ///   - exactly 2 audit lines total (import then undo)
+    ///   - second line's `action == "undo"`, `bindingId == <captured uuid>`,
+    ///     `transcript == ""`, `yaml == ""`, `conflictCleared == false`,
+    ///     `parseError == nil`, `shellStripped == false`,
+    ///     `droppedBundleIDs == []`.
+    private static func testRemoveLastImportUndoes(tmp: URL) throws {
+        let suiteName = "test.ShortcutYAMLImporter.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let auditURL = tmp.appendingPathComponent("audit-undo.log")
+        let auditLog = ShortcutAuditLog(logURL: auditURL, maxBytes: 5 * 1024 * 1024)
+        let store = HotkeyBindingsStore(defaults: defaults)
+        let importer = ShortcutYAMLImporter(
+            store: store,
+            registry: HotkeyRegistry.shared,
+            auditLog: auditLog,
+            userDefaults: defaults
+        )
+
+        let yaml = """
+        version: 1
+        shortcut: "alt+g"
+        label: "Open Chrome"
+        actions:
+          - text: "hello"
+        """
+        let transcript = "按 alt+g 打开 chrome"
+
+        // 1. Happy-path import to seed undo state.
+        let outcome = importer.importYAML(yaml, transcript: transcript)
+        auditLog.flushForTesting()
+        expect(outcome.bindingId != nil, "happy import must return non-nil bindingId")
+        let bindingId = outcome.bindingId!
+        expect(store.bindings.count == 1, "one binding inserted pre-undo")
+
+        // 2. Undo with the captured id.
+        importer.removeLastImport(id: bindingId)
+        auditLog.flushForTesting()
+
+        // 3. Store: binding removed.
+        expect(store.bindings.isEmpty,
+               "store must be empty after undo (got \(store.bindings.count) bindings)")
+
+        // 4. Audit log: exactly 2 lines (import + undo).
+        let content = try String(contentsOf: auditURL, encoding: .utf8)
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
+        expect(lines.count == 2,
+               "exactly 2 audit lines after undo (got \(lines.count))")
+
+        // 5. Parse line 2; assert undo shape.
+        guard let line2Data = lines[1].data(using: .utf8),
+              let any2 = try? JSONSerialization.jsonObject(with: line2Data, options: []),
+              let dict2 = any2 as? [String: Any]
+        else {
+            fail("undo audit line did not parse as JSON: \(lines[1])")
+        }
+        expect(dict2["action"] as? String == "undo",
+               "undo audit line action == 'undo' (got \(String(describing: dict2["action"])))")
+        expect(dict2["bindingId"] as? String == bindingId.uuidString,
+               "undo audit line bindingId matches original (got \(String(describing: dict2["bindingId"])))")
+        expect(dict2["transcript"] as? String == "",
+               "undo line has empty transcript (got \(String(describing: dict2["transcript"])))")
+        expect(dict2["yaml"] as? String == "",
+               "undo line has empty yaml (got \(String(describing: dict2["yaml"])))")
+        expect(dict2["conflictCleared"] as? Bool == false,
+               "undo line conflictCleared == false")
+        let parseErrorVal2 = dict2["parseError"]
+        let isParseErrorNull2 = parseErrorVal2 == nil || parseErrorVal2 is NSNull
+        expect(isParseErrorNull2,
+               "undo line parseError is null (got \(String(describing: parseErrorVal2)))")
+        expect(dict2["shellStripped"] as? Bool == false,
+               "undo line shellStripped == false")
+        if let arr = dict2["droppedBundleIDs"] as? [Any] {
+            expect(arr.isEmpty, "undo line droppedBundleIDs is empty (got \(arr))")
+        } else {
+            fail("undo line droppedBundleIDs must be an array (got \(String(describing: dict2["droppedBundleIDs"])))")
+        }
+
+        // 6. Idempotency: calling removeLastImport again with the same id is
+        //    a silent no-op because lastImportedBindingId == nil after step 2.
+        importer.removeLastImport(id: bindingId)
+        auditLog.flushForTesting()
+        let contentAfterIdempotent = try String(contentsOf: auditURL, encoding: .utf8)
+        let linesAfterIdempotent = contentAfterIdempotent.split(separator: "\n",
+                                                                omittingEmptySubsequences: true)
+        expect(linesAfterIdempotent.count == 2,
+               "idempotent undo MUST NOT write a third audit line (got \(linesAfterIdempotent.count))")
+
+        // 7. AUD-06: importer.terminate() drains the audit queue; safe to call
+        //    multiple times. The underlying writer uses open-fresh-per-write,
+        //    so this is a flush-only operation.
+        importer.terminate()
+        importer.terminate()  // idempotency check
+
+        print("testRemoveLastImportUndoes: ok")
     }
 
     // MARK: - Helpers (copied verbatim from project-wide test idiom)
