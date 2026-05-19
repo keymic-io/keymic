@@ -415,6 +415,8 @@ final class PersonasViewModel: ObservableObject {
             temperature: 0.7,
             hotkey: nil,
             contextMode: .none,
+            contextCount: 1,
+            outputStrategy: .replaceFocusedText,
             builtIn: false,
             createdAt: now,
             updatedAt: now
