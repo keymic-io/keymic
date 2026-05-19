@@ -97,7 +97,7 @@ final class PersonaStore {
         var activePersonaId: String?
     }
 
-    private static let currentVersion = 1
+    private static let currentVersion = 2
 
     private func load() {
         guard FileManager.default.fileExists(atPath: storeURL.path) else {
@@ -106,18 +106,78 @@ final class PersonaStore {
         }
         do {
             let data = try Data(contentsOf: storeURL)
-            let envelope = try Self.decoder.decode(Envelope.self, from: data)
-            self.personas = mergeWithBuiltIns(loaded: envelope.personas)
-            self.activePersonaId = envelope.activePersonaId
-            // If active id no longer exists, drop it.
+            let envelopeVersion = peekVersion(data) ?? Self.currentVersion
+            let personas: [Persona]
+            let activeId: String?
+            if envelopeVersion < 2 {
+                let upgraded = try Self.decodeLegacyV1(data)
+                personas = upgraded.personas
+                activeId = upgraded.activePersonaId
+            } else {
+                let envelope = try Self.decoder.decode(Envelope.self, from: data)
+                personas = envelope.personas
+                activeId = envelope.activePersonaId
+            }
+            self.personas = mergeWithBuiltIns(loaded: personas)
+            self.activePersonaId = activeId
             if let id = activePersonaId, persona(id: id) == nil {
                 activePersonaId = nil
-                save()
             }
+            // Always re-save: normalizes a v1 file to v2 on disk; no-op for v2.
+            save()
         } catch {
             logger.error("load failed: \(error.localizedDescription, privacy: .public). Re-seeding.")
             seedFirstLaunch()
         }
+    }
+
+    private func peekVersion(_ data: Data) -> Int? {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return obj["version"] as? Int
+    }
+
+    /// Decode a v1 envelope (Personas without contextCount or outputStrategy)
+    /// and fill defaults: contextCount = 1, outputStrategy = .replaceFocusedText.
+    private static func decodeLegacyV1(_ data: Data) throws -> Envelope {
+        struct LegacyPersona: Decodable {
+            var id: String
+            var name: String
+            var icon: String
+            var stylePrompt: String
+            var temperature: Double
+            var hotkey: String?
+            var contextMode: ContextMode
+            var builtIn: Bool
+            var createdAt: Date
+            var updatedAt: Date
+        }
+        struct LegacyEnvelope: Decodable {
+            var version: Int
+            var personas: [LegacyPersona]
+            var activePersonaId: String?
+        }
+        let legacy = try Self.decoder.decode(LegacyEnvelope.self, from: data)
+        let upgraded: [Persona] = legacy.personas.map { lp in
+            Persona(
+                id: lp.id,
+                name: lp.name,
+                icon: lp.icon,
+                stylePrompt: lp.stylePrompt,
+                temperature: lp.temperature,
+                hotkey: lp.hotkey,
+                contextMode: lp.contextMode,
+                contextCount: 1,
+                outputStrategy: .replaceFocusedText,
+                builtIn: lp.builtIn,
+                createdAt: lp.createdAt,
+                updatedAt: lp.updatedAt
+            )
+        }
+        return Envelope(
+            version: 2,
+            personas: upgraded,
+            activePersonaId: legacy.activePersonaId
+        )
     }
 
     /// Ensures all 4 built-ins exist (preserves user edits to existing built-ins;
