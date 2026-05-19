@@ -1,0 +1,7 @@
+version: 1
+shortcut: "alt+b"
+label: "Bad bundle ID (IMP-09 soft-drop)"
+appBundleIDs:
+  - "com.nonexistent.fake-app-12345"
+actions:
+  - text: "hello"

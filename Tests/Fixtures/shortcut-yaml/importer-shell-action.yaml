@@ -1,0 +1,5 @@
+version: 1
+shortcut: "alt+s"
+label: "Shell action (IMP-08 strip when gate off)"
+actions:
+  - shell: "echo hello"

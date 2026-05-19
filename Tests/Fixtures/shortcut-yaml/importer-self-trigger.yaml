@@ -1,0 +1,5 @@
+version: 1
+shortcut: "alt+g"
+label: "Self-trigger via registered owner (IMP-05 reject)"
+actions:
+  - key: "alt+f8"
