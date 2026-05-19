@@ -158,7 +158,7 @@ enum ShortcutYAMLParser {
                         secondLine: originalLine
                     )
                 }
-                shortcutToken = try unquote(rhsRaw, line: originalLine)
+                shortcutToken = try unquote(rhsRaw, field: "shortcut", line: originalLine)
                 shortcutLine = originalLine
 
             case "label":
@@ -169,7 +169,7 @@ enum ShortcutYAMLParser {
                         secondLine: originalLine
                     )
                 }
-                label = try unquote(rhsRaw, line: originalLine)
+                label = try unquote(rhsRaw, field: "label", line: originalLine)
                 labelLine = originalLine
 
             case "enabled":
@@ -274,7 +274,7 @@ enum ShortcutYAMLParser {
         // Validate version (D-D: accept integer `1` or quoted string `"1"` only).
         if let v = versionToken {
             let normalized = v.hasPrefix("\"") || v.hasPrefix("'")
-                ? try unquote(v, line: versionLine)
+                ? try unquote(v, field: "version", line: versionLine)
                 : v
             guard normalized == "1" else {
                 throw ShortcutYAMLError.invalidValue(
@@ -328,7 +328,7 @@ enum ShortcutYAMLParser {
             let valuePart = trimmed == "-"
                 ? ""
                 : String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-            let unquoted = try unquote(valuePart, line: lineIdx + 1)
+            let unquoted = try unquote(valuePart, field: field, line: lineIdx + 1)
             out.append(unquoted)
             startIndex += 1
         }
@@ -384,7 +384,7 @@ enum ShortcutYAMLParser {
     ) throws -> HotkeyAction {
         switch key {
         case "key":
-            let raw = try unquote(rhs, line: line)
+            let raw = try unquote(rhs, field: "key", line: line)
             guard let cfg = HotkeyConfig.parse(raw) else {
                 throw ShortcutYAMLError.invalidValue(
                     field: "key",
@@ -398,8 +398,18 @@ enum ShortcutYAMLParser {
             )
 
         case "text":
-            // TODO(P-04): YAML-09 cap — reject text longer than 4096 chars.
-            let s = try unquote(rhs, line: line)
+            let s = try unquote(rhs, field: "text", line: line)
+            // YAML-09 cap: `text:` over 4096 chars rejected. Char count
+            // (not raw bytes) per CONTEXT.md `<additional_context>`. P-05
+            // adds the dedicated cap-exceeded fixture; the code path lives
+            // here so P-04 preprocessing doesn't have to know about it.
+            if s.count > 4096 {
+                throw ShortcutYAMLError.invalidValue(
+                    field: "text",
+                    line: line,
+                    offendingToken: String(s.prefix(64))
+                )
+            }
             return .typeText(s)
 
         case "wait":
@@ -416,7 +426,7 @@ enum ShortcutYAMLParser {
             return .wait(ms: Int((seconds * 1000.0).rounded()))
 
         case "shell":
-            let s = try unquote(rhs, line: line)
+            let s = try unquote(rhs, field: "shell", line: line)
             return .shell(s)
 
         default:
@@ -426,33 +436,68 @@ enum ShortcutYAMLParser {
 
     // MARK: - Scalar helpers
 
-    /// Unwrap a yaml scalar. Mirrors `MinimalTOMLParser.parseDoubleQuoted`
-    /// (Sources/KeyMic/Clipboard/MinimalTOMLParser.swift:132-155) for the
-    /// double-quoted form and the single-quoted literal form at lines 73-79.
-    /// Escape set per CONTEXT.md D-D-2: `\"`, `\\`, `\n`, `\t`.
-    private static func unquote(_ rhs: String, line: Int) throws -> String {
+    /// Unwrap a yaml scalar — accepts all three YAML-08 forms:
+    ///   1. **Double-quoted** (`"..."`): strict 4-char escape set `\"`, `\\`,
+    ///      `\n`, `\t`. Unknown `\<char>` → `.invalidValue(field:line:)` per
+    ///      D-B-1's strict-over-lenient bias.
+    ///   2. **Single-quoted** (`'...'`): LITERAL — no escape processing.
+    ///      Mirrors `MinimalTOMLParser.swift:73-79`.
+    ///   3. **Unquoted-to-EOL**: returned as-is (already trimmed by caller).
+    ///      Rejects yaml multiline indicators `|` / `>` with `.invalidValue`
+    ///      (out of scope for v1; see CONTEXT.md `<deferred>`).
+    ///
+    /// `field:` is required so error messages refer back to the right schema
+    /// field. Throws `.unclosedString(line:)` if a quoted form runs off EOL/EOF.
+    private static func unquote(_ rhs: String, field: String, line: Int) throws -> String {
         let s = rhs.trimmingCharacters(in: .whitespaces)
         if s.hasPrefix("\"") {
-            guard let out = parseDoubleQuoted(s) else {
-                throw ShortcutYAMLError.unclosedString(line: line)
-            }
-            return out
+            return try parseDoubleQuoted(s, field: field, line: line)
         }
         if s.hasPrefix("'") {
-            let body = s.dropFirst()
-            guard let end = body.firstIndex(of: "'") else {
-                throw ShortcutYAMLError.unclosedString(line: line)
+            return try parseSingleQuoted(s, line: line)
+        }
+        // Unquoted scalar — reject yaml multiline indicators `|` / `>`
+        // (block scalar headers). v1 is closed-schema; these forms are
+        // out of scope and would otherwise be mis-interpreted as literals.
+        if s == "|" || s == ">" || s.hasPrefix("|") || s.hasPrefix(">") {
+            // Only reject when these appear as a leading indicator, not as
+            // part of an unrelated token (e.g. `key: ">"` would have been
+            // routed through `parseDoubleQuoted` above).
+            let first = s.first!
+            // Accept ">"/"|" only as the literal first char of a yaml
+            // block-scalar header (followed by EOL or chomping indicator).
+            // Standalone "|" or ">" or "|-" / ">-" / "|+" / ">+" all match.
+            let rest = s.dropFirst()
+            if rest.isEmpty || rest.allSatisfy({ $0 == "-" || $0 == "+" || $0.isNumber }) {
+                throw ShortcutYAMLError.invalidValue(
+                    field: field,
+                    line: line,
+                    offendingToken: String(first)
+                )
             }
-            return String(body[..<end])
         }
         return s
     }
 
-    /// Double-quoted scalar with the four-char escape set (`\"`, `\\`, `\n`, `\t`).
-    /// Returns nil on missing close quote — caller maps to `.unclosedString`.
-    /// Mirrors `MinimalTOMLParser.parseDoubleQuoted` at lines 132–155.
-    private static func parseDoubleQuoted(_ rhs: String) -> String? {
-        guard rhs.hasPrefix("\"") else { return nil }
+    /// Single-quoted literal scalar. Mirrors `MinimalTOMLParser.swift:73-79`
+    /// but throws `.unclosedString(line:)` on missing close quote (the TOML
+    /// analog silently falls through).
+    private static func parseSingleQuoted(_ s: String, line: Int) throws -> String {
+        precondition(s.hasPrefix("'"))
+        let body = s.dropFirst()
+        guard let end = body.firstIndex(of: "'") else {
+            throw ShortcutYAMLError.unclosedString(line: line)
+        }
+        return String(body[..<end])
+    }
+
+    /// Double-quoted scalar with the strict four-char escape set (`\"`, `\\`,
+    /// `\n`, `\t`). Mirrors `MinimalTOMLParser.parseDoubleQuoted` at lines
+    /// 132–155 but TIGHTENED: unknown `\<char>` throws `.invalidValue` instead
+    /// of the analog's silent passthrough (D-B-1 strict-over-lenient).
+    /// Throws `.unclosedString(line:)` if the closing `"` is missing.
+    private static func parseDoubleQuoted(_ rhs: String, field: String, line: Int) throws -> String {
+        precondition(rhs.hasPrefix("\""))
         var out = ""
         var i = rhs.index(after: rhs.startIndex)
         while i < rhs.endIndex {
@@ -464,7 +509,13 @@ enum ShortcutYAMLParser {
                 case "t": out.append("\t")
                 case "\"": out.append("\"")
                 case "\\": out.append("\\")
-                default: out.append(n)
+                default:
+                    // Unknown escape: strict-over-lenient per D-B-1.
+                    throw ShortcutYAMLError.invalidValue(
+                        field: field,
+                        line: line,
+                        offendingToken: String("\\\(n)")
+                    )
                 }
                 i = rhs.index(after: next)
                 continue
@@ -473,6 +524,6 @@ enum ShortcutYAMLParser {
             out.append(c)
             i = rhs.index(after: i)
         }
-        return nil
+        throw ShortcutYAMLError.unclosedString(line: line)
     }
 }
