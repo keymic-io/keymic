@@ -244,9 +244,34 @@ final class ShortcutYAMLImporter {
             binding.appBundleIDs = kept
         }
 
-        // Step 3: TODO(P-05 IMP-08): shortcutVoiceShellEnabled gate;
-        // strip .shell actions and force enabled = false on strip.
+        // Step 3: IMP-08 — `shortcutVoiceShellEnabled` gate.
+        //
+        // READ per-call (NOT cached) per 03-CONTEXT.md `<code_context>`
+        // "Integration Points" — settings toggle takes effect on the next
+        // import. Default `false` per `UserDefaults.bool(forKey:)` returning
+        // false for missing keys (CONTEXT.md "Claude's Discretion" item 10).
+        //
+        // When the gate is OFF (default): strip every `.shell(_)` action from
+        // the binding; if any were dropped, force `enabled = false` so the
+        // truncated binding does not silently fire. The `shellStripped` flag
+        // flows into both Outcome and AuditRecord per IMP-08 contract.
+        //
+        // When the gate is ON: shell actions are preserved as-is; the
+        // binding's `enabled` follows the YAML value (already decoded by
+        // Phase 2).
+        let shellEnabled = userDefaults.bool(forKey: Self.userDefaultsKeyShellEnabled)
         var shellStripped = false
+        if !shellEnabled {
+            let originalCount = binding.actions.count
+            binding.actions = binding.actions.filter { action in
+                if case .shell = action { return false }
+                return true
+            }
+            if binding.actions.count < originalCount {
+                shellStripped = true
+                binding.enabled = false   // IMP-08 contract: stripped binding inserted disabled
+            }
+        }
 
         // Step 4: TODO(P-05 IMP-05): self-trigger / owned-trigger gate via
         // HotkeySettingsStore.shared.hotkey(for: .voiceTrigger) +
@@ -310,8 +335,6 @@ final class ShortcutYAMLImporter {
             binding.trigger = ""
             binding.enabled = false
         }
-
-        _ = userDefaults  // silence unused-warning until P-05 wires the shell gate
 
         // Step 6: INSERT (binding always inserts per IMP-04 contract; the
         // trigger has been cleared above if any gate matched).
