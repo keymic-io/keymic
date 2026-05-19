@@ -354,7 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard contextMode == .selectionAndClipboard else { return transcript }
 
         let selection =
-            SelectionTextProvider.currentSelection()?
+            SelectionSource.currentSelection()?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let clipboard =
             NSPasteboard.general.string(forType: .string)?
