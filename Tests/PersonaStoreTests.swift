@@ -90,6 +90,47 @@ struct PersonaStoreTestRunner {
         expect(store3.persona(forHotkey: "alt+w") == nil,
                "missing hotkey returns nil")
 
+        // --- v1 → v2 migration ---
+        let migTmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("persona-store-migration-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: migTmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: migTmp) }
+        let migURL = migTmp.appendingPathComponent("personas.json")
+
+        // Write a v1 envelope on disk (no contextCount, no outputStrategy).
+        let v1Json = """
+        {
+          "version": 1,
+          "personas": [
+            {
+              "id": "user-legacy",
+              "name": "Legacy",
+              "icon": "sparkles",
+              "stylePrompt": "legacy",
+              "temperature": 0.3,
+              "hotkey": null,
+              "contextMode": "none",
+              "builtIn": false,
+              "createdAt": "2026-01-01T00:00:00.000Z",
+              "updatedAt": "2026-01-01T00:00:00.000Z"
+            }
+          ],
+          "activePersonaId": null
+        }
+        """
+        try! v1Json.data(using: .utf8)!.write(to: migURL)
+
+        let migrated = PersonaStore(storeURL: migURL)
+        let legacy = migrated.persona(id: "user-legacy")!
+        expect(legacy.contextCount == 1, "v1 migration: contextCount defaults to 1")
+        expect(legacy.outputStrategy == .replaceFocusedText,
+            "v1 migration: outputStrategy defaults to .replaceFocusedText")
+
+        // Reload the same file: it should now decode as v2 with no migration.
+        let reloadedMigrated = PersonaStore(storeURL: migURL)
+        expect(reloadedMigrated.persona(id: "user-legacy") != nil,
+            "v2 reload preserves migrated user persona")
+
         print("✅ PersonaStoreTests passed")
     }
 
