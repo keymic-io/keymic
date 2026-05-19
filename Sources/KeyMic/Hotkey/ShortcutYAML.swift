@@ -442,6 +442,19 @@ enum ShortcutYAMLParser {
                 field: field,
                 line: map.originalLine(forProcessed: lineIdx + 1)
             )
+            // WR-05: reject empty-string entries (e.g. bare `-` or `- ""`).
+            // The empty string is not a valid bundle ID and `[]` (entire
+            // `appBundleIDs:` line omitted) is already the canonical
+            // "all apps" sentinel. Silently accepting `""` would mask a
+            // user / LLM authoring bug while leaving the binding visibly
+            // "configured" — a documented strict-schema violation.
+            guard !unquoted.isEmpty else {
+                throw ShortcutYAMLError.invalidValue(
+                    field: field,
+                    line: map.originalLine(forProcessed: lineIdx + 1),
+                    offendingToken: "-"
+                )
+            }
             out.append(unquoted)
             startIndex += 1
         }

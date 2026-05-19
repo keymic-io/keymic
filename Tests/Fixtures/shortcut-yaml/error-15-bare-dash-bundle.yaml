@@ -1,0 +1,7 @@
+version: 1
+shortcut: "alt+g"
+appBundleIDs:
+  -
+  - "com.apple.Safari"
+actions:
+  - text: "x"
