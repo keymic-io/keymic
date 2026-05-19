@@ -26,6 +26,10 @@ scripts/keys/
 
 # Git worktrees
 .worktrees/
+.worktree/
 
 # Agent runtime
 agent-runtime/
+
+# GSD planning artifacts (session-local; not part of source)
+.planning/
