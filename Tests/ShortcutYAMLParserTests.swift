@@ -372,8 +372,219 @@ struct ShortcutYAMLParserTestRunner {
         }
     }
 
-    // P-05 fills in per-ShortcutYAMLError-variant error fixtures.
-    private static func runErrorFixtures() throws {}
+    // P-05: per-ShortcutYAMLError-variant error fixtures.
+    //
+    // Each fixture pair (`error-NN-*.yaml` + `error-NN-*.expected-error.json`)
+    // asserts the exact (kind, field, line, token) shape per CONTEXT.md D-B-2.
+    // `.empty` and `.missingShortcut` are covered inline by runEdgeFixtures
+    // (P-04 / YAML-11) — these 11 fixtures cover the remaining 7 unique enum
+    // kinds (`.invalidValue` repeats across multiple fixtures by design).
+    //
+    // The matcher's switch over ShortcutYAMLError is **exhaustive** — no
+    // `default:` arm. If a 10th variant is added without test coverage, Swift
+    // will fail compile of this file (T-02-05-02).
+    private static func runErrorFixtures() throws {
+        let errorFixtures = [
+            "error-01-malformed-action",
+            "error-02-unknown-action-key",
+            "error-03-invalid-key-value",
+            "error-04-invalid-shortcut-value",
+            "error-05-text-too-long",
+            "error-06-invalid-wait",
+            "error-07-invalid-enabled",
+            "error-08-invalid-indent-mixed",
+            "error-09-unclosed-think",
+            "error-10-unclosed-string",
+            "error-11-duplicate-field",
+        ]
+        for name in errorFixtures {
+            let raw = try FixtureLoader.read("\(name).yaml")
+            let expectedJSON = try FixtureLoader.read("\(name).expected-error.json")
+            let expectedData = expectedJSON.data(using: .utf8)!
+            guard let expectedDict = try JSONSerialization.jsonObject(with: expectedData, options: []) as? [String: Any] else {
+                fail("\(name): expected-error.json is not a JSON object")
+            }
+            do {
+                _ = try ShortcutYAMLParser.parse(raw)
+                fail("\(name): expected throw but parse succeeded")
+            } catch let err as ShortcutYAMLError {
+                let result = matches(err, expectedDict)
+                if !result.ok {
+                    fail("\(name): \(result.detail)")
+                }
+            } catch {
+                fail("\(name): unexpected non-ShortcutYAMLError thrown: \(error)")
+            }
+        }
+        print("runErrorFixtures: 11 fixtures verified")
+    }
+
+    /// Exhaustive matcher for `ShortcutYAMLError` vs the JSON shape in
+    /// `.expected-error.json`. Returns `(ok: Bool, detail: String)` so the
+    /// failure message can identify both expected and actual values.
+    ///
+    /// **No `default:` arm** — adding a 10th case to `ShortcutYAMLError` MUST
+    /// force this switch to update at compile time (T-02-05-02).
+    private static func matches(
+        _ err: ShortcutYAMLError,
+        _ expected: [String: Any]
+    ) -> (ok: Bool, detail: String) {
+        let expKind = (expected["kind"] as? String) ?? ""
+        switch err {
+        case .empty:
+            if expKind != "empty" {
+                return (false, "expected kind=\(expKind), got .empty")
+            }
+            return (true, "")
+
+        case .missingShortcut:
+            if expKind != "missingShortcut" {
+                return (false, "expected kind=\(expKind), got .missingShortcut")
+            }
+            return (true, "")
+
+        case .malformedAction(let line):
+            if expKind != "malformedAction" {
+                return (false, "expected kind=\(expKind), got .malformedAction(line:\(line))")
+            }
+            guard let expLine = (expected["line"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".malformedAction: expected.json missing 'line'")
+            }
+            if line != expLine {
+                return (false, ".malformedAction: line mismatch — expected \(expLine), got \(line)")
+            }
+            return (true, "")
+
+        case .unknownActionKey(let line, let key):
+            if expKind != "unknownActionKey" {
+                return (false, "expected kind=\(expKind), got .unknownActionKey(line:\(line), key:\(key))")
+            }
+            guard let expLine = (expected["line"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".unknownActionKey: expected.json missing 'line'")
+            }
+            if line != expLine {
+                return (false, ".unknownActionKey: line mismatch — expected \(expLine), got \(line)")
+            }
+            guard let expKey = expected["key"] as? String else {
+                return (false, ".unknownActionKey: expected.json missing 'key'")
+            }
+            if key != expKey {
+                return (false, ".unknownActionKey: key mismatch — expected \(expKey), got \(key)")
+            }
+            return (true, "")
+
+        case .invalidValue(let field, let line, let offendingToken):
+            if expKind != "invalidValue" {
+                return (false, "expected kind=\(expKind), got .invalidValue(field:\(field), line:\(line), token:\(String(describing: offendingToken)))")
+            }
+            guard let expField = expected["field"] as? String else {
+                return (false, ".invalidValue: expected.json missing 'field'")
+            }
+            if field != expField {
+                return (false, ".invalidValue: field mismatch — expected \(expField), got \(field)")
+            }
+            guard let expLine = (expected["line"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".invalidValue: expected.json missing 'line'")
+            }
+            if line != expLine {
+                return (false, ".invalidValue: line mismatch — expected \(expLine), got \(line)")
+            }
+            // token is nil-tolerant: JSON null maps to NSNull, string to String.
+            if let expTokenAny = expected["token"] {
+                if expTokenAny is NSNull {
+                    if offendingToken != nil {
+                        return (false, ".invalidValue: token mismatch — expected null, got \(offendingToken!)")
+                    }
+                } else if let expToken = expTokenAny as? String {
+                    if offendingToken != expToken {
+                        return (false, ".invalidValue: token mismatch — expected \(expToken.debugDescription), got \(String(describing: offendingToken).debugDescription)")
+                    }
+                } else {
+                    return (false, ".invalidValue: token field has wrong type in expected.json")
+                }
+            }
+            return (true, "")
+
+        case .invalidIndent(let line, let offendingIndent):
+            if expKind != "invalidIndent" {
+                return (false, "expected kind=\(expKind), got .invalidIndent(line:\(line), offendingIndent:\(String(describing: offendingIndent)))")
+            }
+            guard let expLine = (expected["line"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".invalidIndent: expected.json missing 'line'")
+            }
+            if line != expLine {
+                return (false, ".invalidIndent: line mismatch — expected \(expLine), got \(line)")
+            }
+            if let expIndentAny = expected["offendingIndent"] {
+                if expIndentAny is NSNull {
+                    if offendingIndent != nil {
+                        return (false, ".invalidIndent: offendingIndent mismatch — expected null, got \(offendingIndent!.debugDescription)")
+                    }
+                } else if let expIndent = expIndentAny as? String {
+                    if offendingIndent != expIndent {
+                        return (false, ".invalidIndent: offendingIndent mismatch — expected \(expIndent.debugDescription), got \(String(describing: offendingIndent).debugDescription)")
+                    }
+                } else {
+                    return (false, ".invalidIndent: offendingIndent has wrong type in expected.json")
+                }
+            }
+            return (true, "")
+
+        case .unclosedThinkBlock(let tag, let line):
+            if expKind != "unclosedThinkBlock" {
+                return (false, "expected kind=\(expKind), got .unclosedThinkBlock(tag:\(tag), line:\(line))")
+            }
+            guard let expTag = expected["tag"] as? String else {
+                return (false, ".unclosedThinkBlock: expected.json missing 'tag'")
+            }
+            if tag != expTag {
+                return (false, ".unclosedThinkBlock: tag mismatch — expected \(expTag), got \(tag)")
+            }
+            guard let expLine = (expected["line"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".unclosedThinkBlock: expected.json missing 'line'")
+            }
+            if line != expLine {
+                return (false, ".unclosedThinkBlock: line mismatch — expected \(expLine), got \(line)")
+            }
+            return (true, "")
+
+        case .unclosedString(let line):
+            if expKind != "unclosedString" {
+                return (false, "expected kind=\(expKind), got .unclosedString(line:\(line))")
+            }
+            guard let expLine = (expected["line"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".unclosedString: expected.json missing 'line'")
+            }
+            if line != expLine {
+                return (false, ".unclosedString: line mismatch — expected \(expLine), got \(line)")
+            }
+            return (true, "")
+
+        case .duplicateField(let field, let firstLine, let secondLine):
+            if expKind != "duplicateField" {
+                return (false, "expected kind=\(expKind), got .duplicateField(field:\(field), firstLine:\(firstLine), secondLine:\(secondLine))")
+            }
+            guard let expField = expected["field"] as? String else {
+                return (false, ".duplicateField: expected.json missing 'field'")
+            }
+            if field != expField {
+                return (false, ".duplicateField: field mismatch — expected \(expField), got \(field)")
+            }
+            guard let expFirst = (expected["firstLine"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".duplicateField: expected.json missing 'firstLine'")
+            }
+            if firstLine != expFirst {
+                return (false, ".duplicateField: firstLine mismatch — expected \(expFirst), got \(firstLine)")
+            }
+            guard let expSecond = (expected["secondLine"] as? NSNumber).map({ $0.intValue }) else {
+                return (false, ".duplicateField: expected.json missing 'secondLine'")
+            }
+            if secondLine != expSecond {
+                return (false, ".duplicateField: secondLine mismatch — expected \(expSecond), got \(secondLine)")
+            }
+            return (true, "")
+        }
+    }
 
     // P-03 fills in encoder→parser round-trip cases (YAML-10, "modulo id").
     //
