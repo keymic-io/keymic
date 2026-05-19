@@ -54,6 +54,15 @@ struct PersonaTestRunner {
                 "built-in \(seed.id) defaults to contextCount = 1")
         }
 
+        // Stable seed shape: 4 built-ins in canonical order.
+        let seeds = Persona.builtInSeeds()
+        expect(seeds.count == 4, "exactly 4 built-in seeds")
+        let expectedIds = ["builtin-default", "builtin-translate", "builtin-cli", "builtin-context"]
+        expect(seeds.map(\.id) == expectedIds, "seed ids in canonical order: \(seeds.map(\.id))")
+        // Default seed retains conservative transcription-correction prompt.
+        expect(seeds[0].stylePrompt.contains("transcription"),
+            "default seed prompt mentions transcription")
+
         print("PersonaTests passed")
     }
 
