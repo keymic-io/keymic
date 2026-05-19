@@ -1,0 +1,5 @@
+version: 1
+shortcut: "cmd+shift+tab"
+label: "macOS-reserved safe-set trigger (gate 3)"
+actions:
+  - text: "cmd+shift+tab is reverse app switcher — gate 3 must clear it"

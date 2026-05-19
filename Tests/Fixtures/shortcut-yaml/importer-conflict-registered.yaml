@@ -1,0 +1,5 @@
+version: 1
+shortcut: "alt+f7"
+label: "Registry-collision trigger (gate 4)"
+actions:
+  - text: "alt+f7 is pre-registered by a fake feature in the test — gate 4 must clear it"

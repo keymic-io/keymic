@@ -1,0 +1,5 @@
+version: 1
+shortcut: "cmd+q"
+label: "System-reserved trigger (gate 2)"
+actions:
+  - text: "cmd+q is reserved by macOS for Quit — gate 2 must clear it"

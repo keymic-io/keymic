@@ -1,0 +1,5 @@
+version: 1
+shortcut: "fn"
+label: "Pure-modifier trigger (gate 1)"
+actions:
+  - text: "this binding's trigger is a pure modifier — gate 1 must clear it"
