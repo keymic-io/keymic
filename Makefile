@@ -286,6 +286,8 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
+	       Sources/KeyMic/Input/InputState.swift \
+	       Sources/KeyMic/Input/InputResetReason.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
