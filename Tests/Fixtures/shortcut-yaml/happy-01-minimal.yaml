@@ -1,0 +1,10 @@
+version: 1
+shortcut: "alt+g"
+label: "Send hello"
+enabled: true
+appBundleIDs:
+  - "com.google.Chrome"
+actions:
+  - key: "cmd+space"
+  - text: "chrome"
+  - wait: 0.5

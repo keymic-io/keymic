@@ -1,0 +1,13 @@
+{
+  "binding": {
+    "trigger": "alt+g",
+    "actions": [
+      {"type": "keyPress", "keyCode": 49, "modifiers": 1048576},
+      {"type": "typeText", "text": "chrome"},
+      {"type": "wait", "ms": 500}
+    ],
+    "enabled": true,
+    "appBundleIDs": ["com.google.Chrome"]
+  },
+  "label": "Send hello"
+}
