@@ -227,10 +227,15 @@ enum ShortcutYAMLParser {
 
             switch key {
             case "version":
-                if let firstLine = versionLine != 0 ? versionLine : nil {
+                // WR-04: explicit `versionLine != 0` check mirrors the
+                // `enabledSeen` style used by enabled/appBundleIDs/actions
+                // below. The previous `if let firstLine = versionLine != 0
+                // ? versionLine : nil` relied on Int? ternary coercion and
+                // was fragile if `originalLine == 0` ever became valid.
+                if versionLine != 0 {
                     throw ShortcutYAMLError.duplicateField(
                         field: "version",
-                        firstLine: firstLine,
+                        firstLine: versionLine,
                         secondLine: originalLine
                     )
                 }
@@ -238,10 +243,10 @@ enum ShortcutYAMLParser {
                 versionLine = originalLine
 
             case "shortcut":
-                if let firstLine = shortcutLine != 0 ? shortcutLine : nil {
+                if shortcutLine != 0 {
                     throw ShortcutYAMLError.duplicateField(
                         field: "shortcut",
-                        firstLine: firstLine,
+                        firstLine: shortcutLine,
                         secondLine: originalLine
                     )
                 }
@@ -249,10 +254,10 @@ enum ShortcutYAMLParser {
                 shortcutLine = originalLine
 
             case "label":
-                if let firstLine = labelLine != 0 ? labelLine : nil {
+                if labelLine != 0 {
                     throw ShortcutYAMLError.duplicateField(
                         field: "label",
-                        firstLine: firstLine,
+                        firstLine: labelLine,
                         secondLine: originalLine
                     )
                 }
