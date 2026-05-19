@@ -637,9 +637,22 @@ struct ShortcutYAMLParserTestRunner {
         // Round-trip identity for .wait(ms:) — the seconds-vs-ms boundary the
         // encoder has to round-trip cleanly. Per CONTEXT.md:
         //   `parse(encode(.wait(ms: 1500))).actions[i] == .wait(ms: 1500)`.
+        //
+        // WR-01 regression: the previous `%g` formatter rounded to 6 sig figs,
+        // so ms = 1_234_567 encoded to "1234.57" and reparsed to 1234570 —
+        // a silent data loss for any non-round ms value above ~10^6. Include
+        // a 7-sig-digit value here to lock the round-trip invariant against
+        // future formatter regressions. (Bounded below the CR-01 cap of
+        // 86 400 s = 86_400_000 ms, which `buildAction` would reject.)
         let waitBinding = HotkeyBinding(
             trigger: "alt+g",
-            actions: [.wait(ms: 1500), .wait(ms: 1000), .wait(ms: 250)],
+            actions: [
+                .wait(ms: 1500),
+                .wait(ms: 1000),
+                .wait(ms: 250),
+                .wait(ms: 1_234_567),   // WR-01: 7 sig digits
+                .wait(ms: 86_399_999),  // CR-01 cap boundary: max ms below 86 400 s
+            ],
             enabled: true,
             appBundleIDs: []
         )

@@ -1145,15 +1145,26 @@ enum ShortcutYAMLEncoder {
                 // wait stores ms: Int. Encoder emits seconds (HotkeyAction
                 // contract → YAML). Minimal-precision formatting:
                 //   - exact second multiple → integer-style (`wait: 1`)
-                //   - otherwise decimal with no trailing-zero noise (`wait: 1.5`)
+                //   - otherwise decimal with up to 3 fractional digits and no
+                //     trailing-zero noise (`wait: 1.5`, not `wait: 1.500`).
                 // Round-trip: parse("wait: \(formatted)") must yield .wait(ms: ms).
+                //
+                // WR-01: the previous implementation used `%g` which defaults
+                // to 6 significant digits and ROUNDS — so ms = 1_234_567
+                // encoded to "1234.57" and re-parsed to 1234570 ≠ 1234567.
+                // Three fractional digits is exactly the precision floor of
+                // the integer-ms representation; combined with the 86 400 s
+                // cap enforced by `buildAction` (CR-01), the maximum encoded
+                // string is "86400.999" — well within the round-trip safe
+                // zone for `Double.description`.
                 if ms % 1000 == 0 {
                     out.append("  - wait: \(ms / 1000)\n")
                 } else {
                     let seconds = Double(ms) / 1000.0
-                    // %g drops trailing zeros and uses up to 6 significant digits;
-                    // for typical ms values (multiples of 1, 10, 100) this is exact.
-                    out.append("  - wait: \(String(format: "%g", seconds))\n")
+                    var s = String(format: "%.3f", seconds)
+                    while s.hasSuffix("0") { s.removeLast() }
+                    if s.hasSuffix(".") { s.removeLast() }
+                    out.append("  - wait: \(s)\n")
                 }
 
             case .shell(let s):
