@@ -49,16 +49,17 @@ extension Notification.Name {
 
 /// Singleton + injectable importer for voice-driven shortcut YAML.
 ///
-/// Pipeline (RESEARCH §Architecture diagram; this plan implements steps 1, 6,
-/// 7, 8, 9 — steps 2-5 are TODO stubs filled by 03-04 / 03-05):
-///   1. PARSE via `ShortcutYAMLParser.parse(_:)` → catch `ShortcutYAMLError`,
-///      audit + return Outcome.
-///   2. TODO(03-05 IMP-09): NSWorkspace bundle-id validation; soft-drop unknowns.
-///   3. TODO(03-05 IMP-08): `shortcutVoiceShellEnabled` gate; strip `.shell`
-///      actions and force `enabled = false` on strip.
-///   4. TODO(03-05 IMP-05): self-trigger / owned-trigger gate via
+/// Pipeline (RESEARCH §Architecture diagram):
+///   1. PARSE via `ShortcutYAMLParser.parse(_:)` → catch `ShortcutYAMLError`
+///      (IMP-07): audit + return Outcome with `parseError: payload.kind`.
+///   2. IMP-09: NSWorkspace bundle-id validation; soft-drop unknowns into
+///      `droppedBundleIDs`.
+///   3. IMP-08: `shortcutVoiceShellEnabled` gate; strip `.shell` actions and
+///      force `enabled = false` on strip; per-call UserDefaults read.
+///   4. IMP-05: self-trigger / owned-trigger gate via
 ///      `HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)` +
-///      `HotkeyRegistry.shared.all().map { $0.config }`.
+///      `registry.all().map { $0.config }`; REJECT on match (no insert,
+///      audit-only path).
 ///   5. SAFETY GATES (03-04 IMP-03/IMP-04/IMP-06): gate stack
 ///      `cfg.isPureModifier → isSystemReserved → MACOS_RESERVED_SHORTCUTS →
 ///      registry.conflicts(...)` → clear trigger + set `conflictCleared`.
@@ -185,15 +186,30 @@ final class ShortcutYAMLImporter {
             // Defensive: a non-ShortcutYAMLError shouldn't surface from
             // ShortcutYAMLParser.parse, but if it does, treat as a generic
             // parse failure so the importer never throws to the caller.
+            // IMP-07: write audit line with kind="unknown" + return Outcome.
             logger.error("Unexpected non-YAML parse error: \(error.localizedDescription, privacy: .public)")
+            let payload = ParseErrorPayload(kind: "unknown")
             let outcome = Outcome(
                 bindingId: nil,
-                parseError: "empty",
+                parseError: payload.kind,
                 conflictCleared: false,
                 conflictSource: nil,
                 shellStripped: false,
                 droppedBundleIDs: []
             )
+            let record = AuditRecord(
+                timestamp: Self.currentTimestamp(),
+                transcript: transcript,
+                yaml: truncatedYAML(yaml),
+                bindingId: nil,
+                conflictCleared: false,
+                conflictSource: nil,
+                parseError: payload,
+                shellStripped: false,
+                droppedBundleIDs: [],
+                action: "import"
+            )
+            auditLog.write(record)
             NotificationCenter.default.post(
                 name: .shortcutImportDidComplete,
                 object: self,
