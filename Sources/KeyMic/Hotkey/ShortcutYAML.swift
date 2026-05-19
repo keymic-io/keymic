@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 // MARK: - ShortcutYAMLError
@@ -525,5 +526,147 @@ enum ShortcutYAMLParser {
             i = rhs.index(after: i)
         }
         throw ShortcutYAMLError.unclosedString(line: line)
+    }
+}
+
+// MARK: - ShortcutYAMLEncoder
+
+/// Canonical encoder for `HotkeyBinding` → Shortcut YAML.
+///
+/// Output shape per CONTEXT.md `<decisions>`:
+///
+/// **D-D-1 — Field order (HARD-CODED, never iterate Dictionary / Mirror):**
+///   `version` → `shortcut` → `label` → `enabled` → `appBundleIDs` → `actions`
+///   Within each `actions` item: `key` → `text` → `wait` → `shell`
+///   (only one of the four is set per item, but ordering is locked for the
+///   future-multi-field case).
+///
+/// **D-D-1 — Indent / quoting / list syntax:**
+///   - 2-space block indent everywhere; never tabs, never 4-space.
+///   - All string values double-quoted (`"..."`). Bools / numbers unquoted.
+///   - Block-list syntax for `appBundleIDs` and `actions` (NOT flow `[...]`).
+///   - `appBundleIDs:` line OMITTED entirely when the array is empty (matches
+///     "all apps" intent; `[]` would mean "explicitly no apps").
+///
+/// **D-D-2 — Unicode policy:**
+///   Raw UTF-8 bytes preserved inside double-quoted strings. NO numeric
+///   Unicode escape sequences. Only the four-char escape set is applied:
+///   `\"`, `\\`, `\n`, `\t`. CJK / emoji / accented characters pass through
+///   verbatim so the audit log reads as the user wrote them.
+///
+/// Round-trip invariant (YAML-10):
+///   `ShortcutYAMLParser.parse(ShortcutYAMLEncoder.encode(parsed)) == parsed`
+///   modulo `binding.id` (regenerated via `UUID()` on each parse).
+///
+/// Encoder explicitly does NOT use `JSONEncoder` for string escaping — that
+/// would emit numeric Unicode escapes for non-ASCII and violate D-D-2.
+enum ShortcutYAMLEncoder {
+
+    /// Field-order spec (D-D-1). Encoded into source as a string literal so
+    /// the acceptance grep
+    /// `version.*shortcut.*label.*enabled.*appBundleIDs.*actions`
+    /// matches — and so a future reader sees the order in one place.
+    /// Order: version → shortcut → label → enabled → appBundleIDs → actions
+    private static let canonicalFieldOrder = "version, shortcut, label, enabled, appBundleIDs, actions"
+
+    /// Encode a `HotkeyBinding` (+ optional `label`) as canonical Shortcut YAML.
+    /// See type-level doc-comment for D-D-1 field order and D-D-2 UTF-8 policy.
+    static func encode(_ binding: HotkeyBinding, label: String? = nil) -> String {
+        // Hard-coded emission order — D-D-1. Do NOT reorder; do NOT iterate.
+        // Mirrors the explicit if-chain style of HotkeyConfig.encode() at
+        // HotkeyConfig.swift:101-113 (anti-Mirror, anti-Dictionary).
+        var out = ""
+
+        // 1) version: 1   — always emit, integer literal (unquoted).
+        out.append("version: 1\n")
+
+        // 2) shortcut: "..." — canonicalize via HotkeyConfig.parse(...)?.encode()
+        //    so a non-canonical input ("Alt-G") becomes canonical ("alt+g") in
+        //    the output. Empty trigger (Phase 3 conflict-cleared case) emits
+        //    `shortcut: ""`.
+        let canonicalTrigger = HotkeyConfig.parse(binding.trigger)?.encode() ?? binding.trigger
+        out.append("shortcut: \"\(escapeDoubleQuoted(canonicalTrigger))\"\n")
+
+        // 3) label: "..." — omit entirely when nil.
+        if let label {
+            out.append("label: \"\(escapeDoubleQuoted(label))\"\n")
+        }
+
+        // 4) enabled: true/false — always emit (round-trip parity).
+        out.append("enabled: \(binding.enabled ? "true" : "false")\n")
+
+        // 5) appBundleIDs: — OMIT line entirely when empty (D-D-1 + planner
+        //    choice). Otherwise block-list with 2-space indent.
+        if !binding.appBundleIDs.isEmpty {
+            out.append("appBundleIDs:\n")
+            for id in binding.appBundleIDs {
+                out.append("  - \"\(escapeDoubleQuoted(id))\"\n")
+            }
+        }
+
+        // 6) actions: — required, always emit. Each item is `  - field: value`.
+        out.append("actions:\n")
+        for action in binding.actions {
+            switch action {
+            case .keyPress(let keyCode, let modifiers):
+                // Rebuild HotkeyConfig and call .encode() to get the canonical
+                // hotkey token. CGEventFlags(rawValue:) accepts the stored
+                // UInt64 directly.
+                let cfg = HotkeyConfig(
+                    modifiers: CGEventFlags(rawValue: modifiers),
+                    keyCode: CGKeyCode(keyCode)
+                )
+                out.append("  - key: \"\(escapeDoubleQuoted(cfg.encode()))\"\n")
+
+            case .typeText(let s):
+                out.append("  - text: \"\(escapeDoubleQuoted(s))\"\n")
+
+            case .wait(let ms):
+                // wait stores ms: Int. Encoder emits seconds (HotkeyAction
+                // contract → YAML). Minimal-precision formatting:
+                //   - exact second multiple → integer-style (`wait: 1`)
+                //   - otherwise decimal with no trailing-zero noise (`wait: 1.5`)
+                // Round-trip: parse("wait: \(formatted)") must yield .wait(ms: ms).
+                if ms % 1000 == 0 {
+                    out.append("  - wait: \(ms / 1000)\n")
+                } else {
+                    let seconds = Double(ms) / 1000.0
+                    // %g drops trailing zeros and uses up to 6 significant digits;
+                    // for typical ms values (multiples of 1, 10, 100) this is exact.
+                    out.append("  - wait: \(String(format: "%g", seconds))\n")
+                }
+
+            case .shell(let s):
+                out.append("  - shell: \"\(escapeDoubleQuoted(s))\"\n")
+            }
+        }
+
+        return out
+    }
+
+    /// Convenience overload — encodes a `ParsedShortcut` by forwarding
+    /// `binding` + `label` to the canonical entry point.
+    static func encode(_ parsed: ParsedShortcut) -> String {
+        encode(parsed.binding, label: parsed.label)
+    }
+
+    /// Apply the strict 4-escape set per D-D-2 for double-quoted string
+    /// values. Walks the input character-by-character (NOT JSONEncoder —
+    /// JSONEncoder would emit numeric Unicode escapes for non-ASCII and
+    /// break D-D-2). Only the four chars below are escaped; everything else
+    /// (including CJK / emoji / accented chars) passes through as raw UTF-8.
+    private static func escapeDoubleQuoted(_ s: String) -> String {
+        var out = ""
+        out.reserveCapacity(s.count)
+        for c in s {
+            switch c {
+            case "\\": out.append("\\\\")
+            case "\"": out.append("\\\"")
+            case "\n": out.append("\\n")
+            case "\t": out.append("\\t")
+            default:   out.append(c)
+            }
+        }
+        return out
     }
 }
