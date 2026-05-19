@@ -1,5 +1,7 @@
 import Foundation
 
+extension ClipboardHistorySource: ClipboardHistorySourceProtocol {}
+
 final class ClipboardHistorySource {
     private let store: ClipboardStore
 

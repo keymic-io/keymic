@@ -1,12 +1,6 @@
 import ApplicationServices
 import Foundation
 
-// Temporary minimal protocol — moved into ContextResolver.swift in Task 9.
-protocol ContextSource {
-    var providedKind: TextSource { get }
-    func read() async throws -> TextFragment?
-}
-
 enum SelectionWriteError: Error, CustomStringConvertible {
     case notSettable
     case axCallFailed(AXError)
