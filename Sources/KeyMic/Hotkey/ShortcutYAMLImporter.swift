@@ -71,6 +71,9 @@ extension Notification.Name {
 ///
 /// `MACOS_RESERVED_SHORTCUTS` — populated in plan 03-04 (D-D-3, RESEARCH Example 4)
 /// `removeLastImport(id:)` — implemented in plan 03-06 (IMP-11)
+/// `terminate()` — AUD-06 flush hook implemented in plan 03-06; the
+/// audit-log writer uses open-fresh-FileHandle-per-write so there is no
+/// long-lived handle to close — `terminate()` only drains the serial queue.
 final class ShortcutYAMLImporter {
     static let shared = ShortcutYAMLImporter()
 
@@ -449,6 +452,85 @@ final class ShortcutYAMLImporter {
 
         // Step 10: RETURN.
         return outcome
+    }
+
+    // MARK: - Undo (IMP-11 / D-F)
+
+    /// Undo the most recent voice-imported binding.
+    ///
+    /// Defensive id-match per D-F-1/D-F-2: the call is a silent no-op if
+    /// `id != lastImportedBindingId` (e.g. when a second import has already
+    /// run, when the UI passes the wrong UUID, or when called twice in a
+    /// row after the first call cleared `lastImportedBindingId`).
+    ///
+    /// On match:
+    ///   1. Remove the binding from the store via direct array mutation
+    ///      (SettingsRoot.swift:1119-1122 precedent).
+    ///   2. Clear `lastImportedBindingId` so a subsequent call with the
+    ///      same id is a no-op (D-F-3: no cross-restart persistence; the
+    ///      undo affordance has a ~3s UI TTL).
+    ///   3. Write a follow-up audit line with `action: "undo"`, the
+    ///      original `bindingId`, `timestamp: <now>`, and all other AUD-03
+    ///      fields at their default values (empty transcript/yaml, all
+    ///      bools false, all optionals nil, empty arrays) per D-F-4.
+    ///   4. Post `.shortcutImportDidComplete` with an Outcome carrying the
+    ///      original `bindingId` so the UI can disable the Undo button.
+    ///
+    /// No cross-restart persistence per D-F-3 — `lastImportedBindingId` is
+    /// in-memory only.
+    func removeLastImport(id: UUID) {
+        guard let stored = lastImportedBindingId, stored == id else { return }
+
+        // 1. Direct array mutation per SettingsRoot.swift:1119-1122 precedent.
+        store.bindings.removeAll { $0.id == id }
+
+        // 2. Reset undo state so a subsequent call is a no-op.
+        lastImportedBindingId = nil
+
+        // 3. Follow-up audit line.
+        let record = AuditRecord(
+            timestamp: Self.currentTimestamp(),
+            transcript: "",
+            yaml: "",
+            bindingId: id.uuidString,
+            conflictCleared: false,
+            conflictSource: nil,
+            parseError: nil,
+            shellStripped: false,
+            droppedBundleIDs: [],
+            action: "undo"
+        )
+        auditLog.write(record)
+
+        // 4. Notification post — Outcome carries the original bindingId so
+        //    UI-07 / UI-08 can correlate with the original import event.
+        let outcome = Outcome(
+            bindingId: id,
+            parseError: nil,
+            conflictCleared: false,
+            conflictSource: nil,
+            shellStripped: false,
+            droppedBundleIDs: []
+        )
+        NotificationCenter.default.post(
+            name: .shortcutImportDidComplete,
+            object: self,
+            userInfo: ["outcome": outcome]
+        )
+    }
+
+    // MARK: - Lifecycle (AUD-06)
+
+    /// AUD-06 flush hook — invoked from `AppDelegate.applicationWillTerminate`
+    /// in Phase 4. Drains the audit-log serial queue so any in-flight
+    /// `write(_:)` completes before the process exits.
+    ///
+    /// The underlying writer uses open-fresh-FileHandle-per-write semantics
+    /// (RESEARCH §Pitfall §3), so there is no long-lived handle to close —
+    /// this is a flush-only operation. Safe to call multiple times
+    /// (idempotent).
+    func terminate() {
+        auditLog.close()
     }
 
     // MARK: - Private helpers
