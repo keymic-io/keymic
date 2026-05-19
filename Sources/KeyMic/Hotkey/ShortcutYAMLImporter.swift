@@ -273,10 +273,84 @@ final class ShortcutYAMLImporter {
             }
         }
 
-        // Step 4: TODO(P-05 IMP-05): self-trigger / owned-trigger gate via
-        // HotkeySettingsStore.shared.hotkey(for: .voiceTrigger) +
-        // registry.all().map { $0.config }; throw
-        // ShortcutImporterError.actionTriggersVoiceKey on match.
+        // Step 4: IMP-05 — self-trigger / owned-trigger gate.
+        //
+        // For each `.keyPress(keyCode, modifiers)` action in the binding,
+        // check `(keyCode, modifiers)` equality against:
+        //   (a) the current voice-trigger hotkey
+        //       (`HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)`)
+        //   (b) every entry in `registry.all().map { $0.config }`
+        //
+        // Per RESEARCH §2 + 03-CONTEXT.md `<specifics>` "Self-trigger gate":
+        // the registry exposes `all()` (NOT `allRegisteredTriggers()` — that
+        // method does not exist). Equality is on `(keyCode, modifiers)` as a
+        // tuple via raw value comparison.
+        //
+        // On match: REJECT the import — no store mutation; write audit line
+        // with `parseError: { kind: "actionTriggersVoiceKey", ... }`; return
+        // Outcome(bindingId: nil, ...). The trigger-source string is
+        // truncated to 64 chars at the throw site per
+        // ShortcutImporterError's documented contract (T-03-05-06).
+        let voiceTrigger = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)
+        let registeredConfigs = registry.all().map { $0.config }
+        var selfTriggerSource: String? = nil
+        for action in binding.actions {
+            if case .keyPress(let kc, let mods) = action {
+                let actionKeyCode = CGKeyCode(kc)
+                if let vt = voiceTrigger,
+                   vt.keyCode == actionKeyCode,
+                   vt.modifiers.rawValue == mods {
+                    selfTriggerSource = "voice"
+                    break
+                }
+                var matchedRegistry = false
+                for cfg in registeredConfigs {
+                    if cfg.keyCode == actionKeyCode && cfg.modifiers.rawValue == mods {
+                        matchedRegistry = true
+                        break
+                    }
+                }
+                if matchedRegistry {
+                    selfTriggerSource = "registry"
+                    break
+                }
+            }
+        }
+
+        if let source = selfTriggerSource {
+            // Truncate to 64 chars per the contract documented on
+            // ShortcutImporterError.actionTriggersVoiceKey.
+            let truncated = String(source.prefix(64))
+            let importerErr = ShortcutImporterError.actionTriggersVoiceKey(triggerSource: truncated)
+            let payload = ShortcutAuditLog.canonicalKind(importerErr)
+            let outcome = Outcome(
+                bindingId: nil,
+                parseError: payload.kind,
+                conflictCleared: false,
+                conflictSource: nil,
+                shellStripped: shellStripped,
+                droppedBundleIDs: droppedBundleIDs
+            )
+            let record = AuditRecord(
+                timestamp: Self.currentTimestamp(),
+                transcript: transcript,
+                yaml: truncatedYAML(yaml),
+                bindingId: nil,
+                conflictCleared: false,
+                conflictSource: nil,
+                parseError: payload,
+                shellStripped: shellStripped,
+                droppedBundleIDs: droppedBundleIDs,
+                action: "import"
+            )
+            auditLog.write(record)
+            NotificationCenter.default.post(
+                name: .shortcutImportDidComplete,
+                object: self,
+                userInfo: ["outcome": outcome]
+            )
+            return outcome
+        }
 
         // Step 5: SAFETY GATES (IMP-03 / IMP-04 / IMP-06) — 4-gate stack.
         //
