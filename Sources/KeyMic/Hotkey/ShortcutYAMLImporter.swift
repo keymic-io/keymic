@@ -218,9 +218,31 @@ final class ShortcutYAMLImporter {
             return outcome
         }
 
-        // Step 2: TODO(P-05 IMP-09): NSWorkspace bundle-id validation;
-        // collect into droppedBundleIDs.
+        // Step 2: IMP-09 — soft-drop unknown bundle IDs via LaunchServices.
+        //
+        // `NSWorkspace.shared.urlForApplication(withBundleIdentifier:)` returns
+        // nil if the app is not installed. Per RESEARCH §5 + Pitfall §5
+        // (SettingsRoot.swift:1634, ApplicationImageCache.swift:25), the
+        // synchronous call on the current thread is acceptable — the importer
+        // runs on the main actor in Phase 4 but is not in a perf-critical
+        // path; typical YAML carries ≤5 bundle ids.
+        //
+        // This runs BEFORE the gate stack because bundle-id validation is
+        // content-shaping (not policy-deciding); a binding that survives the
+        // gate stack should already carry only validated ids.
+        var binding = parsed.binding
         var droppedBundleIDs: [String] = []
+        if !binding.appBundleIDs.isEmpty {
+            var kept: [String] = []
+            for bid in binding.appBundleIDs {
+                if NSWorkspace.shared.urlForApplication(withBundleIdentifier: bid) != nil {
+                    kept.append(bid)
+                } else {
+                    droppedBundleIDs.append(bid)
+                }
+            }
+            binding.appBundleIDs = kept
+        }
 
         // Step 3: TODO(P-05 IMP-08): shortcutVoiceShellEnabled gate;
         // strip .shell actions and force enabled = false on strip.
@@ -244,7 +266,8 @@ final class ShortcutYAMLImporter {
         // `enabled = false` — user fixes it in Settings later. The
         // conflictCleared flag + conflictSource string propagate into both
         // the Outcome (D-E-1) and the AuditRecord (AUD-03).
-        var binding = parsed.binding
+        // `binding` was declared at Step 2 (above the bundle-id soft-drop)
+        // so we could shape its `appBundleIDs` before gate evaluation.
         binding.createdBy = Self.createdByVoice
         binding.label = parsed.label
 
