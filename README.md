@@ -247,4 +247,4 @@ Deeper implementation notes: [`CLAUDE.md`](CLAUDE.md). macOS HID, event-tap, and
 
 Keep patches small. KeyMic touches macOS privacy, keyboard input, clipboard state, and signing — small reviewable changes are easier to land.
 
-Licensed under MIT. See [`LICENSE`](LICENSE).
+Licensed under AGPL-3.0. See [`LICENSE`](LICENSE).
