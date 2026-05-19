@@ -56,34 +56,96 @@ struct ParsedShortcut: Equatable {
     let label: String?
 }
 
+// MARK: - LineOffsetMap
+
+/// Maps post-preprocessing line indices back to original raw-input line numbers.
+///
+/// Locked by CONTEXT.md D-B-1: every `ShortcutYAMLError.line:` value must point
+/// at the user's ORIGINAL line (1-based) — not the cleaned line index produced
+/// after fence-strip, reasoning-tag-strip, and leading-prose-strip have removed
+/// preceding lines. `LineOffsetMap` is built by `preprocess(_:)` in lockstep
+/// with the cleaned output: every kept processed line records its original
+/// 1-based line number via `append(originalLine:)`; throw sites convert their
+/// processed-line indices to original-line indices via
+/// `originalLine(forProcessed:)`.
+///
+/// Storage: a flat `[Int]` of original-line numbers indexed by processed line
+/// (0-based). The lookup API is 1-based per the convention of every
+/// `ShortcutYAMLError.line:` value in the project. Bounds-check is permissive
+/// — out-of-range queries fall back to the last known mapping rather than
+/// crashing — because malformed inputs reach error throw sites with line
+/// indices that may run past the end of the cleaned content.
+private struct LineOffsetMap {
+    private var map: [Int] = []
+
+    /// Record an additional kept processed line whose origin in the raw
+    /// input was `originalLine` (1-based).
+    mutating func append(originalLine: Int) {
+        map.append(originalLine)
+    }
+
+    /// Resolve a 1-based processed line index back to its 1-based original
+    /// line number. If `processed` is out of range, returns the last known
+    /// original-line value (or `processed` itself when the map is empty —
+    /// the only path that reaches here is preprocessing of an empty
+    /// document, which the caller has already gated to `.empty`).
+    func originalLine(forProcessed processed: Int) -> Int {
+        guard !map.isEmpty else { return processed }
+        let idx = processed - 1 // 1-based → 0-based
+        if idx < 0 { return map[0] }
+        if idx >= map.count { return map[map.count - 1] }
+        return map[idx]
+    }
+}
+
 // MARK: - ShortcutYAMLParser
 
 /// Hand-rolled line-based parser for the closed Shortcut YAML schema.
 ///
 /// Locked decisions referenced (see `.planning/phases/02-yaml-parser-encoder/02-CONTEXT.md`):
-///   - **D-A** — reasoning-tag whitelist + `.unclosedThinkBlock` (preprocessing lands in P-04)
-///   - **D-B** — rich error enum with `line` / `field` / `offendingToken`
+///   - **D-A** — reasoning-tag whitelist + `.unclosedThinkBlock` (preprocessing landed in P-04)
+///   - **D-B** — rich error enum with `line` / `field` / `offendingToken` in ORIGINAL coords
 ///   - **D-C** — hand-synthesized fixtures only, on-disk under `Tests/Fixtures/shortcut-yaml/`
 ///   - **D-D** — quoted output, fixed field order, escape set `\"`, `\\`, `\n`, `\t`
 ///
-/// P-02 scope: clean `version: 1` document → `ParsedShortcut`. No preprocessing
-/// pipeline (P-04), no encoder (P-03), no edge-case or error-case fixtures
-/// beyond a single happy-path fixture.
+/// P-04 scope: preprocessing pipeline (BOM → CRLF → fence → reasoning-tags →
+/// leading-prose → smart-quotes → tabs) with `LineOffsetMap`-backed original
+/// line numbers, plus indent detection (2- OR 4-space).
 enum ShortcutYAMLParser {
+
+    /// Reasoning-tag whitelist (D-A-1). Canonical lowercase form. Opening
+    /// AND closing tag are matched case-insensitively; the canonical name
+    /// (lowercase) is what surfaces in `.unclosedThinkBlock(tag:)`.
+    private static let reasoningTags: Set<String> = ["think", "thinking", "reasoning"]
+
     static func parse(_ raw: String) throws -> ParsedShortcut {
-        // Reject empty / whitespace-only input.
+        // Reject empty / whitespace-only input BEFORE preprocessing.
         guard !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw ShortcutYAMLError.empty
         }
 
-        // P-02 has no preprocessing — split as-is. P-04 will run a
-        // BOM→CRLF→fence→reasoning-tag→prose→smart-quote→tabs pipeline first
-        // and maintain a `LineOffsetMap` so error `line:` values still refer to
-        // the user's original input.
-        let lines = raw.components(separatedBy: "\n")
+        // Run the preprocessing pipeline FIRST (D-B-1). The map carries
+        // processed-line → original-line so every error throw site downstream
+        // can report user-actionable raw-input line numbers.
+        let (cleaned, map) = try preprocess(raw)
+
+        // After preprocessing, the document may be empty (e.g. it was nothing
+        // but a `<think>...</think>` block, or only fences + whitespace).
+        // Per CONTEXT.md / D-A-1 + YAML-11, this is `.empty`, not
+        // `.missingShortcut`.
+        guard !cleaned.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ShortcutYAMLError.empty
+        }
+
+        let lines = cleaned.components(separatedBy: "\n")
+
+        // Detect document indent (2 OR 4 space) on the first indented action
+        // item under `actions:`. The detected unit is enforced when walking
+        // block-list children below.
+        let indentUnit = try detectIndentUnit(lines: lines, map: map)
 
         // Top-level field collectors with first-seen line numbers for the
-        // duplicate-field check.
+        // duplicate-field check. All `*Line` values are ORIGINAL coords.
         var versionToken: String? = nil
         var versionLine: Int = 0
         var shortcutToken: String? = nil
@@ -108,10 +170,11 @@ enum ShortcutYAMLParser {
             let lineIdx = i // captured before any sub-walker advances `i`
             let rawLine = lines[i]
             i += 1
-            let originalLine = lineIdx + 1
+            // 1-based processed line → original line via the offset map.
+            let originalLine = map.originalLine(forProcessed: lineIdx + 1)
 
-            // Skip blanks. P-02 does not strip yaml inline comments (`# ...`)
-            // — fixture authors keep them out. P-04 may add tolerance.
+            // Skip blanks. Preprocessing does not strip yaml inline comments
+            // (`# ...`) — fixture authors keep them out.
             let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
 
@@ -224,7 +287,9 @@ enum ShortcutYAMLParser {
                 appBundleIDs = try consumeStringBlockList(
                     lines: lines,
                     startIndex: &i,
-                    field: "appBundleIDs"
+                    field: "appBundleIDs",
+                    map: map,
+                    indentUnit: indentUnit
                 )
 
             case "actions":
@@ -246,7 +311,9 @@ enum ShortcutYAMLParser {
                 }
                 actions = try consumeActionBlockList(
                     lines: lines,
-                    startIndex: &i
+                    startIndex: &i,
+                    map: map,
+                    indentUnit: indentUnit
                 )
 
             default:
@@ -299,12 +366,18 @@ enum ShortcutYAMLParser {
     // MARK: - Block-list consumers
 
     /// Consume a `- "string"` block list. Advances `startIndex` past every line
-    /// that begins with the 2-space block-list dash. Stops at the first line
-    /// that does not.
+    /// that begins with the detected `indentUnit` block-list dash. Stops at
+    /// the first line that does not.
+    ///
+    /// All error throw sites use `map.originalLine(forProcessed:)` so the
+    /// reported line number refers to the user's raw input — not the
+    /// post-preprocessing line index.
     private static func consumeStringBlockList(
         lines: [String],
         startIndex: inout Int,
-        field: String
+        field: String,
+        map: LineOffsetMap,
+        indentUnit: Int
     ) throws -> [String] {
         var out: [String] = []
         while startIndex < lines.count {
@@ -316,20 +389,31 @@ enum ShortcutYAMLParser {
                 continue
             }
             // Block-list item recognition: must start with `- ` (or `-` at EOL).
-            // We accept any non-zero leading space (P-02 happy-path fixture
-            // uses 2-space) — strict indent detection is P-04's job.
-            guard rawLine.first == " " || rawLine.first == "\t" else { break }
+            // Indent must equal exactly `indentUnit` spaces (mixed indent —
+            // 2-then-4 or 4-then-2 within one document — is rejected here).
+            guard rawLine.first == " " else { break }
+            let leadingSpaces = rawLine.prefix(while: { $0 == " " }).count
+            if leadingSpaces != indentUnit {
+                throw ShortcutYAMLError.invalidIndent(
+                    line: map.originalLine(forProcessed: lineIdx + 1),
+                    offendingIndent: String(repeating: " ", count: leadingSpaces)
+                )
+            }
             guard trimmed.hasPrefix("- ") || trimmed == "-" else {
                 throw ShortcutYAMLError.invalidValue(
                     field: field,
-                    line: lineIdx + 1,
+                    line: map.originalLine(forProcessed: lineIdx + 1),
                     offendingToken: String(trimmed.prefix(64))
                 )
             }
             let valuePart = trimmed == "-"
                 ? ""
                 : String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-            let unquoted = try unquote(valuePart, field: field, line: lineIdx + 1)
+            let unquoted = try unquote(
+                valuePart,
+                field: field,
+                line: map.originalLine(forProcessed: lineIdx + 1)
+            )
             out.append(unquoted)
             startIndex += 1
         }
@@ -341,7 +425,9 @@ enum ShortcutYAMLParser {
     /// supported in v1 (each action has exactly one of `key`/`text`/`wait`/`shell`).
     private static func consumeActionBlockList(
         lines: [String],
-        startIndex: inout Int
+        startIndex: inout Int,
+        map: LineOffsetMap,
+        indentUnit: Int
     ) throws -> [HotkeyAction] {
         var out: [HotkeyAction] = []
         while startIndex < lines.count {
@@ -352,16 +438,27 @@ enum ShortcutYAMLParser {
                 startIndex += 1
                 continue
             }
-            guard rawLine.first == " " || rawLine.first == "\t" else { break }
+            guard rawLine.first == " " else { break }
+            let leadingSpaces = rawLine.prefix(while: { $0 == " " }).count
+            if leadingSpaces != indentUnit {
+                throw ShortcutYAMLError.invalidIndent(
+                    line: map.originalLine(forProcessed: lineIdx + 1),
+                    offendingIndent: String(repeating: " ", count: leadingSpaces)
+                )
+            }
             guard trimmed.hasPrefix("- ") else {
-                throw ShortcutYAMLError.malformedAction(line: lineIdx + 1)
+                throw ShortcutYAMLError.malformedAction(
+                    line: map.originalLine(forProcessed: lineIdx + 1)
+                )
             }
             // Inline form: `- key: "cmd+space"`. Per CONTEXT.md D-D-1 only one
             // of key/text/wait/shell is set per item; the inline form
             // expresses that directly.
             let after = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
             guard let colon = after.firstIndex(of: ":") else {
-                throw ShortcutYAMLError.malformedAction(line: lineIdx + 1)
+                throw ShortcutYAMLError.malformedAction(
+                    line: map.originalLine(forProcessed: lineIdx + 1)
+                )
             }
             let actionKey = String(after[..<colon]).trimmingCharacters(in: .whitespaces)
             let rhs = String(after[after.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
@@ -369,12 +466,376 @@ enum ShortcutYAMLParser {
             let action = try buildAction(
                 key: actionKey,
                 rhs: rhs,
-                line: lineIdx + 1
+                line: map.originalLine(forProcessed: lineIdx + 1)
             )
             out.append(action)
             startIndex += 1
         }
         return out
+    }
+
+    // MARK: - Indent detection
+
+    /// Detect the document's block indent (2 OR 4 space). Scans for the first
+    /// `actions:` line and inspects the first non-empty line after it. The
+    /// algorithm prefers the `actions:` block because `appBundleIDs:` is
+    /// optional. Falls back to inspecting the first indented line in the
+    /// document if no `actions:` line is present (defensive — every valid
+    /// document has `actions:` but a malformed input may reach here).
+    ///
+    /// All thrown `.invalidIndent` errors resolve their line number through
+    /// `map.originalLine(forProcessed:)` per D-B-1.
+    private static func detectIndentUnit(
+        lines: [String],
+        map: LineOffsetMap
+    ) throws -> Int {
+        // Find the first `actions:` line at column 0 (the parent block).
+        var actionsIdx: Int? = nil
+        for (idx, raw) in lines.enumerated() {
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            // Match `actions:` exactly (with optional trailing whitespace
+            // already trimmed) — never `actions: foo`, that's an inline
+            // value path which the main walker handles as `.invalidValue`.
+            if trimmed == "actions:" {
+                // Must be column-0 (no leading whitespace) to be the parent
+                // block, not a nested map.
+                if raw.first != " " && raw.first != "\t" {
+                    actionsIdx = idx
+                    break
+                }
+            }
+        }
+        // No `actions:` parent — default to 2 (the canonical encoder output
+        // shape). The downstream walker will surface the real error
+        // (`.missingShortcut`, `.malformedAction`, etc.).
+        guard let actionsLineIdx = actionsIdx else { return 2 }
+
+        // Inspect the first non-empty line AFTER `actions:` for indent.
+        var probe = actionsLineIdx + 1
+        while probe < lines.count {
+            let raw = lines[probe]
+            let trimmed = raw.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                probe += 1
+                continue
+            }
+            let leading = raw.prefix(while: { $0 == " " })
+            // Tabs have already been normalized to spaces by preprocessing
+            // stage 7; any remaining tab here is a defect.
+            if raw.first == "\t" {
+                throw ShortcutYAMLError.invalidIndent(
+                    line: map.originalLine(forProcessed: probe + 1),
+                    offendingIndent: String(raw.prefix(while: { $0 == " " || $0 == "\t" }))
+                )
+            }
+            let count = leading.count
+            if count == 2 { return 2 }
+            if count == 4 { return 4 }
+            // Anything else (1, 3, 5+, or zero) is `.invalidIndent`.
+            throw ShortcutYAMLError.invalidIndent(
+                line: map.originalLine(forProcessed: probe + 1),
+                offendingIndent: String(leading)
+            )
+        }
+        // Empty actions list — pick 2 as a no-op default (no child lines to
+        // validate against).
+        return 2
+    }
+
+    // MARK: - Preprocessing pipeline (D-A-1, D-A-2, D-B-1)
+
+    /// Run the YAML-06 preprocessing pipeline. Returns the cleaned document
+    /// plus a `LineOffsetMap` that resolves every cleaned-line index back to
+    /// its 1-based original-input line number.
+    ///
+    /// Stages, in locked order:
+    ///   1. BOM strip (single U+FEFF at start)
+    ///   2. CRLF → LF normalization
+    ///   3. Markdown fence strip (```yaml / ```yml / ``` — case-insensitive)
+    ///   4. Reasoning-tag whitelist strip (`<think>`, `<thinking>`, `<reasoning>`)
+    ///   5. Leading-prose strip (drop everything before first `version:`/`shortcut:`)
+    ///   6. Smart-quote normalize (U+2018/9 → `'`; U+201C/D → `"`)
+    ///   7. Tabs → 4 spaces
+    ///
+    /// `.unclosedThinkBlock(tag:line:)` (D-A-2) is the ONLY error this
+    /// pipeline throws; everything else falls through to the parser proper.
+    /// An unclosed `<think>` is NEVER silently closed at EOF.
+    private static func preprocess(_ raw: String) throws -> (cleaned: String, map: LineOffsetMap) {
+        // Stage 1: BOM strip (U+FEFF). Single character at start only.
+        var s = raw
+        if s.hasPrefix("\u{FEFF}") {
+            s.removeFirst()
+        }
+
+        // Stage 2: CRLF → LF. \r\n becomes \n (lone \r is preserved as-is —
+        // ancient pre-OS-X classic-Mac line endings are out of scope for v1).
+        s = s.replacingOccurrences(of: "\r\n", with: "\n")
+
+        // Split into lines tagged with their ORIGINAL 1-based line number.
+        // Subsequent stages drop entries but never reorder — so the
+        // (line, originalLine) pairing remains the source of truth for the
+        // LineOffsetMap built at the very end.
+        var tagged: [(String, Int)] = []
+        tagged.reserveCapacity(64)
+        var origLine = 1
+        for line in s.components(separatedBy: "\n") {
+            tagged.append((line, origLine))
+            origLine += 1
+        }
+
+        // Stage 3: Markdown fence strip. Look for a fence opener line (case-
+        // insensitive `\`\`\`yaml`, `\`\`\`yml`, or bare `\`\`\``). Strip the
+        // opener, the matching closer, and everything after the closer.
+        tagged = stripMarkdownFence(tagged)
+
+        // Stage 4: Reasoning-tag whitelist strip. CASE-INSENSITIVE open AND
+        // close. Unmatched open throws `.unclosedThinkBlock`. Reasoning-tag
+        // names: `think`, `thinking`, `reasoning` (D-A-1).
+        tagged = try stripReasoningTags(tagged)
+
+        // Stage 5: Leading-prose strip. Drop everything before the first line
+        // whose trimmed content begins with `version:` or `shortcut:`.
+        tagged = stripLeadingProse(tagged)
+
+        // Stage 6: Smart-quote normalize (document-wide, not just inside
+        // strings). Four codepoints → ASCII.
+        tagged = tagged.map { (line, ol) in
+            var out = line
+            out = out.replacingOccurrences(of: "\u{2018}", with: "'")
+            out = out.replacingOccurrences(of: "\u{2019}", with: "'")
+            out = out.replacingOccurrences(of: "\u{201C}", with: "\"")
+            out = out.replacingOccurrences(of: "\u{201D}", with: "\"")
+            return (out, ol)
+        }
+
+        // Stage 7: Tabs → 4 spaces. Indent-detection (in
+        // `detectIndentUnit`) then picks between 2- and 4-space indent based
+        // on the resulting character content.
+        tagged = tagged.map { (line, ol) in
+            (line.replacingOccurrences(of: "\t", with: "    "), ol)
+        }
+
+        // Build the LineOffsetMap from the final tagged-line list.
+        var map = LineOffsetMap()
+        var cleanedLines: [String] = []
+        cleanedLines.reserveCapacity(tagged.count)
+        for (line, ol) in tagged {
+            cleanedLines.append(line)
+            map.append(originalLine: ol)
+        }
+        let cleaned = cleanedLines.joined(separator: "\n")
+        return (cleaned, map)
+    }
+
+    /// Strip a markdown code fence if present. The fence opener is the FIRST
+    /// non-empty line whose trimmed content matches `\`\`\`yaml`, `\`\`\`yml`,
+    /// or bare `\`\`\`` (case-insensitive, leading/trailing whitespace
+    /// tolerated on the info-string). Strips the opener line, the matching
+    /// closer line, AND any lines after the closer. If no closer is found
+    /// before EOF, returns the input unchanged (heuristic per plan's Task 1
+    /// stage-3 rationale — prose-strip downstream will still handle it).
+    private static func stripMarkdownFence(
+        _ tagged: [(String, Int)]
+    ) -> [(String, Int)] {
+        // Find the first non-empty line.
+        var openIdx: Int? = nil
+        for (idx, (line, _)) in tagged.enumerated() {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.isEmpty { continue }
+            if isFenceLine(t) {
+                openIdx = idx
+            }
+            break // either we found a fence on the first non-empty line, or not
+        }
+        guard let open = openIdx else { return tagged }
+
+        // Find the matching closing fence (a line whose trimmed content is
+        // exactly ``` — info-strings are NOT permitted on the closer).
+        var closeIdx: Int? = nil
+        var probe = open + 1
+        while probe < tagged.count {
+            let t = tagged[probe].0.trimmingCharacters(in: .whitespaces)
+            if t == "```" {
+                closeIdx = probe
+                break
+            }
+            probe += 1
+        }
+        // No closer found — fall through (the plan instructs us to NOT
+        // strip anything in this case; prose-strip handles it).
+        guard let close = closeIdx else { return tagged }
+
+        // Keep only the lines strictly between open and close.
+        var out: [(String, Int)] = []
+        out.reserveCapacity(close - open - 1)
+        for idx in (open + 1)..<close {
+            out.append(tagged[idx])
+        }
+        return out
+    }
+
+    /// `true` if `trimmed` is a markdown fence opener — `\`\`\`yaml`,
+    /// `\`\`\`yml`, or bare `\`\`\`` (case-insensitive on the info-string).
+    private static func isFenceLine(_ trimmed: String) -> Bool {
+        guard trimmed.hasPrefix("```") else { return false }
+        let info = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces).lowercased()
+        return info.isEmpty || info == "yaml" || info == "yml"
+    }
+
+    /// Strip reasoning-tag blocks. Scans the joined text for
+    /// `<think>...</think>`, `<thinking>...</thinking>`, and
+    /// `<reasoning>...</reasoning>` (case-insensitive) and removes the entire
+    /// block including both tags. Unclosed opener → `.unclosedThinkBlock`.
+    ///
+    /// Implementation: walk the joined text character-by-character; whenever
+    /// we find `<tag>` for a whitelisted tag, find the next `</tag>` (case-
+    /// insensitive); remove the inclusive span. Lines wholly consumed by the
+    /// removed span are dropped; partial-line removal (the rare case where
+    /// a tag opens mid-line) collapses to the residual of that line tagged
+    /// at the opener-line's original-line number.
+    private static func stripReasoningTags(
+        _ tagged: [(String, Int)]
+    ) throws -> [(String, Int)] {
+        // Rebuild into one big buffer keyed by per-character original-line.
+        var chars: [Character] = []
+        var origAt: [Int] = []
+        for (idx, (line, ol)) in tagged.enumerated() {
+            for c in line {
+                chars.append(c)
+                origAt.append(ol)
+            }
+            if idx < tagged.count - 1 {
+                chars.append("\n")
+                origAt.append(ol)
+            }
+        }
+
+        // Build a lowercase mirror for case-insensitive matching. We never
+        // look at the lowercase buffer for content output — only for scan
+        // decisions.
+        let lower = String(chars).lowercased()
+        // Convert to a Character array of the same length so index ranges line up.
+        let lowerChars = Array(lower)
+
+        var resultChars: [Character] = []
+        var resultOrig: [Int] = []
+        resultChars.reserveCapacity(chars.count)
+        resultOrig.reserveCapacity(chars.count)
+
+        var i = 0
+        while i < chars.count {
+            // Detect an opening reasoning tag at position `i`.
+            if chars[i] == "<", let tag = matchOpeningTag(lowerChars, at: i) {
+                // Find the matching closing tag for the SAME canonical name.
+                // Case-insensitive match.
+                let closer = "</\(tag)>"
+                let closerChars = Array(closer)
+                if let closeStart = findSubsequence(in: lowerChars, needle: closerChars, from: i + tag.count + 2) {
+                    // Remove [i, closeStart + closer.count) entirely.
+                    i = closeStart + closerChars.count
+                    continue
+                } else {
+                    // D-A-2: unclosed reasoning tag → throw. Use the
+                    // ORIGINAL line of the opener.
+                    throw ShortcutYAMLError.unclosedThinkBlock(
+                        tag: tag,
+                        line: origAt[i]
+                    )
+                }
+            }
+            resultChars.append(chars[i])
+            resultOrig.append(origAt[i])
+            i += 1
+        }
+
+        // Re-split into tagged lines. Each line takes the origAt of its first
+        // character (after which subsequent same-line chars share that
+        // original-line via consistency — preprocessing never reorders chars
+        // within a line). Empty residual lines keep the original-line of the
+        // newline character that delimited them.
+        var out: [(String, Int)] = []
+        var cur = ""
+        var curOrig: Int? = nil
+        for (idx, c) in resultChars.enumerated() {
+            if c == "\n" {
+                out.append((cur, curOrig ?? resultOrig[idx]))
+                cur = ""
+                curOrig = nil
+            } else {
+                if curOrig == nil { curOrig = resultOrig[idx] }
+                cur.append(c)
+            }
+        }
+        // Trailing line (may be empty if the buffer ended on \n).
+        if curOrig != nil || !cur.isEmpty {
+            out.append((cur, curOrig ?? (resultOrig.last ?? 1)))
+        }
+        return out
+    }
+
+    /// If positions `at..<at+(tagName.count+2)` in `lower` form `<name>`
+    /// where `name` ∈ `reasoningTags`, return the canonical lowercase tag
+    /// name. Returns nil otherwise.
+    private static func matchOpeningTag(_ lower: [Character], at: Int) -> String? {
+        guard at < lower.count, lower[at] == "<" else { return nil }
+        // Find the `>` ending this open tag — but bound the search to avoid
+        // O(n^2) worst case across the document. We only care about tags
+        // up to `len("<reasoning>") = 11` characters.
+        let maxLen = 12 // covers `<reasoning>` plus a 1-char slack
+        let end = min(at + maxLen, lower.count)
+        for j in (at + 1)..<end {
+            if lower[j] == ">" {
+                let name = String(lower[(at + 1)..<j])
+                if reasoningTags.contains(name) { return name }
+                return nil
+            }
+            // Reject `<` that contains attributes or whitespace — reasoning
+            // tags in the whitelist are written without attributes.
+            if lower[j] == " " || lower[j] == "\t" || lower[j] == "\n" || lower[j] == "<" {
+                return nil
+            }
+        }
+        return nil
+    }
+
+    /// Linear search for `needle` in `haystack` starting at `from`. Returns
+    /// the start index of the match, or nil. O(n·m); m ≤ 13 here.
+    private static func findSubsequence(in haystack: [Character], needle: [Character], from: Int) -> Int? {
+        guard !needle.isEmpty, from <= haystack.count - needle.count else {
+            // Bounds: if `from >= haystack.count - needle.count + 1`, no match possible.
+            return nil
+        }
+        for start in from...(haystack.count - needle.count) {
+            var match = true
+            for k in 0..<needle.count {
+                if haystack[start + k] != needle[k] {
+                    match = false
+                    break
+                }
+            }
+            if match { return start }
+        }
+        return nil
+    }
+
+    /// Drop every line before the first line whose trimmed-leading content
+    /// begins with `version:` or `shortcut:`. If no such line exists, return
+    /// the input unchanged — the parser proper will surface
+    /// `.missingShortcut` (or `.empty` if preprocessing has already removed
+    /// everything).
+    private static func stripLeadingProse(
+        _ tagged: [(String, Int)]
+    ) -> [(String, Int)] {
+        var firstYAMLIdx: Int? = nil
+        for (idx, (line, _)) in tagged.enumerated() {
+            let t = line.trimmingCharacters(in: .whitespaces)
+            if t.hasPrefix("version:") || t.hasPrefix("shortcut:") {
+                firstYAMLIdx = idx
+                break
+            }
+        }
+        guard let first = firstYAMLIdx else { return tagged }
+        return Array(tagged[first...])
     }
 
     /// Build a `HotkeyAction` from one inline `key/text/wait/shell` pair.
