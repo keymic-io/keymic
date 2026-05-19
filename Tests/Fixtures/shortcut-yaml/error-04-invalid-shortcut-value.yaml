@@ -1,0 +1,4 @@
+version: 1
+shortcut: "definitely-not-a-key"
+actions:
+  - text: "x"

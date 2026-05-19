@@ -1,0 +1,5 @@
+version: 1
+shortcut: "alt+g"
+shortcut: "alt+h"
+actions:
+  - text: "x"

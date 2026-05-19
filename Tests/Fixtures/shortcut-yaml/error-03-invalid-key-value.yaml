@@ -1,0 +1,4 @@
+version: 1
+shortcut: "alt+g"
+actions:
+  - key: "not-a-real-key"

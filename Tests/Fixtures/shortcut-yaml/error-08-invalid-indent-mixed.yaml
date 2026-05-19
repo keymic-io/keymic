@@ -1,0 +1,5 @@
+version: 1
+shortcut: "alt+g"
+actions:
+  - text: "first"
+    - text: "second"
