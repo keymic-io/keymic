@@ -397,6 +397,8 @@ struct ShortcutYAMLParserTestRunner {
             "error-10-unclosed-string",
             "error-11-duplicate-field",
             "error-12-wait-nan",
+            "error-13-trailing-after-quote",
+            "error-14-trailing-after-single-quote",
         ]
         for name in errorFixtures {
             let raw = try FixtureLoader.read("\(name).yaml")

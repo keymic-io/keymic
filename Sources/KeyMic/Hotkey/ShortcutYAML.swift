@@ -937,7 +937,7 @@ enum ShortcutYAMLParser {
             return try parseDoubleQuoted(s, field: field, line: line)
         }
         if s.hasPrefix("'") {
-            return try parseSingleQuoted(s, line: line)
+            return try parseSingleQuoted(s, field: field, line: line)
         }
         // Unquoted scalar — reject yaml multiline indicators `|` / `>`
         // (block scalar headers). v1 is closed-schema; these forms are
@@ -965,19 +965,40 @@ enum ShortcutYAMLParser {
     /// Single-quoted literal scalar. Mirrors `MinimalTOMLParser.swift:73-79`
     /// but throws `.unclosedString(line:)` on missing close quote (the TOML
     /// analog silently falls through).
-    private static func parseSingleQuoted(_ s: String, line: Int) throws -> String {
+    ///
+    /// CR-02: rejects any non-whitespace content after the closing quote.
+    /// `text: 'a' 'b'` and `shortcut: 'alt+g' typo` are both `.invalidValue`
+    /// rather than silent truncation.
+    private static func parseSingleQuoted(_ s: String, field: String, line: Int) throws -> String {
         precondition(s.hasPrefix("'"))
         let body = s.dropFirst()
         guard let end = body.firstIndex(of: "'") else {
             throw ShortcutYAMLError.unclosedString(line: line)
+        }
+        // CR-02: reject trailing non-whitespace after the closing quote.
+        // Without this, `text: 'a' 'b'` silently returns "a" and drops " 'b'".
+        let afterClose = body.index(after: end)
+        if afterClose < body.endIndex {
+            let trailing = body[afterClose...].drop(while: { $0 == " " || $0 == "\t" })
+            if !trailing.isEmpty {
+                throw ShortcutYAMLError.invalidValue(
+                    field: field,
+                    line: line,
+                    offendingToken: String(trailing.prefix(64))
+                )
+            }
         }
         return String(body[..<end])
     }
 
     /// Double-quoted scalar with the strict four-char escape set (`\"`, `\\`,
     /// `\n`, `\t`). Mirrors `MinimalTOMLParser.parseDoubleQuoted` at lines
-    /// 132–155 but TIGHTENED: unknown `\<char>` throws `.invalidValue` instead
-    /// of the analog's silent passthrough (D-B-1 strict-over-lenient).
+    /// 132–155 but TIGHTENED in two places:
+    ///   1. Unknown `\<char>` throws `.invalidValue` instead of the analog's
+    ///      silent passthrough (D-B-1 strict-over-lenient).
+    ///   2. CR-02: any non-whitespace content AFTER the closing `"` is
+    ///      `.invalidValue`. Without this, `text: "hello" garbage` silently
+    ///      returns "hello" and drops " garbage".
     /// Throws `.unclosedString(line:)` if the closing `"` is missing.
     private static func parseDoubleQuoted(_ rhs: String, field: String, line: Int) throws -> String {
         precondition(rhs.hasPrefix("\""))
@@ -1003,7 +1024,24 @@ enum ShortcutYAMLParser {
                 i = rhs.index(after: next)
                 continue
             }
-            if c == "\"" { return out }
+            if c == "\"" {
+                // CR-02: reject trailing non-whitespace after the closing
+                // quote. Whitespace is tolerated (e.g. line-ending CR or
+                // stray trailing space); anything else is silent payload
+                // loss and a documented strict-schema violation.
+                var k = rhs.index(after: i)
+                while k < rhs.endIndex {
+                    if !rhs[k].isWhitespace {
+                        throw ShortcutYAMLError.invalidValue(
+                            field: field,
+                            line: line,
+                            offendingToken: String(rhs[k...].prefix(64))
+                        )
+                    }
+                    k = rhs.index(after: k)
+                }
+                return out
+            }
             out.append(c)
             i = rhs.index(after: i)
         }
