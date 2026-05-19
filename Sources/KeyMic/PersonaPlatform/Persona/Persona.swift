@@ -107,3 +107,8 @@ struct Persona: Codable, Identifiable, Equatable {
         ]
     }
 }
+
+// Placeholder — replaced by full enum in Task 3.
+enum OutputStrategy: Codable, Equatable {
+    case replaceFocusedText
+}
