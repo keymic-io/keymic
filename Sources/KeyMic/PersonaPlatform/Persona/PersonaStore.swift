@@ -78,6 +78,8 @@ final class PersonaStore {
             temperature: source.temperature,
             hotkey: nil,    // never inherit hotkey — would conflict
             contextMode: source.contextMode,
+            contextCount: source.contextCount,
+            outputStrategy: source.outputStrategy,
             builtIn: false,
             createdAt: now,
             updatedAt: now

@@ -2,32 +2,49 @@ import Foundation
 
 enum ContextMode: String, Codable, CaseIterable {
     case none
+    case selection
+    case clipboard
+    case clipboardHistory          // count comes from persona.contextCount
     case selectionAndClipboard
+    case windowOCR
 
     var displayName: String {
         switch self {
         case .none: return String(localized: "None")
+        case .selection: return String(localized: "Selected text")
+        case .clipboard: return String(localized: "Clipboard")
+        case .clipboardHistory: return String(localized: "Clipboard history")
         case .selectionAndClipboard: return String(localized: "Selection + Clipboard")
+        case .windowOCR: return String(localized: "Window OCR")
         }
     }
+}
+
+enum OutputStrategy: Codable, Equatable {
+    case replaceFocusedText
+    case replaceSelection
+    case clipboard
+    case openURL(template: String)
+    case runShell(command: String, confirm: Bool)
+    case iTermPane(confirm: Bool)
 }
 
 struct Persona: Codable, Identifiable, Equatable {
     var id: String
     var name: String
-    var icon: String           // SF Symbol name
+    var icon: String
     var stylePrompt: String
-    var temperature: Double    // 0.0 ... 2.0
-    var hotkey: String?        // HotkeyConfig.encode() format, e.g. "alt+q"
+    var temperature: Double
+    var hotkey: String?
     var contextMode: ContextMode
+    var contextCount: Int
+    var outputStrategy: OutputStrategy
     var builtIn: Bool
     var createdAt: Date
     var updatedAt: Date
 
     static let temperatureRange: ClosedRange<Double> = 0.0 ... 2.0
 
-    /// Built-in personas seeded on first launch. Order is stable.
-    /// Built-ins: name + builtIn flag are immutable in UI; stylePrompt + icon + temperature + hotkey + contextMode editable.
     static func builtInSeeds() -> [Persona] {
         let now = Date()
         return [
@@ -56,6 +73,8 @@ struct Persona: Codable, Identifiable, Equatable {
                 temperature: 0.3,
                 hotkey: nil,
                 contextMode: .none,
+                contextCount: 1,
+                outputStrategy: .replaceFocusedText,
                 builtIn: true,
                 createdAt: now,
                 updatedAt: now
@@ -68,6 +87,8 @@ struct Persona: Codable, Identifiable, Equatable {
                 temperature: 0.6,
                 hotkey: nil,
                 contextMode: .none,
+                contextCount: 1,
+                outputStrategy: .replaceFocusedText,
                 builtIn: true,
                 createdAt: now,
                 updatedAt: now
@@ -80,6 +101,8 @@ struct Persona: Codable, Identifiable, Equatable {
                 temperature: 0.1,
                 hotkey: nil,
                 contextMode: .none,
+                contextCount: 1,
+                outputStrategy: .replaceFocusedText,
                 builtIn: true,
                 createdAt: now,
                 updatedAt: now
@@ -100,15 +123,12 @@ struct Persona: Codable, Identifiable, Equatable {
                 temperature: 0.5,
                 hotkey: nil,
                 contextMode: .selectionAndClipboard,
+                contextCount: 1,
+                outputStrategy: .replaceFocusedText,
                 builtIn: true,
                 createdAt: now,
                 updatedAt: now
             ),
         ]
     }
-}
-
-// Placeholder — replaced by full enum in Task 3.
-enum OutputStrategy: Codable, Equatable {
-    case replaceFocusedText
 }
