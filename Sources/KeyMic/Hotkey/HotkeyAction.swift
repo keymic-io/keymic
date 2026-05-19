@@ -62,23 +62,33 @@ struct HotkeyBinding: Codable, Equatable, Identifiable {
     var enabled: Bool
     /// Bundle IDs the binding applies to. Empty means global (all apps).
     var appBundleIDs: [String]
+    /// Origin marker. `"voice"` for voice imports; nil for manual / pre-Phase-3 origin
+    /// (per .planning/phases/03-importer-audit-log-safety-gates/03-CONTEXT.md D-A-1).
+    var createdBy: String?
+    /// Phase 2 `ParsedShortcut.label` persisted alongside the binding for UI display
+    /// (per .planning/phases/03-importer-audit-log-safety-gates/03-CONTEXT.md D-A-4).
+    var label: String?
 
     init(
         id: UUID = UUID(),
         trigger: String,
         actions: [HotkeyAction],
         enabled: Bool = true,
-        appBundleIDs: [String] = []
+        appBundleIDs: [String] = [],
+        createdBy: String? = nil,
+        label: String? = nil
     ) {
         self.id = id
         self.trigger = trigger
         self.actions = actions
         self.enabled = enabled
         self.appBundleIDs = appBundleIDs
+        self.createdBy = createdBy
+        self.label = label
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, trigger, actions, enabled, appBundleIDs
+        case id, trigger, actions, enabled, appBundleIDs, createdBy, label
     }
 
     init(from decoder: Decoder) throws {
@@ -88,5 +98,7 @@ struct HotkeyBinding: Codable, Equatable, Identifiable {
         self.actions = try c.decode([HotkeyAction].self, forKey: .actions)
         self.enabled = try c.decode(Bool.self, forKey: .enabled)
         self.appBundleIDs = try c.decodeIfPresent([String].self, forKey: .appBundleIDs) ?? []
+        self.createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy)
+        self.label = try c.decodeIfPresent(String.self, forKey: .label)
     }
 }
