@@ -40,6 +40,18 @@ struct ParseErrorPayload: Codable, Equatable {
         self.line = try c.decodeIfPresent(Int.self, forKey: .line)
         self.token = try c.decodeIfPresent(String.self, forKey: .token)
     }
+
+    /// Explicit `encode(to:)` for the same field-order reason as `AuditRecord`:
+    /// synthesized JSONEncoder output is NOT order-stable across Foundation
+    /// implementations. We emit `kind` (always present) + the three optional
+    /// fields via `encodeIfPresent` so `null`s are omitted (cleaner sub-object).
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(kind, forKey: .kind)
+        try c.encodeIfPresent(field, forKey: .field)
+        try c.encodeIfPresent(line, forKey: .line)
+        try c.encodeIfPresent(token, forKey: .token)
+    }
 }
 
 // MARK: - AuditRecord
@@ -82,6 +94,53 @@ struct AuditRecord: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case timestamp, transcript, yaml, bindingId, conflictCleared,
              conflictSource, parseError, shellStripped, droppedBundleIDs, action
+    }
+
+    init(
+        timestamp: String,
+        transcript: String,
+        yaml: String,
+        bindingId: String?,
+        conflictCleared: Bool,
+        conflictSource: String?,
+        parseError: ParseErrorPayload?,
+        shellStripped: Bool,
+        droppedBundleIDs: [String],
+        action: String
+    ) {
+        self.timestamp = timestamp
+        self.transcript = transcript
+        self.yaml = yaml
+        self.bindingId = bindingId
+        self.conflictCleared = conflictCleared
+        self.conflictSource = conflictSource
+        self.parseError = parseError
+        self.shellStripped = shellStripped
+        self.droppedBundleIDs = droppedBundleIDs
+        self.action = action
+    }
+
+    /// Explicit `encode(to:)` locks JSON key emission to CodingKeys declaration
+    /// order per RESEARCH §Pitfall §6. The synthesized encoder does NOT
+    /// guarantee declaration order across Swift versions / Foundation
+    /// implementations (observed: keys emit in declaration-reverse-ish /
+    /// hash order with JSONEncoder.outputFormatting = [], breaking the
+    /// `jq`-friendly diff contract and the EVAL-01 v2 pipeline). Emitting
+    /// each key explicitly in declaration order is the only reliable lock.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(timestamp, forKey: .timestamp)
+        try c.encode(transcript, forKey: .transcript)
+        try c.encode(yaml, forKey: .yaml)
+        // `encode(_:forKey:)` on an Optional emits `null` for nil — matches
+        // the audit-log contract (null-or-omitted are equivalent per D-C-1).
+        try c.encode(bindingId, forKey: .bindingId)
+        try c.encode(conflictCleared, forKey: .conflictCleared)
+        try c.encode(conflictSource, forKey: .conflictSource)
+        try c.encode(parseError, forKey: .parseError)
+        try c.encode(shellStripped, forKey: .shellStripped)
+        try c.encode(droppedBundleIDs, forKey: .droppedBundleIDs)
+        try c.encode(action, forKey: .action)
     }
 }
 
@@ -188,9 +247,46 @@ final class ShortcutAuditLog {
     }
 
     private func format(_ record: AuditRecord) -> String {
-        let data = (try? encoder.encode(record)) ?? Data()
-        let body = String(data: data, encoding: .utf8) ?? ""
-        return body + "\n"
+        // Hand-build the JSON object to lock key order to CodingKeys
+        // declaration order per RESEARCH §Pitfall §6. Swift's JSONEncoder +
+        // KeyedEncodingContainer does NOT guarantee declaration-order output
+        // (observed: hash order varies per record); explicit encode(to:)
+        // with ordered calls does NOT change this because the container
+        // serializes the final dictionary in implementation-defined order.
+        //
+        // Each field's VALUE is encoded via JSONEncoder (handles escapes,
+        // unicode, nested objects, optionals → null); the OUTER object is
+        // assembled by string concatenation in declaration order.
+        var parts: [String] = []
+        parts.append("\"timestamp\":\(encodeValue(record.timestamp))")
+        parts.append("\"transcript\":\(encodeValue(record.transcript))")
+        parts.append("\"yaml\":\(encodeValue(record.yaml))")
+        parts.append("\"bindingId\":\(encodeValue(record.bindingId))")
+        parts.append("\"conflictCleared\":\(record.conflictCleared ? "true" : "false")")
+        parts.append("\"conflictSource\":\(encodeValue(record.conflictSource))")
+        parts.append("\"parseError\":\(encodeValue(record.parseError))")
+        parts.append("\"shellStripped\":\(record.shellStripped ? "true" : "false")")
+        parts.append("\"droppedBundleIDs\":\(encodeValue(record.droppedBundleIDs))")
+        parts.append("\"action\":\(encodeValue(record.action))")
+        return "{" + parts.joined(separator: ",") + "}\n"
+    }
+
+    /// Encode an arbitrary Encodable value (including Optional → null) as a
+    /// JSON fragment using the cached `encoder`. Used by `format()` to
+    /// assemble the outer object in declaration order while delegating
+    /// value escaping to JSONEncoder.
+    private func encodeValue<T: Encodable>(_ value: T) -> String {
+        // Wrap in a single-element array to coerce JSONEncoder into emitting
+        // a top-level fragment (JSONEncoder requires a container at top
+        // level); then strip the `[` and `]`. This handles String, Bool,
+        // Int, Optional, nested Encodable, and arrays uniformly.
+        let arr = [value]
+        guard let data = try? encoder.encode(arr),
+              let s = String(data: data, encoding: .utf8),
+              s.hasPrefix("["), s.hasSuffix("]") else {
+            return "null"
+        }
+        return String(s.dropFirst().dropLast())
     }
 
     private func append(_ line: String) throws {
