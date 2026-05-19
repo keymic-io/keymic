@@ -400,6 +400,21 @@ test-context-resolver:
 	       -o .build/context-resolver-tests
 	.build/context-resolver-tests
 
+test-output-router:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Engine/Invocation.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Context/ContextResolver.swift \
+	       Sources/KeyMic/PersonaPlatform/Context/SelectionSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Output/FocusedTextStrategy.swift \
+	       Sources/KeyMic/PersonaPlatform/Output/ReplaceSelectionStrategy.swift \
+	       Sources/KeyMic/PersonaPlatform/Output/ClipboardStrategy.swift \
+	       Sources/KeyMic/PersonaPlatform/Output/OpenURLStrategy.swift \
+	       Sources/KeyMic/PersonaPlatform/Output/OutputRouter.swift \
+	       Tests/OutputRouterTests.swift \
+	       -o .build/output-router-tests
+	.build/output-router-tests
+
 test-hotkey-registry:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
@@ -446,7 +461,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-invocation test-llm-client test-selection-source test-context-resolver test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-invocation test-llm-client test-selection-source test-context-resolver test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
