@@ -111,6 +111,29 @@ private struct LineOffsetMap {
 /// P-04 scope: preprocessing pipeline (BOM → CRLF → fence → reasoning-tags →
 /// leading-prose → smart-quotes → tabs) with `LineOffsetMap`-backed original
 /// line numbers, plus indent detection (2- OR 4-space).
+///
+/// **WR-03 — Preprocessing blast radius (LOCKED, intentional):**
+/// Stages 4 (`stripReasoningTags`) and 6 (smart-quote normalize) run
+/// DOCUMENT-WIDE on the raw character stream — they have NO knowledge of
+/// quoted scalar context. As a result:
+///
+///   1. **Smart quotes inside `text:` / `shell:` payloads get rewritten.**
+///      A binding `text: "She said \u{201C}hi\u{201D}"` becomes
+///      `text: "She said "hi""` after stage 6, which then causes
+///      `parseDoubleQuoted` to terminate at the first inner `"`. CR-02
+///      now surfaces this as `.invalidValue` (trailing-after-quote) rather
+///      than silent truncation.
+///   2. **`<think>` / `<thinking>` / `<reasoning>` literals inside `text:`
+///      are stripped entirely.** A binding `text: "before<think>x</think>after"`
+///      becomes `text: "beforeafter"`. There is currently no way to express
+///      a literal whitelisted reasoning tag in payload content.
+///
+/// Both behaviours are LOCKED per CONTEXT.md D-A-1 (LLM output cleanliness
+/// is the higher-priority concern). Phase 3 importers MUST surface a
+/// payload-was-rewritten flag in their audit log so users can spot
+/// unintended normalization. Future refactor that introduces context-aware
+/// stripping would break LLM-output happy paths — change this at your
+/// peril, and only with the D-A-1 decision re-opened.
 enum ShortcutYAMLParser {
 
     /// Reasoning-tag whitelist (D-A-1). Canonical lowercase form. Opening
