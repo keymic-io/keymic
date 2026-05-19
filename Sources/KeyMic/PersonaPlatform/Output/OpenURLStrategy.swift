@@ -20,7 +20,11 @@ final class OpenURLStrategy: OutputStrategyHandler {
                   origin: String?,
                   options: StrategyOptions) async throws {
         guard template.contains("{query}") else { throw OpenURLError.missingPlaceholder }
-        let encoded = text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        // Percent-encode every reserved char so the query value is safe to drop
+        // into any template position. `.urlQueryAllowed` keeps `&`/`=`/`?`, which
+        // breaks the surrounding URL when text contains them.
+        let allowed = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=?#+/"))
+        let encoded = text.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
         let filled = template.replacingOccurrences(of: "{query}", with: encoded)
         guard let url = URL(string: filled) else { throw OpenURLError.invalidURL }
         await MainActor.run { self.opener(url) }

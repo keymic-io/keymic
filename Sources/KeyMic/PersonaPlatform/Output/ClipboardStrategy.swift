@@ -1,18 +1,11 @@
-import AppKit
 import Foundation
 
 final class ClipboardStrategy: OutputStrategyHandler {
     private let write: @MainActor (String) -> Void
 
-    init(controller: ClipboardController) {
-        self.write = { @MainActor [weak controller] text in
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(text, forType: .string)
-            controller?.markPasteboardWrite(text)
-        }
-    }
-
-    /// Test-only init.
+    /// Injected closure so production wiring (AppDelegate) can plumb the real
+    /// pasteboard + `ClipboardController.markPasteboardWrite`, while tests pass
+    /// a spy. Avoids dragging AppKit/SwiftData into the standalone test runner.
     init(write: @escaping @MainActor (String) -> Void) {
         self.write = write
     }

@@ -1,34 +1,12 @@
 import Foundation
-import AppKit
-
-// Temporary location — moves into OutputRouter.swift in Task 11.
-protocol OutputStrategyHandler {
-    func dispatch(text: String,
-                  origin: String?,
-                  options: StrategyOptions) async throws
-}
-
-struct StrategyOptions {
-    let reactivateOrigin: Bool
-
-    static let defaults = StrategyOptions(reactivateOrigin: true)
-}
 
 final class FocusedTextStrategy: OutputStrategyHandler {
     private let inject: (String) -> Void
     private let reactivate: (String) -> Void
 
-    init(textInjector: TextInjector,
-         reactivate: @escaping (String) -> Void = { bundleID in
-             if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
-                 app.activate(options: [])
-             }
-         }) {
-        self.inject = { text in textInjector.inject(text) }
-        self.reactivate = reactivate
-    }
-
-    /// Test-only init that takes a custom inject closure.
+    /// Injected closures so production wiring (AppDelegate) can plumb `TextInjector`
+    /// + `NSRunningApplication`, while tests pass spies. Avoids dragging AppKit
+    /// types into the standalone test runner.
     init(inject: @escaping (String) -> Void,
          reactivate: @escaping (String) -> Void) {
         self.inject = inject
