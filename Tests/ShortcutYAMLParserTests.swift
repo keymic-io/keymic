@@ -449,6 +449,32 @@ struct ShortcutYAMLParserTestRunner {
                 fail("CR-01: wait: \(badWait) threw non-ShortcutYAMLError: \(error)")
             }
         }
+
+        // WR-02 regression: a lone trailing `\` inside an unterminated
+        // double-quoted string must throw `.invalidValue(field:, token:"\\")`
+        // BEFORE the loop falls through to `.unclosedString`. Without the
+        // explicit guard, the parser silently appended `\` to the output
+        // buffer and then masked the issue by throwing `.unclosedString` —
+        // a defense-in-depth violation against D-B-1.
+        do {
+            // Input: `text: "abc\` — opening quote, three chars, lone backslash, EOF.
+            // The unquote(...) call here receives `"abc\` (after trimming).
+            let yaml = "version: 1\nshortcut: \"alt+g\"\nactions:\n  - text: \"abc\\"
+            _ = try ShortcutYAMLParser.parse(yaml)
+            fail("WR-02: lone trailing backslash should throw .invalidValue but parse succeeded")
+        } catch let err as ShortcutYAMLError {
+            switch err {
+            case .invalidValue(let field, _, let token):
+                expect(field == "text",
+                       "WR-02: trailing-\\ threw .invalidValue with wrong field — expected 'text', got '\(field)'")
+                expect(token == "\\",
+                       "WR-02: trailing-\\ threw .invalidValue with wrong token — expected '\\', got '\(String(describing: token))'")
+            default:
+                fail("WR-02: trailing-\\ threw wrong variant: \(err) — fix-order regression?")
+            }
+        } catch {
+            fail("WR-02: trailing-\\ threw non-ShortcutYAMLError: \(error)")
+        }
     }
 
     /// Exhaustive matcher for `ShortcutYAMLError` vs the JSON shape in

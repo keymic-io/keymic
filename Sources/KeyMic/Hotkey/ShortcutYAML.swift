@@ -1006,7 +1006,21 @@ enum ShortcutYAMLParser {
         var i = rhs.index(after: rhs.startIndex)
         while i < rhs.endIndex {
             let c = rhs[i]
-            if c == "\\", let next = rhs.index(i, offsetBy: 1, limitedBy: rhs.endIndex), next < rhs.endIndex {
+            if c == "\\" {
+                // WR-02: a lone trailing `\` with no following char must be
+                // rejected explicitly rather than silently appended to `out`
+                // and then masked by the downstream `.unclosedString` throw.
+                // The documented escape policy (D-D-2) never permits a bare
+                // backslash; defense-in-depth against D-B-1 strict-over-
+                // lenient.
+                let next = rhs.index(after: i)
+                guard next < rhs.endIndex else {
+                    throw ShortcutYAMLError.invalidValue(
+                        field: field,
+                        line: line,
+                        offendingToken: "\\"
+                    )
+                }
                 let n = rhs[next]
                 switch n {
                 case "n": out.append("\n")
