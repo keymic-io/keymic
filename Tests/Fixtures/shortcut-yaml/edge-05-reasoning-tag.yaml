@@ -1,0 +1,10 @@
+<Reasoning>
+Mixed-case open and close prove case-insensitivity (D-A-1).
+</REASONING>
+version: 1
+shortcut: "alt+g"
+label: "edge"
+enabled: true
+actions:
+  - key: "cmd+space"
+  - text: "chrome"

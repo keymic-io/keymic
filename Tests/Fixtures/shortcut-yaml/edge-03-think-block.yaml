@@ -1,0 +1,8 @@
+<think>I need to figure out the alt key combo for the user.</think>
+version: 1
+shortcut: "alt+g"
+label: "edge"
+enabled: true
+actions:
+  - key: "cmd+space"
+  - text: "chrome"

@@ -627,25 +627,32 @@ enum ShortcutYAMLParser {
         return (cleaned, map)
     }
 
-    /// Strip a markdown code fence if present. The fence opener is the FIRST
-    /// non-empty line whose trimmed content matches `\`\`\`yaml`, `\`\`\`yml`,
-    /// or bare `\`\`\`` (case-insensitive, leading/trailing whitespace
-    /// tolerated on the info-string). Strips the opener line, the matching
-    /// closer line, AND any lines after the closer. If no closer is found
-    /// before EOF, returns the input unchanged (heuristic per plan's Task 1
-    /// stage-3 rationale — prose-strip downstream will still handle it).
+    /// Strip a markdown code fence if present. Scans the WHOLE input for the
+    /// first fence-opener line whose trimmed content matches `\`\`\`yaml`,
+    /// `\`\`\`yml`, or bare `\`\`\`` (case-insensitive, leading/trailing
+    /// whitespace tolerated on the info-string). Strips the opener line, the
+    /// matching closer line, AND any lines after the closer.
+    ///
+    /// Scanning beyond the first non-empty line is intentional: edge-06
+    /// (`<think>...</think>` BEFORE the ```yaml fence) requires fence-strip
+    /// to cooperate with the still-unprocessed reasoning-tag block — without
+    /// this, the cross-stage interaction would force a stage-order reversal.
+    ///
+    /// If no closer is found before EOF, returns the input unchanged
+    /// (per plan's Task 1 stage-3 rationale — prose-strip downstream still
+    /// handles the residual).
     private static func stripMarkdownFence(
         _ tagged: [(String, Int)]
     ) -> [(String, Int)] {
-        // Find the first non-empty line.
+        // Scan all lines for an opener fence. First match wins.
         var openIdx: Int? = nil
         for (idx, (line, _)) in tagged.enumerated() {
             let t = line.trimmingCharacters(in: .whitespaces)
             if t.isEmpty { continue }
             if isFenceLine(t) {
                 openIdx = idx
+                break
             }
-            break // either we found a fence on the first non-empty line, or not
         }
         guard let open = openIdx else { return tagged }
 

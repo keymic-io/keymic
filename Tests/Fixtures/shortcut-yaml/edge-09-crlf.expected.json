@@ -1,0 +1,12 @@
+{
+  "binding": {
+    "trigger": "alt+g",
+    "actions": [
+      {"type": "keyPress", "keyCode": 49, "modifiers": 1048576},
+      {"type": "typeText", "text": "chrome"}
+    ],
+    "enabled": true,
+    "appBundleIDs": []
+  },
+  "label": "edge"
+}

@@ -1,0 +1,11 @@
+<thinking>
+Let me trace through the user's request carefully.
+They want alt+g to open Chrome via Spotlight.
+</thinking>
+version: 1
+shortcut: "alt+g"
+label: "edge"
+enabled: true
+actions:
+  - key: "cmd+space"
+  - text: "chrome"

@@ -187,8 +187,190 @@ struct ShortcutYAMLParserTestRunner {
         }
     }
 
-    // P-04 fills in preprocessing-edge fixtures (fences, <think>, BOM, CRLF, smart quotes, tabs).
-    private static func runEdgeFixtures() throws {}
+    // P-04: preprocessing-edge fixtures (fences, <think>, BOM, CRLF, smart
+    // quotes, tabs, 4-space indent) + inline YAML-11 cases + LineOffsetMap
+    // original-coord traceability check.
+    private static func runEdgeFixtures() throws {
+        // 12 fixture pairs from CONTEXT.md D-A-1 + D-A-2 + D-B-1 + YAML-06.
+        // All 12 cleanly preprocess to the SAME canonical ParsedShortcut shape
+        // (alt+g, one key:cmd+space, one text:chrome, label:"edge",
+        // appBundleIDs empty) — isolating the preprocessing variable.
+        let fixtureNames = [
+            "edge-01-fence-yaml",
+            "edge-02-fence-bare",
+            "edge-03-think-block",
+            "edge-04-thinking-tag",
+            "edge-05-reasoning-tag",
+            "edge-06-fence-then-think",
+            "edge-07-prose-leading",
+            "edge-08-bom",
+            "edge-09-crlf",
+            "edge-10-smart-quotes",
+            "edge-11-tabs-to-spaces",
+            "edge-12-indent-4-space",
+        ]
+        for name in fixtureNames {
+            let raw = try FixtureLoader.read("\(name).yaml")
+            let parsed: ParsedShortcut
+            do {
+                parsed = try ShortcutYAMLParser.parse(raw)
+            } catch {
+                fail("\(name): preprocessing/parse failed unexpectedly: \(error)")
+            }
+
+            // Cross-check against the .expected.json projection. Eleven of
+            // twelve share the same canonical shape; edge-10 differs only in
+            // that label was normalized from curly to ASCII quotes (which is
+            // recorded in its expected.json as ASCII).
+            let expectedJSON = try FixtureLoader.read("\(name).expected.json")
+            let expectedData = expectedJSON.data(using: .utf8)!
+            let any = try JSONSerialization.jsonObject(with: expectedData, options: [])
+            guard let dict = any as? [String: Any],
+                  let bindingDict = dict["binding"] as? [String: Any],
+                  let actionsArr = bindingDict["actions"] as? [[String: Any]],
+                  let trigger = bindingDict["trigger"] as? String,
+                  let enabled = bindingDict["enabled"] as? Bool
+            else {
+                fail("\(name): expected.json shape invalid")
+            }
+            // Top-level field equality
+            expect(parsed.binding.trigger == trigger,
+                   "\(name): trigger mismatch — expected=\(trigger), got=\(parsed.binding.trigger)")
+            expect(parsed.binding.enabled == enabled,
+                   "\(name): enabled mismatch — expected=\(enabled), got=\(parsed.binding.enabled)")
+            // Label may be a String OR omitted (we always set it in fixtures).
+            if let expLabel = dict["label"] as? String {
+                expect(parsed.label == expLabel,
+                       "\(name): label mismatch — expected=\(expLabel.debugDescription), got=\(String(describing: parsed.label).debugDescription)")
+            }
+            // appBundleIDs — list of strings (default empty if not declared)
+            let expBundles = (bindingDict["appBundleIDs"] as? [String]) ?? []
+            expect(parsed.binding.appBundleIDs == expBundles,
+                   "\(name): appBundleIDs mismatch — expected=\(expBundles), got=\(parsed.binding.appBundleIDs)")
+            // Actions list length first
+            expect(parsed.binding.actions.count == actionsArr.count,
+                   "\(name): actions count mismatch — expected=\(actionsArr.count), got=\(parsed.binding.actions.count)")
+            // Per-action: we only need to cover keyPress + typeText in this
+            // P-04 fixture set (all 12 use the same 2-action shape).
+            for (i, exp) in actionsArr.enumerated() where i < parsed.binding.actions.count {
+                guard let type = exp["type"] as? String else {
+                    fail("\(name): actions[\(i)] missing 'type' in expected.json")
+                }
+                switch (type, parsed.binding.actions[i]) {
+                case ("keyPress", .keyPress(let kc, let mods)):
+                    guard let expKc = exp["keyCode"] as? NSNumber,
+                          let expMods = exp["modifiers"] as? NSNumber
+                    else {
+                        fail("\(name): actions[\(i)] keyPress missing keyCode/modifiers")
+                    }
+                    expect(UInt16(truncating: expKc) == kc,
+                           "\(name): actions[\(i)] keyCode mismatch — expected=\(expKc), got=\(kc)")
+                    expect(UInt64(truncating: expMods) == mods,
+                           "\(name): actions[\(i)] modifiers mismatch — expected=\(expMods), got=\(mods)")
+                case ("typeText", .typeText(let s)):
+                    guard let expText = exp["text"] as? String else {
+                        fail("\(name): actions[\(i)] typeText missing 'text' field")
+                    }
+                    expect(expText == s,
+                           "\(name): actions[\(i)] text mismatch — expected=\(expText.debugDescription), got=\(s.debugDescription)")
+                default:
+                    fail("\(name): actions[\(i)] type mismatch — expected=\(type), got=\(parsed.binding.actions[i])")
+                }
+            }
+        }
+
+        // YAML-11 inline assertions (D-A-1 + D-A-2 corollaries).
+
+        // 1) Empty input → .empty.
+        do {
+            _ = try ShortcutYAMLParser.parse("")
+            fail("YAML-11: empty string should throw .empty but parse succeeded")
+        } catch let err as ShortcutYAMLError {
+            switch err {
+            case .empty: break // pass
+            default: fail("YAML-11: empty string threw wrong variant: \(err)")
+            }
+        } catch {
+            fail("YAML-11: empty string threw non-ShortcutYAMLError: \(error)")
+        }
+
+        // 2) Only-think input → .empty (preprocessing strips everything).
+        do {
+            _ = try ShortcutYAMLParser.parse("<think>just thoughts</think>")
+            fail("YAML-11: only-think input should throw .empty but parse succeeded")
+        } catch let err as ShortcutYAMLError {
+            switch err {
+            case .empty: break // pass
+            default: fail("YAML-11: only-think threw wrong variant: \(err)")
+            }
+        } catch {
+            fail("YAML-11: only-think threw non-ShortcutYAMLError: \(error)")
+        }
+
+        // 3) version + label but no shortcut: → .missingShortcut.
+        do {
+            _ = try ShortcutYAMLParser.parse("version: 1\nlabel: \"foo\"")
+            fail("YAML-11: missing shortcut should throw .missingShortcut but parse succeeded")
+        } catch let err as ShortcutYAMLError {
+            switch err {
+            case .missingShortcut: break // pass
+            default: fail("YAML-11: no-shortcut threw wrong variant: \(err)")
+            }
+        } catch {
+            fail("YAML-11: no-shortcut threw non-ShortcutYAMLError: \(error)")
+        }
+
+        // 4) D-A-2: unclosed reasoning tag → .unclosedThinkBlock(tag:, line:)
+        //    Opener at original line 1.
+        do {
+            _ = try ShortcutYAMLParser.parse("<think>truncated yaml here")
+            fail("D-A-2: unclosed <think> should throw .unclosedThinkBlock but parse succeeded")
+        } catch let err as ShortcutYAMLError {
+            switch err {
+            case .unclosedThinkBlock(let tag, let line):
+                expect(tag == "think",
+                       "D-A-2: unclosed-think tag mismatch — expected 'think', got '\(tag)'")
+                expect(line == 1,
+                       "D-A-2: unclosed-think line mismatch — expected 1, got \(line)")
+            default:
+                fail("D-A-2: unclosed-think threw wrong variant: \(err)")
+            }
+        } catch {
+            fail("D-A-2: unclosed-think threw non-ShortcutYAMLError: \(error)")
+        }
+
+        // 5) D-B-1 original-coord traceability check.
+        //    The yaml body's `shortcut:` line is line 7 in the ORIGINAL raw
+        //    input (after a 5-line <think> preamble + a `version: 1` line).
+        //    After preprocessing strips the 5-line preamble, the line is at
+        //    processed-line 2. The thrown .invalidValue MUST carry line=7,
+        //    proving LineOffsetMap maps cleaned→original.
+        let traceabilityInput = """
+            <think>
+            line 2 of think
+            line 3 of think
+            line 4 of think
+            </think>
+            version: 1
+            shortcut: "not-a-real-key"
+            """
+        do {
+            _ = try ShortcutYAMLParser.parse(traceabilityInput)
+            fail("D-B-1: bad shortcut should throw .invalidValue but parse succeeded")
+        } catch let err as ShortcutYAMLError {
+            switch err {
+            case .invalidValue(let field, let line, _):
+                expect(field == "shortcut",
+                       "D-B-1: traceability field mismatch — expected 'shortcut', got '\(field)'")
+                expect(line == 7,
+                       "D-B-1: traceability line mismatch — expected 7 (original), got \(line). LineOffsetMap regression?")
+            default:
+                fail("D-B-1: traceability threw wrong variant: \(err)")
+            }
+        } catch {
+            fail("D-B-1: traceability threw non-ShortcutYAMLError: \(error)")
+        }
+    }
 
     // P-05 fills in per-ShortcutYAMLError-variant error fixtures.
     private static func runErrorFixtures() throws {}

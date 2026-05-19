@@ -1,0 +1,10 @@
+Sure, here is your shortcut:
+Let me know if you need adjustments.
+
+version: 1
+shortcut: "alt+g"
+label: "edge"
+enabled: true
+actions:
+  - key: "cmd+space"
+  - text: "chrome"

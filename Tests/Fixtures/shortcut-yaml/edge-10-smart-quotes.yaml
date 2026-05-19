@@ -1,0 +1,7 @@
+version: 1
+shortcut: "alt+g"
+label: “Hello”
+enabled: true
+actions:
+  - key: "cmd+space"
+  - text: ‘chrome’
