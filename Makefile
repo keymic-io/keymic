@@ -190,8 +190,8 @@ test-hotkey-bindings-store:
 test-hotkey-settings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
-	       Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Tests/HotkeySettingsStoreTests.swift \
 	       -o .build/hotkey-settings-store-tests
@@ -283,8 +283,8 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
-	       Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorClipboardPanelTests.swift \
 	       -o .build/keymonitor-clipboard-panel-tests
@@ -353,15 +353,15 @@ test-overlay-state:
 
 test-persona:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
 	       Tests/PersonaTests.swift \
 	       -o .build/persona-tests
 	.build/persona-tests
 
 test-persona-store:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
 	       Tests/PersonaStoreTests.swift \
 	       -o .build/persona-store-tests
 	.build/persona-store-tests
