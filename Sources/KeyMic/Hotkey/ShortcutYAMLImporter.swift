@@ -59,7 +59,7 @@ extension Notification.Name {
 ///   4. TODO(03-05 IMP-05): self-trigger / owned-trigger gate via
 ///      `HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)` +
 ///      `HotkeyRegistry.shared.all().map { $0.config }`.
-///   5. TODO(03-04 IMP-03/IMP-04/IMP-06): gate stack
+///   5. SAFETY GATES (03-04 IMP-03/IMP-04/IMP-06): gate stack
 ///      `cfg.isPureModifier → isSystemReserved → MACOS_RESERVED_SHORTCUTS →
 ///      registry.conflicts(...)` → clear trigger + set `conflictCleared`.
 ///   6. INSERT: `store.bindings.append(binding)` with
@@ -82,6 +82,38 @@ final class ShortcutYAMLImporter {
     /// per IMP-08). Read at every `importYAML` call so settings UI takes
     /// effect immediately.
     static let userDefaultsKeyShellEnabled = "shortcutVoiceShellEnabled"
+
+    /// Additional macOS-reserved shortcuts (gate 3 — IMP-03).
+    ///
+    /// Per 03-CONTEXT.md D-D-1 / D-D-3 and 03-RESEARCH.md Pitfall §4: this set
+    /// contains ONLY entries that are NOT already covered by
+    /// `HotkeyConfig.reservedShortcuts` (HotkeyConfig.swift:226-256). If an
+    /// entry appeared in both, gate 3 would be dead code because gate 2
+    /// (`isSystemReserved`) would already match first. F-row entries are
+    /// excluded (RESEARCH Open Question 1 — "Use F1, F2… as standard function
+    /// keys" toggle produces false positives). The broader collision surface
+    /// is handled by `HotkeyRegistry.conflicts(...)` at gate 4.
+    ///
+    /// The 6 entries (verified non-overlapping with HotkeyConfig.reservedShortcuts):
+    ///   - ⌘⌥Space — alt Spotlight / Character Viewer launcher
+    ///   - ⌘⌃Space — Character Viewer / Emoji panel
+    ///   - ⌘⇧Tab — reverse app switcher
+    ///   - ⌘`     — window cycle within app (keyCode 0x32 / kVK_ANSI_Grave)
+    ///   - ⌘⌥H    — Hide Others
+    ///   - ⌘⌥M    — Minimize all
+    private static let MACOS_RESERVED_SHORTCUTS: Set<HotkeyConfig> = {
+        let cmdAlt: CGEventFlags = [.maskCommand, .maskAlternate]
+        let cmdShift: CGEventFlags = [.maskCommand, .maskShift]
+        let cmdCtrl: CGEventFlags = [.maskCommand, .maskControl]
+        return [
+            HotkeyConfig(modifiers: cmdAlt, keyCode: 0x31),        // ⌘⌥Space — alt Spotlight / Character Viewer
+            HotkeyConfig(modifiers: cmdCtrl, keyCode: 0x31),       // ⌘⌃Space — Character Viewer / Emoji
+            HotkeyConfig(modifiers: cmdShift, keyCode: 0x30),      // ⌘⇧Tab — reverse app switcher
+            HotkeyConfig(modifiers: .maskCommand, keyCode: 0x32),  // ⌘` — window cycle within app
+            HotkeyConfig(modifiers: cmdAlt, keyCode: 0x04),        // ⌘⌥H — Hide Others
+            HotkeyConfig(modifiers: cmdAlt, keyCode: 0x2E),        // ⌘⌥M — Minimize all
+        ]
+    }()
 
     private let store: HotkeyBindingsStore
     private let registry: HotkeyRegistry
@@ -182,23 +214,68 @@ final class ShortcutYAMLImporter {
         // HotkeySettingsStore.shared.hotkey(for: .voiceTrigger) +
         // registry.all().map { $0.config }; throw
         // ShortcutImporterError.actionTriggersVoiceKey on match.
-        _ = registry  // silence unused-warning until P-05 wires the gate
 
-        // Step 5: TODO(P-04 IMP-03/IMP-04/IMP-06): gate stack
-        // cfg.isPureModifier → isSystemReserved → MACOS_RESERVED_SHORTCUTS →
-        // registry.conflicts(...); on match, clear trigger + set
-        // conflictCleared = true, conflictSource = <"pure-modifier" |
-        // "system-reserved" | "macos" | "binding" | "feature">.
-        var conflictCleared = false
-        var conflictSource: String? = nil
-        _ = userDefaults  // silence unused-warning until P-05 wires the gate
-        _ = conflictCleared
-        _ = conflictSource
-
-        // Step 6: INSERT (happy path).
+        // Step 5: SAFETY GATES (IMP-03 / IMP-04 / IMP-06) — 4-gate stack.
+        //
+        // Re-parse the binding's canonical trigger string into a HotkeyConfig
+        // for gate evaluation. Phase 2 stores the canonical-encoded trigger;
+        // HotkeyConfig.parse round-trips it. If parse fails (should not
+        // happen for a valid Phase-2 ParsedShortcut), conservatively treat
+        // as "no gate fires" and let downstream conflict checks decide.
+        //
+        // On any gate match (per IMP-04 contract): the binding is STILL
+        // inserted (user intent preserved) but with `trigger = ""` and
+        // `enabled = false` — user fixes it in Settings later. The
+        // conflictCleared flag + conflictSource string propagate into both
+        // the Outcome (D-E-1) and the AuditRecord (AUD-03).
         var binding = parsed.binding
         binding.createdBy = Self.createdByVoice
         binding.label = parsed.label
+
+        var conflictCleared = false
+        var conflictSource: String? = nil
+
+        if let cfg = HotkeyConfig.parse(binding.trigger) {
+            // GATE 1 — pure modifier (e.g. cmd alone, shift alone).
+            if cfg.isPureModifier {
+                conflictCleared = true
+                conflictSource = "pure-modifier"
+            }
+            // GATE 2 — system-reserved (delegates to HotkeyConfig.reservedShortcuts).
+            else if cfg.isSystemReserved {
+                conflictCleared = true
+                conflictSource = "system-reserved"
+            }
+            // GATE 3 — macOS-reserved safe set (additional non-overlapping entries).
+            else if Self.MACOS_RESERVED_SHORTCUTS.contains(cfg) {
+                conflictCleared = true
+                conflictSource = "macos"
+            }
+            // GATE 4 — hotkey-registry collision (feature or another binding).
+            else {
+                let collisions = registry.conflicts(for: cfg, excluding: .hotkeyBinding(id: binding.id))
+                if !collisions.isEmpty {
+                    conflictCleared = true
+                    // Classify: any non-hotkeyBinding owner → "feature";
+                    // all hotkeyBinding owners → "binding".
+                    let isFeature = collisions.contains { entry in
+                        if case .hotkeyBinding = entry.owner { return false }
+                        return true
+                    }
+                    conflictSource = isFeature ? "feature" : "binding"
+                }
+            }
+        }
+
+        if conflictCleared {
+            binding.trigger = ""
+            binding.enabled = false
+        }
+
+        _ = userDefaults  // silence unused-warning until P-05 wires the shell gate
+
+        // Step 6: INSERT (binding always inserts per IMP-04 contract; the
+        // trigger has been cleared above if any gate matched).
         store.bindings.append(binding)  // direct mutation per SettingsRoot.swift:1119-1122
 
         // Step 7: RECORD undo state (D-F-1).
