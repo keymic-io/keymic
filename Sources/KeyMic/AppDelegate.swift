@@ -57,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardMenuItem: NSMenuItem!
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
-    private lazy var settingsWindow = SwiftUISettingsWindow()
+    private lazy var settingsWindow = SwiftUISettingsWindow(armShortcutVoice: { ShortcutVoiceCoordinator.shared.arm() })
     var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }
