@@ -170,6 +170,25 @@ struct AuditRecord: Codable, Equatable {
 final class ShortcutAuditLog {
     static let shared = ShortcutAuditLog()
 
+    /// Public path to the audit log. Used by Phase 5's "Reveal Audit Log" button
+    /// (UI-06 → `NSWorkspace.shared.activateFileViewerSelecting([url])`).
+    ///
+    /// Derived identically to the convenience-init `logURL == nil` branch at
+    /// lines 195-202 of this file:
+    ///   `~/Library/Application Support/KeyMic/shortcut-voice-audit.log`
+    ///
+    /// Single source of truth: the convenience init now assigns
+    /// `self.logURL = Self.defaultURL` so the path is computed in one place.
+    public static let defaultURL: URL = {
+        let appSupport = FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first!
+        return appSupport
+            .appendingPathComponent("KeyMic", isDirectory: true)
+            .appendingPathComponent("shortcut-voice-audit.log")
+    }()
+
     private let queue = DispatchQueue(label: "io.keymic.app.audit-log")
     private let logURL: URL
     private let maxBytes: Int
@@ -190,17 +209,10 @@ final class ShortcutAuditLog {
     /// per ClipboardStore.swift:50-58 precedent (uses `applicationSupportDirectory`,
     /// not the home-directory shortcut that ShellLogger uses for `~/Library/Logs`).
     init(logURL: URL? = nil, maxBytes: Int = 5 * 1024 * 1024) {
-        if let logURL = logURL {
-            self.logURL = logURL
-        } else {
-            let appSupport = FileManager.default.urls(
-                for: .applicationSupportDirectory,
-                in: .userDomainMask
-            ).first!
-            self.logURL = appSupport
-                .appendingPathComponent("KeyMic", isDirectory: true)
-                .appendingPathComponent("shortcut-voice-audit.log")
-        }
+        // Consolidated to `Self.defaultURL` — single source of truth for the
+        // default path. Swift `static let` is lazy + dispatch_once-thread-safe,
+        // so referencing it from `init` carries no concurrency risk.
+        self.logURL = logURL ?? Self.defaultURL
         self.maxBytes = maxBytes
     }
 
