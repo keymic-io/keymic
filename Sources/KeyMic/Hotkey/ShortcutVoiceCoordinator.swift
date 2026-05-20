@@ -309,8 +309,16 @@ final class ShortcutVoiceCoordinator {
         armTimer = nil
         pendingVoiceMode = .normal
         currentRequestToken = nil
-        overlayPanel.dismiss()
-        logger.info("cancel reason=\(String(describing: reason), privacy: .public)")
+        // WR-05 fix: only dismiss the overlay when we are NOT mid-active-capture.
+        // If activeVoiceMode == .shortcutConfig the overlay is currently
+        // showing the active "Listening..." / partial-transcript text (set by
+        // AppDelegate.triggerDown / SpeechEngine.onPartialResult), and the
+        // active cycle (or resetAllState) is responsible for owning that
+        // overlay state. cancel(reason:) only owns the arm-hint overlay.
+        if activeVoiceMode == .normal {
+            overlayPanel.dismiss()
+        }
+        logger.info("cancel reason=\(String(describing: reason), privacy: .public) dismissedOverlay=\(self.activeVoiceMode == .normal, privacy: .public)")
     }
 
     /// Hard reset per COORD-09: clears arm state + `activeVoiceMode` +
@@ -319,6 +327,11 @@ final class ShortcutVoiceCoordinator {
     /// for the arm-clearing half so the two methods stay in lockstep.
     func resetAllState(reason: CancelReason) {
         cancel(reason: reason)
+        // WR-05: cancel() now only dismisses the overlay when active==.normal
+        // (so it does NOT clobber the active "Listening..." UI). resetAllState
+        // is the HARD reset — it owns dismissing the overlay unconditionally,
+        // regardless of which sub-state the overlay was in.
+        overlayPanel.dismiss()
         activeVoiceMode = .normal
         // Hard-cancel any in-flight LLM call (URLSession task.cancel()).
         // Per LLMRefiner.swift:99-102 the completion still fires with
