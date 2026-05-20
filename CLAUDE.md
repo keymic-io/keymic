@@ -120,7 +120,7 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 
 ## Conventions
 
-- Swift 5.9, target macOS 14. Source root: `Sources/KeyMic/`.
+- Swift 5 language mode (swift-tools-version 6.0 with `.swiftLanguageMode(.v5)`), target macOS 14. Source root: `Sources/KeyMic/`.
 - One SwiftPM dependency: Sparkle 2 (`2.6.0..<3.0.0`).
 - Logging: `os.Logger` with subsystem `io.keymic.app`. `LLMRefiner` additionally writes to `~/Library/Logs/KeyMic.log` for offline debugging.
 - Singletons (`KeyMappingManager.shared`, `LLMRefiner.shared`) for cross-cutting state; everything else is owned by `AppDelegate`.
