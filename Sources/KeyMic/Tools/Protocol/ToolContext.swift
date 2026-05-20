@@ -12,8 +12,16 @@ public struct ToolContext: Sendable {
     /// exceeds this. `0` means no limit.
     public let maxOutputBytes: Int
 
-    /// Optional cancellation token. Tools should periodically call
-    /// `try Task.checkCancellation()` if they perform long work.
+    /// Cancellation token. Tools that perform long work should periodically check
+    /// it and bail out:
+    ///
+    /// ```swift
+    /// if context.isCancelled() { throw CancellationError() }
+    /// ```
+    ///
+    /// The closure exists in addition to (not instead of) Swift's `Task.isCancelled`
+    /// so callers that cannot use a `Task` (e.g. UI threads triggering hotkey actions)
+    /// can still signal cancellation.
     public let isCancelled: @Sendable () -> Bool
 
     public init(

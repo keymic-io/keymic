@@ -21,6 +21,11 @@ public protocol Tool: Sendable {
     /// JSON Schema describing the input. Must be a JSON-Schema-shaped
     /// dictionary with at least `"type": "object"` and `"properties"`.
     /// Used verbatim when constructing LLM tool definitions.
+    ///
+    /// Note: `[String: Any]` is intentional to allow nested heterogeneous
+    /// JSON Schema. Under Swift 6 strict-concurrency mode, conformers may need
+    /// `@unchecked Sendable` if they hold one. A typed `JSONSchema` enum may
+    /// replace this in a future plan.
     var parametersJSONSchema: [String: Any] { get }
 
     /// Execute the tool. `argumentsJSON` is the raw bytes of the tool input
