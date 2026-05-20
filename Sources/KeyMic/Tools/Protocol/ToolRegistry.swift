@@ -13,22 +13,25 @@ public enum ToolRegistryError: Error, LocalizedError {
 
 /// Actor that owns the set of tools available to an agent.
 ///
-/// Two registration paths:
-/// - `register(_:)` silently overwrites any previous tool with the same name.
-///   Use this when re-loading tools after config change.
-/// - `registerThrowing(_:)` throws on duplicate name. Use this when populating
-///   from a trusted source where collision is a bug.
+/// Registration defaults to throwing on duplicate name; pass
+/// `replacingExisting: true` to silently overwrite (e.g. when reloading
+/// tools after a config change).
 public actor ToolRegistry {
     private var tools: [String: any Tool] = [:]
 
     public init() {}
 
-    public func register(_ tool: any Tool) {
-        tools[tool.name] = tool
-    }
-
-    public func registerThrowing(_ tool: any Tool) throws {
-        if tools[tool.name] != nil {
+    /// Register a tool. Throws `ToolRegistryError.duplicateName` if a tool
+    /// with the same name is already registered, unless `replacingExisting`
+    /// is true (in which case the previous registration is silently
+    /// overwritten).
+    ///
+    /// Default behavior is throw — this matches the principle that the
+    /// safe path is unannotated. Pass `replacingExisting: true` only when
+    /// you genuinely intend to overwrite (e.g. reloading tools after a
+    /// config change).
+    public func register(_ tool: any Tool, replacingExisting: Bool = false) throws {
+        if !replacingExisting, tools[tool.name] != nil {
             throw ToolRegistryError.duplicateName(tool.name)
         }
         tools[tool.name] = tool
@@ -46,7 +49,10 @@ public actor ToolRegistry {
         tools.keys.sorted()
     }
 
+    /// Returns all registered tools sorted by name. Use this when feeding
+    /// the toolset to an LLM — deterministic ordering maximizes prompt
+    /// cache hit rate.
     public func all() -> [any Tool] {
-        tools.values.map { $0 }
+        tools.keys.sorted().compactMap { tools[$0] }
     }
 }

@@ -6,6 +6,8 @@ private final class ToolProtocolTests {
         try testEchoToolSchemaShape()
         try testRegistryRegisterAndLookup()
         try testRegistryDuplicateNameThrows()
+        try testRegistryReplaceExistingSucceeds()
+        try testRegistrySortOrder()
         print("ToolProtocolTests passed")
     }
 
@@ -25,6 +27,25 @@ private final class ToolProtocolTests {
             struct Args: Decodable { let text: String }
             let args = try JSONDecoder().decode(Args.self, from: argumentsJSON)
             return args.text
+        }
+    }
+
+    /// A second fixture used to verify allNames/all sort order.
+    struct UpperEchoTool: Tool {
+        let name = "UpperEcho"
+        let description = "Echoes input uppercased."
+        let parametersJSONSchema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "text": ["type": "string"]
+            ],
+            "required": ["text"]
+        ]
+
+        func call(argumentsJSON: Data, context: ToolContext) async throws -> String {
+            struct Args: Decodable { let text: String }
+            let args = try JSONDecoder().decode(Args.self, from: argumentsJSON)
+            return args.text.uppercased()
         }
     }
 
@@ -51,7 +72,7 @@ private final class ToolProtocolTests {
     static func testRegistryRegisterAndLookup() throws {
         let registry = ToolRegistry()
         try runAsync {
-            await registry.register(EchoTool())
+            try await registry.register(EchoTool())
             let found = await registry.tool(named: "echo")
             guard found != nil else {
                 throw TestFailure("registry could not find registered tool")
@@ -66,12 +87,47 @@ private final class ToolProtocolTests {
     static func testRegistryDuplicateNameThrows() throws {
         let registry = ToolRegistry()
         try runAsync {
-            await registry.register(EchoTool())
+            try await registry.register(EchoTool())
             do {
-                try await registry.registerThrowing(EchoTool())
+                try await registry.register(EchoTool())
                 throw TestFailure("expected duplicate-name error")
-            } catch is ToolRegistryError {
+            } catch ToolRegistryError.duplicateName(let n) where n == "echo" {
                 // expected
+            }
+        }
+    }
+
+    static func testRegistryReplaceExistingSucceeds() throws {
+        let registry = ToolRegistry()
+        try runAsync {
+            try await registry.register(EchoTool())
+            // Same name, replacingExisting: true — should NOT throw.
+            try await registry.register(EchoTool(), replacingExisting: true)
+            let all = await registry.allNames()
+            guard all == ["echo"] else {
+                throw TestFailure("expected single 'echo', got: \(all)")
+            }
+        }
+    }
+
+    static func testRegistrySortOrder() throws {
+        let registry = ToolRegistry()
+        try runAsync {
+            // Register in non-alphabetical order; expect sorted output.
+            try await registry.register(EchoTool())          // "echo"
+            try await registry.register(UpperEchoTool())     // "UpperEcho"
+
+            // ASCII sort puts uppercase before lowercase: "UpperEcho" < "echo".
+            let names = await registry.allNames()
+            guard names == ["UpperEcho", "echo"] else {
+                throw TestFailure("allNames order wrong: \(names)")
+            }
+
+            // all() should be sorted too.
+            let tools = await registry.all()
+            let toolNames = tools.map { $0.name }
+            guard toolNames == ["UpperEcho", "echo"] else {
+                throw TestFailure("all() order wrong: \(toolNames)")
             }
         }
     }
