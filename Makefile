@@ -422,6 +422,7 @@ test-shortcut-yaml-importer:
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
@@ -436,6 +437,7 @@ test-shortcut-yaml-importer:
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
@@ -449,6 +451,7 @@ test-shortcut-yaml-importer:
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
@@ -467,6 +470,7 @@ test-shortcut-voice-coordinator:
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
@@ -485,6 +489,7 @@ test-shortcut-voice-coordinator:
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
@@ -502,6 +507,7 @@ test-shortcut-voice-coordinator:
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \

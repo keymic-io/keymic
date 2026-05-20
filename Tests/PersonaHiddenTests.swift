@@ -204,9 +204,19 @@ struct PersonaHiddenTestRunner {
         expect(shortcut?.hidden == true,
                "hidden restored to seed value (was false on disk)")
 
-        // User-editable fields preserved from disk:
-        expect(shortcut?.stylePrompt == "user-edited prompt — should survive merge",
-               "user's stylePrompt edit preserved through merge")
+        // Phase 6 D-E re-sync: hidden persona stylePrompt is built-in, not user
+        // data. The merge step PRESERVES disk values, but PersonaStore.load()'s
+        // D-E re-sync block then overwrites the stylePrompt with
+        // HiddenPersonaPrompt.text whenever they differ. This Phase 1 fixture
+        // ships a disk stylePrompt of "user-edited prompt — should survive
+        // merge", which differs from HiddenPersonaPrompt.text and therefore
+        // gets re-synced. The disk customization is silently lost per D-E-3/4
+        // (the hidden persona is hidden:true + builtIn:true; users cannot
+        // legitimately customize it via the UI).
+        expect(shortcut?.stylePrompt == HiddenPersonaPrompt.text,
+               "hidden persona stylePrompt force-resynced to HiddenPersonaPrompt.text (Plan 06-02 D-E)")
+        // Other user-editable fields are still preserved from disk — D-E only
+        // re-syncs stylePrompt, NOT temperature / icon / hotkey / contextMode.
         expect(shortcut?.temperature == 0.99,
                "temperature preserved from disk")
         expect(shortcut?.icon == "wrench",
