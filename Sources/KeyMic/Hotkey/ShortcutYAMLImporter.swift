@@ -23,6 +23,16 @@ struct Outcome: Equatable {
     /// Audit-log writer renders the full JSON sub-object via
     /// `ShortcutAuditLog.canonicalKind(_)`; the Outcome carries only the
     /// kind tag so the consumer can branch without depending on the writer.
+    ///
+    /// WR-06: documented kind enumeration for consumers (Phase 5 UI etc.):
+    ///   - YAML-parse errors: `"empty"`, `"missingShortcut"`, `"malformedAction"`,
+    ///     `"unknownActionKey"`, `"invalidValue"`, `"invalidIndent"`,
+    ///     `"unclosedThinkBlock"`, `"unclosedString"`, `"duplicateField"`
+    ///   - Importer rejections: `"actionTriggersVoiceKey"`, `"ownedTriggerCollision"`
+    ///   - LLM failures (written by `recordLLMFailure(...)`): `"llm-error"`
+    ///   - Unknown / catch-all: `"unknown"`
+    /// Priority dispatch order in `routeOutcomeToOverlay` (D-B-3): parseError
+    /// wins over conflictCleared which wins over bindingId.
     let parseError: String?
     /// `true` when the importer cleared a colliding trigger before insert.
     let conflictCleared: Bool
