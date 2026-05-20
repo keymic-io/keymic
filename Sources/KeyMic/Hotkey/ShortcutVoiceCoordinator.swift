@@ -135,6 +135,13 @@ final class ShortcutVoiceCoordinator {
         case cancelRecording
     }
 
+    // MARK: - Constants
+
+    /// CR-02: success/failure toast linger time before `overlayPanel.dismiss()`.
+    /// Mirrors `AppDelegate.finishTranscription` non-shortcut path (1.5s) so the
+    /// two voice flows have the same observable toast duration.
+    fileprivate static let toastDismissDelay: TimeInterval = 1.5
+
     // MARK: - State (all private(set) per COORD-02; external readers see modes only via the getter)
 
     private(set) var pendingVoiceMode: VoiceMode = .normal
@@ -349,6 +356,16 @@ final class ShortcutVoiceCoordinator {
             case .failure(let error):
                 self.importer.recordLLMFailure(transcript: transcript, errorMessage: error.localizedDescription)
                 self.overlayPanel.updateText("Could not configure shortcut")
+            }
+
+            // CR-02 fix: schedule overlay dismissal so the success/failure
+            // toast fades after ~1.5s. Mirrors AppDelegate.finishTranscription
+            // (the non-shortcut path) — without this, the overlay set by
+            // arm() ("Speak your shortcut (30s)…") then replaced by toast
+            // text via routeOutcomeToOverlay / updateText would remain on
+            // screen indefinitely. See REVIEW.md CR-02 for full analysis.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.toastDismissDelay) { [weak self] in
+                self?.overlayPanel.dismiss()
             }
 
             // resetActiveMode() clears activeVoiceMode + currentRequestToken

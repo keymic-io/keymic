@@ -266,6 +266,14 @@ struct ShortcutVoiceCoordinatorTestRunner {
         expect(hasAddedToast,
                "overlay received an 'Added' toast on happy path (got updates=\(updates))")
 
+        // CR-02 regression: the success-toast must be auto-dismissed by the
+        // coordinator's DispatchQueue.main.asyncAfter scheduled inside the
+        // refiner completion. Pump the main runloop past the 1.5s delay.
+        let dismissCallsBefore = f.overlay.dismissCalls
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.7))
+        expect(f.overlay.dismissCalls > dismissCallsBefore,
+               "overlay.dismiss() must be called after success toast (before=\(dismissCallsBefore), after=\(f.overlay.dismissCalls)) — CR-02")
+
         print("testHandleTranscriptionHappyPath: ok")
     }
 
@@ -300,6 +308,15 @@ struct ShortcutVoiceCoordinatorTestRunner {
         // Overlay received the failure literal.
         expect(f.overlay.updateCalls.contains("Could not configure shortcut"),
                "overlay shows failure literal (got updates=\(f.overlay.updateCalls))")
+
+        // CR-02 regression: failure-toast must also auto-dismiss after the 1.5s
+        // linger window. Without the scheduled dismiss, the overlay set by
+        // arm() then replaced by updateText("Could not configure shortcut")
+        // would remain on screen until the next show()/dismiss() call.
+        let dismissCallsBefore = f.overlay.dismissCalls
+        RunLoop.main.run(until: Date(timeIntervalSinceNow: 1.7))
+        expect(f.overlay.dismissCalls > dismissCallsBefore,
+               "overlay.dismiss() must be called after failure toast (before=\(dismissCallsBefore), after=\(f.overlay.dismissCalls)) — CR-02")
 
         // Audit-log line written with kind=llm-error.
         let content = (try? String(contentsOf: f.auditURL, encoding: .utf8)) ?? ""
