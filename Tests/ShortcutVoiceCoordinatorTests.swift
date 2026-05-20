@@ -534,8 +534,24 @@ fileprivate final class MockRefiner: LLMRefining {
         capturedCompletion = completion
     }
 
+    /// WR-07: real LLMRefiner.cancel() calls URLSessionDataTask.cancel(),
+    /// which causes the data-task closure to fire with URLError(.cancelled)
+    /// — i.e. cancel() DOES surface a late completion (per RESEARCH
+    /// §LLMRefiner.cancel-doesnt-prevent-fire). Make the mock mirror that
+    /// behavior so testTokenDiscardOnStaleCompletion (and any future test)
+    /// exercises the same race the real refiner produces.
+    ///
+    /// The captured completion is `@MainActor` (WR-01); cancel() is invoked
+    /// from coordinator code that is itself @MainActor, so MainActor.assumeIsolated
+    /// is the correct bridge from this non-isolated protocol method.
     func cancel() {
         cancelCalls += 1
+        if let completion = capturedCompletion {
+            capturedCompletion = nil
+            MainActor.assumeIsolated {
+                completion(.failure(URLError(.cancelled)))
+            }
+        }
     }
 
     /// Manually fire the captured completion to simulate a late LLM return.
