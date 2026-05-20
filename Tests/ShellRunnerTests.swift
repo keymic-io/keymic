@@ -14,11 +14,6 @@ private final class ShellRunnerTests {
         print("ShellRunnerTests passed")
     }
 
-    enum TestError: Error {
-        case message(String)
-        init(_ m: String) { self = .message(m) }
-    }
-
     final class CapturedLogger: ShellLogger {
         var entries: [ShellLogEntry] = []
         private let lock = NSLock()
@@ -156,12 +151,20 @@ private final class ShellRunnerTests {
         }
         semaphore.wait()
 
-        guard result.exitCode == 0 else { throw TestError("expected exit 0, got \(result.exitCode)") }
+        guard result.exitCode == 0 else {
+            fatalError("expected exit 0, got \(result.exitCode)")
+        }
         guard result.stdout.contains("hello") else {
-            throw TestError("stdout missing 'hello': '\(result.stdout)'")
+            fatalError("stdout missing 'hello': '\(result.stdout)'")
         }
         guard result.stderr.contains("oops") else {
-            throw TestError("stderr missing 'oops': '\(result.stderr)'")
+            fatalError("stderr missing 'oops': '\(result.stderr)'")
+        }
+
+        // Log-entry assertion: runAndCapture must produce the same log row
+        // as run(_:). Cheap insurance against the runAndLog refactor.
+        guard let entry = captured.entries.last, entry.stdout.contains("hello") else {
+            fatalError("expected ShellLogEntry from runAndCapture to capture stdout")
         }
     }
 }
