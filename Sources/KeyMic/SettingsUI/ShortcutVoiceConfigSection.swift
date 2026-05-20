@@ -72,6 +72,13 @@ struct ShortcutVoiceConfigSection: View {
     /// `UserDefaults.didChangeNotification` fires.
     @State private var voiceTriggerLabel: String = "fn"
 
+    /// UI-04 caption-flip + button-disable driver. Flipped to `true` from
+    /// `startArm()` immediately after the AppDelegate-injected arm closure
+    /// fires; flipped back to `false` by the Esc local monitor (Task 3),
+    /// the 30s UI-side timeout mirror (Task 3), and (in 05-04) the
+    /// `.shortcutImportDidComplete` notification handler.
+    @State private var isArmed: Bool = false
+
     // MARK: Body
 
     var body: some View {
@@ -90,8 +97,29 @@ struct ShortcutVoiceConfigSection: View {
                 Text(String(localized: "Voice trigger key:"))
             }
 
-            // Start button + Esc handling + status line land in Tasks 2/3 and
-            // plans 05-04/05-05 respectively.
+            // UI-04: "Start Voice Recording" button. Caption flips between
+            // the idle and armed literals based on `isArmed`. While armed,
+            // the button is disabled to prevent double-arming via the UI
+            // (the coordinator's arm() is idempotent / replace-on-rearm,
+            // but disabling makes the affordance clearer).
+            //
+            // The armed-state literal "Waiting for voice key… (Esc to cancel)"
+            // uses the U+2026 single-character ellipsis to match the Phase 4
+            // overlay literal "Speak your shortcut (30s)…" (verified
+            // hexdump e2 80 a6). DO NOT replace with three ASCII dots.
+            Button {
+                startArm()
+            } label: {
+                Text(isArmed
+                     ? String(localized: "Waiting for voice key… (Esc to cancel)")
+                     : String(localized: "Start Voice Recording"))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .disabled(isArmed)
+
+            // Esc handling (Task 3) and status line / Undo (05-04) land in
+            // subsequent commits.
         }
         .onAppear { refreshVoiceTriggerLabel() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
@@ -107,5 +135,15 @@ struct ShortcutVoiceConfigSection: View {
     /// `HotkeyFeature.defaults`.
     private func refreshVoiceTriggerLabel() {
         voiceTriggerLabel = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString() ?? "fn"
+    }
+
+    /// UI-03 + UI-04: arms the coordinator via the AppDelegate-injected
+    /// closure, then flips view-local `isArmed` to drive the caption +
+    /// disable state. Ordering matters: arm first (coordinator transitions
+    /// to `.shortcutConfig`), THEN flip the view — keeps the state
+    /// machines coherent if the closure ever becomes async.
+    private func startArm() {
+        armShortcutVoice()
+        isArmed = true
     }
 }
