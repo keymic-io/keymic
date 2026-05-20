@@ -173,6 +173,11 @@ final class KeyMonitor {
     // MARK: - Private
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        // APP-04: synthetic-event sentinel early-return.
+        // Pass through unchanged so the OS still delivers the event to its target;
+        // we just skip dispatching it into voice / clipboard / persona detection.
+        if HotkeyEventTagging.isSynthetic(event) { return Unmanaged.passRetained(event) }
+
         if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
             let reason: InputResetReason = (type == .tapDisabledByTimeout)
                 ? .tapDisabledByTimeout

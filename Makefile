@@ -283,6 +283,7 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/HIDRemapper.swift \
 	       Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyEventTagging.swift \
 	       Sources/KeyMic/Hotkey/HotkeyPreferences.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
