@@ -83,6 +83,7 @@ final class SpeechEngine {
             SFSpeechRecognizer?, SFSpeechAudioBufferRecognitionRequest,
             @escaping (SFSpeechRecognitionResult?, Error?) -> Void
         ) -> SpeechRecognitionTasking?
+    private let microphoneAuthorizationProbe: () -> AVAuthorizationStatus
     private var audioEngine: SpeechAudioEngineing?
     private var inputTapInstalled = false
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -115,7 +116,10 @@ final class SpeechEngine {
                 SFSpeechRecognizer?, SFSpeechAudioBufferRecognitionRequest,
                 @escaping (SFSpeechRecognitionResult?, Error?) -> Void
             ) -> SpeechRecognitionTasking?
-        )? = nil
+        )? = nil,
+        microphoneAuthorizationProbe: @escaping () -> AVAuthorizationStatus = {
+            AVCaptureDevice.authorizationStatus(for: .audio)
+        }
     ) {
         self.locale = locale
         self.audioEngineFactory = audioEngineFactory
@@ -125,6 +129,7 @@ final class SpeechEngine {
             startRecognitionTask ?? { recognizer, request, handler in
                 recognizer?.recognitionTask(with: request, resultHandler: handler)
             }
+        self.microphoneAuthorizationProbe = microphoneAuthorizationProbe
     }
 
     // MARK: - Permissions
@@ -162,7 +167,17 @@ final class SpeechEngine {
 
     // MARK: - Recording
 
-    func startRecording() {
+    /// Begin a new session. Throws `VoiceError.microphoneAccessDenied` if TCC
+    /// status is anything other than `.authorized`. Throws
+    /// `VoiceError.recognizerUnavailable` / `VoiceError.audioEngineFailed`
+    /// for the matching failures. The returned `VoiceSession.cancel()`
+    /// (or its deinit) tears down the recognition task + audio engine.
+    func startSession() throws -> VoiceSession {
+        let status = microphoneAuthorizationProbe()
+        guard status == .authorized else {
+            throw VoiceError.microphoneAccessDenied(status)
+        }
+
         cleanupAudioSession()
         taskGeneration &+= 1
         let myGeneration = taskGeneration
@@ -171,76 +186,45 @@ final class SpeechEngine {
         firstBufferReceived = false
 
         guard speechRecognizerAvailability(speechRecognizer) else {
-            onError?(String(localized: "Speech recognizer not available for \(locale.identifier)"))
-            return
+            throw VoiceError.recognizerUnavailable(locale.identifier)
         }
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        if #available(macOS 13, *) {
-            request.addsPunctuation = true
-        }
+        if #available(macOS 13, *) { request.addsPunctuation = true }
         recognitionRequest = request
 
         recognitionTask = startRecognitionTask(speechRecognizer, request) { [weak self] result, error in
-            // Drop callbacks from a task that has been superseded by a newer
-            // startRecording or cancel — stale partials would otherwise
-            // overwrite the live session and dismiss its overlay. Errors that
-            // belong to the live task are surfaced as-is so real failures
-            // (e.g. recognizer service crashes) reach the user.
             guard let self, self.taskGeneration == myGeneration else { return }
             if let result {
                 let text = result.bestTranscription.formattedString
-                if result.isFinal {
-                    self.onFinalResult?(text)
-                } else {
-                    self.onPartialResult?(text)
-                }
+                if result.isFinal { self.onFinalResult?(text) } else { self.onPartialResult?(text) }
             }
-            if let error {
-                self.onError?(error.localizedDescription)
-            }
+            if let error { self.onError?(error.localizedDescription) }
         }
 
         let engine = audioEngineFactory()
         audioEngine = engine
         let inputNode = engine.inputNode
-
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
-        logger.info("startRecording — input device: \(deviceName, privacy: .public)")
+        logger.info("startSession — input device: \(deviceName, privacy: .public)")
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             request.append(buffer)
-
-            // Cancel watchdog on first real buffer (dispatched to main to stay on same queue).
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.firstBufferReceived else { return }
                 self.firstBufferReceived = true
                 self.audioWatchdog?.cancel()
                 self.audioWatchdog = nil
-                let n = Int(buffer.frameLength)
-                var sum: Float = 0
-                if let data = buffer.floatChannelData?[0] {
-                    for i in 0..<n { sum += data[i] * data[i] }
-                }
-                let rms = sqrtf(sum / Float(max(n, 1)))
-                logger.info(
-                    "First audio buffer — device: \(deviceName, privacy: .public), frames: \(n, privacy: .public), RMS: \(rms, privacy: .public)"
-                )
             }
-
             guard let channelData = buffer.floatChannelData?[0] else { return }
             let frameLength = Int(buffer.frameLength)
             var sum: Float = 0
-            for i in 0..<frameLength {
-                sum += channelData[i] * channelData[i]
-            }
+            for i in 0..<frameLength { sum += channelData[i] * channelData[i] }
             let rms = sqrtf(sum / Float(max(frameLength, 1)))
             let dB = 20 * log10(max(rms, 1e-6))
             let normalized = max(Float(0), min(Float(1), (dB + 50) / 40))
-            DispatchQueue.main.async {
-                self?.onAudioLevel?(normalized)
-            }
+            DispatchQueue.main.async { self?.onAudioLevel?(normalized) }
         }
         inputTapInstalled = true
 
@@ -248,14 +232,12 @@ final class SpeechEngine {
         do {
             try engine.start()
         } catch {
+            // cleanup() nils recognitionTask but does NOT cancel it — order matters.
             recognitionTask?.cancel()
-            onError?(String(localized: "Audio engine failed: \(error.localizedDescription)"))
             cleanup()
-            return
+            throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
 
-        // Watchdog: if no audio frame arrives within 800ms, the mic is stuck
-        // (common with Bluetooth SCO cold-start). Tear down and notify the user.
         let watchdog = DispatchWorkItem { [weak self] in
             guard let self, !self.firstBufferReceived else { return }
             logger.error(
@@ -265,14 +247,24 @@ final class SpeechEngine {
         }
         audioWatchdog = watchdog
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: watchdog)
+
+        let sessionGeneration = myGeneration
+        return VoiceSession { [weak self] in
+            guard let self, self.taskGeneration == sessionGeneration else { return }
+            self.endSession()
+        }
     }
 
-    func stopRecording() {
+    /// End audio capture but let the recognition task drain to a final result.
+    /// Called when the state machine transitions listening → transcribing.
+    func endAudio() {
         cleanupAudioSession()
         recognitionRequest?.endAudio()
     }
 
-    func cancel() {
+    /// Abort everything: recognition task is canceled, audio teardown completes.
+    /// Called by `VoiceSession.cancel()` / its deinit.
+    private func endSession() {
         taskGeneration &+= 1
         recognitionTask?.cancel()
         cleanup()
