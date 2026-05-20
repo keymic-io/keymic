@@ -210,6 +210,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // APP-03: ordered lifecycle teardown (per 04-RESEARCH.md Pattern 3).
+        // Order is load-bearing:
+        //   1. LLMRefiner.shared.cancel() — kill any in-flight HTTP first so its completion
+        //      lands before the importer's terminate flush has run.
+        //   2. ShortcutVoiceCoordinator.shared.resetAllState(.appQuit) — clear coordinator state
+        //      (modes, timer, currentRequestToken). Calls refiner.cancel() again (idempotent).
+        //   3. ShortcutYAMLImporter.shared.terminate() — drain audit-log serial queue (AUD-06).
+        //      Any pending audit writes from cancelled LLM cycle land here.
+        LLMRefiner.shared.cancel()
+        MainActor.assumeIsolated {
+            ShortcutVoiceCoordinator.shared.resetAllState(reason: .appQuit)
+        }
+        ShortcutYAMLImporter.shared.terminate()
+
         HIDRemapper.reset()
         if let token = personaObserverToken {
             NotificationCenter.default.removeObserver(token)
