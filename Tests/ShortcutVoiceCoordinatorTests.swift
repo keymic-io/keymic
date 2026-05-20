@@ -458,14 +458,16 @@ fileprivate final class MockRefiner: LLMRefining {
     var capturedTranscript: String?
     var capturedSystemPrompt: String?
     var capturedTemperature: Double?
-    var capturedCompletion: ((Result<String, Error>) -> Void)?
+    // WR-01: protocol now declares completion `@escaping @MainActor (Result) -> Void`.
+    // The mock's captured-closure storage type tracks the protocol exactly.
+    var capturedCompletion: (@MainActor (Result<String, Error>) -> Void)?
     var cancelCalls = 0
 
     func refine(
         _ userText: String,
         systemPrompt: String,
         temperature: Double,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping @MainActor (Result<String, Error>) -> Void
     ) {
         capturedTranscript = userText
         capturedSystemPrompt = systemPrompt
@@ -480,6 +482,9 @@ fileprivate final class MockRefiner: LLMRefining {
     /// Manually fire the captured completion to simulate a late LLM return.
     /// Used by `testTokenDiscardOnStaleCompletion` to deliver a stale result
     /// AFTER `resetAllState` has cleared the coordinator's request token.
+    /// Marked `@MainActor` because the completion closure is `@MainActor`;
+    /// tests already run on main (see @main runner annotation).
+    @MainActor
     func fire(_ result: Result<String, Error>) {
         capturedCompletion?(result)
     }

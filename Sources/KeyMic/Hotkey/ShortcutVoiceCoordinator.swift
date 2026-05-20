@@ -32,18 +32,59 @@ extension OverlayPanel: OverlayDisplaying {}
 /// The `refine` signature MUST match LLMRefiner.swift:37-42 EXACTLY — the
 /// PRD's fictional `refine(text:persona:context:completion:)` does NOT
 /// compile (carried as STATE.md API-correction note for Phase 4).
+///
+/// WR-01 fix: the completion closure is annotated `@MainActor` so callers
+/// (e.g. ShortcutVoiceCoordinator.handleTranscription's closure body) can
+/// safely access `@MainActor` state inside the completion. The concrete
+/// `LLMRefiner.refine` already routes its completion via
+/// `DispatchQueue.main.async { completion(...) }` (LLMRefiner.swift:75,80,88,94),
+/// so the runtime contract is unchanged — only the type-level guarantee
+/// is tightened, preventing latent breakage under Swift 6 strict
+/// concurrency.
 protocol LLMRefining: AnyObject {
     var isReady: Bool { get }
     func refine(
         _ userText: String,
         systemPrompt: String,
         temperature: Double,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping @MainActor (Result<String, Error>) -> Void
     )
     func cancel()
 }
 
-extension LLMRefiner: LLMRefining {}
+/// WR-01: production adapter that wraps `LLMRefiner.shared` and bridges
+/// its non-isolated completion (declared in LLMRefiner.swift, MUST-NOT-touch
+/// boundary) to the protocol's `@MainActor` completion. The production
+/// `LLMRefiner.refine` already dispatches its completion via
+/// `DispatchQueue.main.async` (LLMRefiner.swift:75,80,88,94), so the
+/// `MainActor.assumeIsolated` re-entry inside the adapter callback is
+/// always safe at runtime.
+///
+/// Used by the production `ShortcutVoiceCoordinator()` init. Tests still
+/// inject `MockRefiner` directly via the DI init.
+fileprivate final class MainActorLLMRefiner: LLMRefining {
+    private let underlying: LLMRefiner
+    init(underlying: LLMRefiner) { self.underlying = underlying }
+
+    var isReady: Bool { underlying.isReady }
+
+    func refine(
+        _ userText: String,
+        systemPrompt: String,
+        temperature: Double,
+        completion: @escaping @MainActor (Result<String, Error>) -> Void
+    ) {
+        underlying.refine(userText, systemPrompt: systemPrompt, temperature: temperature) { result in
+            // LLMRefiner.refine dispatches via DispatchQueue.main.async, so
+            // this inner closure runs on the main thread — the assumption
+            // holds. The bridge upgrades the non-isolated closure type into
+            // the @MainActor closure the protocol requires.
+            MainActor.assumeIsolated { completion(result) }
+        }
+    }
+
+    func cancel() { underlying.cancel() }
+}
 
 // MARK: - PlaceholderOverlay (used before bootstrap)
 
@@ -169,7 +210,11 @@ final class ShortcutVoiceCoordinator {
     private init() {
         self.importer = .shared
         self.overlayPanel = PlaceholderOverlay()
-        self.refiner = LLMRefiner.shared
+        // WR-01: wrap LLMRefiner in a MainActor adapter so the completion
+        // closure carries the @MainActor isolation the protocol declares.
+        // The adapter's inner closure bridges via MainActor.assumeIsolated
+        // — safe because LLMRefiner.refine dispatches completion on `.main`.
+        self.refiner = MainActorLLMRefiner(underlying: .shared)
         self.armDuration = 30.0
     }
 
