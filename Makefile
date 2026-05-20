@@ -228,6 +228,7 @@ test-hotkey-action-runner:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyActionRunner.swift \
+	       Sources/KeyMic/Hotkey/HotkeyEventTagging.swift \
 	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
 	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
 	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \

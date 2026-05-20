@@ -53,6 +53,11 @@ final class HotkeyActionRunner {
 
     static func defaultKeyPress(_ keyCode: UInt16, _ modifiersRaw: UInt64) {
         let source = CGEventSource(stateID: .combinedSessionState)
+        // APP-04: tag the source ONCE; both keyDown and keyUp inherit the tag.
+        // Source-side (vs per-event setIntegerValueField) is the Apple-canonical pattern.
+        // `source.userData` is the Swift bridge for `CGEventSourceSetUserData(_:_:)`
+        // (the C symbol was deprecated in macOS 15 in favor of the property setter).
+        source?.userData = KEYMIC_SYNTHETIC_TAG
         let flags = CGEventFlags(rawValue: modifiersRaw)
         guard
             let down = CGEvent(keyboardEventSource: source, virtualKey: keyCode, keyDown: true),
