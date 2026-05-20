@@ -120,6 +120,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyMonitor.currentFrontBundleID = { [weak self] in self?.cachedFrontBundleID }
 
+        // Phase 4 (APP-01): replace coordinator's placeholder overlay with the AppDelegate-owned panel.
+        // Must run BEFORE any voice-flow callback can reach ShortcutVoiceCoordinator.shared.
+        ShortcutVoiceCoordinator.bootstrap(overlayPanel: overlayPanel)
+
         keyMonitor.onTriggerDown = { [weak self] in self?.triggerDown() }
         keyMonitor.onTriggerUp = { [weak self] in self?.triggerUp() }
         keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
@@ -148,7 +152,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
-        secureInputMonitor.onEnter = { [weak self] in self?.keyMonitor.onSecureInputEnter() }
+        secureInputMonitor.onEnter = { [weak self] in
+            self?.keyMonitor.onSecureInputEnter()
+            ShortcutVoiceCoordinator.shared.resetAllState(reason: .secureInputEnter)
+        }
         secureInputMonitor.onExit = { [weak self] in self?.keyMonitor.onSecureInputExit() }
         secureInputMonitor.start()
         clipboardController.start()
@@ -232,6 +239,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func triggerDown() {
         guard isVoiceEnabled, !isRecording else { return }
+        // AppKit guarantees this runs on main; bridge to @MainActor coordinator (Rule 3).
+        MainActor.assumeIsolated {
+            ShortcutVoiceCoordinator.shared.beforeTriggerDown()
+        }
         LLMRefiner.shared.cancel()
         isRecording = true
         lastPartialResult = ""
@@ -264,6 +275,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngine.cancel()
         updateStatusIcon(recording: false)
         overlayPanel.dismiss()
+        MainActor.assumeIsolated {
+            ShortcutVoiceCoordinator.shared.resetAllState(reason: .cancelRecording)
+        }
     }
 
     // MARK: - Speech callbacks
