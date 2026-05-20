@@ -79,7 +79,9 @@ struct ShortcutVoiceConfigSection: View {
     /// UI-02 source-of-truth mirror. Default fallback "fn" matches
     /// `HotkeyFeature.defaults` (HotkeySettingsStore.swift:26). Updated by
     /// `refreshVoiceTriggerLabel()` on `.onAppear` and whenever
-    /// `UserDefaults.didChangeNotification` fires.
+    /// `UserDefaults.didChangeNotification` fires — but filtered through
+    /// the cached previous value (WR-05) so unrelated UserDefaults writes
+    /// don't force the SwiftUI body to re-evaluate the label.
     @State private var voiceTriggerLabel: String = "fn"
 
     /// UI-04 caption-flip + button-disable driver. Flipped to `true` from
@@ -296,6 +298,16 @@ struct ShortcutVoiceConfigSection: View {
             .animation(.easeInOut(duration: 0.25), value: statusBindingId)
         }
         .onAppear { refreshVoiceTriggerLabel() }
+        // WR-05 (05-REVIEW.md): `UserDefaults.didChangeNotification` fires for
+        // ANY UserDefaults write anywhere in the app (clipboard prefs, LLM
+        // model name, persona changes, our own @AppStorage toggle, ...).
+        // Triggering `refreshVoiceTriggerLabel()` on every fire is a hot-path
+        // amplifier. The label only depends on `HotkeyFeature.voiceTrigger`,
+        // so cache the previously-rendered value and skip the write to
+        // `@State` (which would invalidate body) when the next-read value
+        // is identical. SwiftUI ALSO does an equality short-circuit on
+        // `@State` assignment, but explicit guard saves the HotkeyConfig
+        // parse + displayString() cost on the common no-op path.
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             refreshVoiceTriggerLabel()
         }
@@ -401,8 +413,17 @@ struct ShortcutVoiceConfigSection: View {
     /// `HotkeySettingsStore.shared` and renders it via `displayString()`.
     /// Default fallback "fn" matches the seeded default in
     /// `HotkeyFeature.defaults`.
+    ///
+    /// WR-05 (05-REVIEW.md): early-return when the next value equals the
+    /// cached one. `UserDefaults.didChangeNotification` is chatty —
+    /// avoiding the `@State` write on the no-op path keeps the SwiftUI
+    /// body from being invalidated by unrelated defaults writes (the
+    /// SwiftUI @State equality short-circuit covers the body-rerender
+    /// case, but explicit guard saves the parse + displayString cost too).
     private func refreshVoiceTriggerLabel() {
-        voiceTriggerLabel = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString() ?? "fn"
+        let next = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString() ?? "fn"
+        guard next != voiceTriggerLabel else { return }
+        voiceTriggerLabel = next
     }
 
     /// UI-03 + UI-04: arms the coordinator via the AppDelegate-injected
