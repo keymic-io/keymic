@@ -10706,6 +10706,171 @@
           }
         }
       }
+    },
+    "Added: %@ → %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Added: %@ → %@"
+          }
+        }
+      }
+    },
+    "Allow voice-generated shell actions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow voice-generated shell actions"
+          }
+        }
+      }
+    },
+    "Could not configure shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not configure shortcut"
+          }
+        }
+      }
+    },
+    "Could not parse shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Could not parse shortcut"
+          }
+        }
+      }
+    },
+    "Press a hotkey, speak your shortcut. KeyMic configures it for you.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press a hotkey, speak your shortcut. KeyMic configures it for you."
+          }
+        }
+      }
+    },
+    "Reveal Audit Log": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reveal Audit Log"
+          }
+        }
+      }
+    },
+    "Shortcut updated": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shortcut updated"
+          }
+        }
+      }
+    },
+    "shortcut": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "shortcut"
+          }
+        }
+      }
+    },
+    "Start Voice Recording": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Start Voice Recording"
+          }
+        }
+      }
+    },
+    "Trigger cleared (%@) — set it in Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Trigger cleared (%@) — set it in Settings"
+          }
+        }
+      }
+    },
+    "Undo": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Undo"
+          }
+        }
+      }
+    },
+    "Voice Configuration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice Configuration"
+          }
+        }
+      }
+    },
+    "Voice trigger key:": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice trigger key:"
+          }
+        }
+      }
+    },
+    "Voice-generated shortcuts may include shell actions. Only enable if you trust the LLM endpoint.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Voice-generated shortcuts may include shell actions. Only enable if you trust the LLM endpoint."
+          }
+        }
+      }
+    },
+    "Waiting for voice key… (Esc to cancel)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Waiting for voice key… (Esc to cancel)"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
