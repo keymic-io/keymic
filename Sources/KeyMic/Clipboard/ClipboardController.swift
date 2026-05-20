@@ -5,7 +5,7 @@ import os
 @MainActor
 final class ClipboardController {
     private static let logger = Logger(subsystem: "io.keymic.app", category: "ClipboardController")
-    private let store: ClipboardStore
+    let store: ClipboardStore
     let vaultStore: VaultStore
     private let scanner: SecretScanner
     weak var overlayPanel: OverlayPanel?
