@@ -173,6 +173,27 @@ struct ShortcutVoiceConfigSection: View {
             .controlSize(.large)
             .disabled(isArmed)
 
+            // UI-06: Reveal Audit Log button (Plan 05-05).
+            //
+            // Opens Finder with `shortcut-voice-audit.log` PRE-SELECTED (vs. just
+            // opening the parent directory). NSWorkspace.activateFileViewerSelecting
+            // requires the target file to exist for the selection to land — if the
+            // file is absent it falls back to opening the parent dir with no
+            // selection. Empty NDJSON is a valid first state (the Phase 3 writer
+            // appends via seekToEnd at ShortcutAuditLog.swift:316-318) so we
+            // lazily create an empty file (+ parent dir) before the reveal call.
+            //
+            // Placement: BELOW the Start button + status row, ABOVE the shell
+            // toggle — visual grouping of "voice flow controls" precedes the
+            // "permissions / safety" surface.
+            Button {
+                revealAuditLog()
+            } label: {
+                Label(String(localized: "Reveal Audit Log"), systemImage: "doc.text.magnifyingglass")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
             // UI-07 / UI-08: transient status row + Undo button (Plan 05-04).
             //
             // Layout choice (D-G-1): status text on the left, Undo button on
@@ -334,6 +355,41 @@ struct ShortcutVoiceConfigSection: View {
             NSEvent.removeMonitor(monitor)
             escMonitor = nil
         }
+    }
+
+    // MARK: UI-06 Reveal Audit Log
+
+    /// UI-06: opens Finder with `shortcut-voice-audit.log` pre-selected.
+    ///
+    /// `NSWorkspace.shared.activateFileViewerSelecting([url])` requires the
+    /// target file to exist for the selection affordance to land. If the file
+    /// is missing it opens the parent directory with NO selection; if the
+    /// parent dir is missing too it no-ops. To guarantee the user always sees
+    /// the file (even on a fresh install where no shortcut-voice import has
+    /// ever run), we lazily create the parent dir + empty file here.
+    ///
+    /// Empty content is a valid first state for the audit log:
+    /// `ShortcutAuditLog.append(_:)` at lines 304-325 opens-fresh-per-write
+    /// (no header expected) and appends via `seekToEnd()`. Phase 3's writer
+    /// already creates the file itself on first write (`fileExists` →
+    /// `createFile(atPath:contents:)` at lines 310-312), so this helper's
+    /// pre-creation matches the existing audit-log file-shape contract.
+    ///
+    /// Errors during directory creation are silently swallowed (`try?`) —
+    /// the reveal call's fallback (open parent dir) is acceptable degraded
+    /// behaviour if the user's Application Support directory is unusual.
+    private func revealAuditLog() {
+        let url = ShortcutAuditLog.defaultURL
+        let fm = FileManager.default
+        let parent = url.deletingLastPathComponent()
+        if !fm.fileExists(atPath: parent.path) {
+            try? fm.createDirectory(at: parent, withIntermediateDirectories: true)
+        }
+        if !fm.fileExists(atPath: url.path) {
+            // contents: nil creates a zero-byte file — valid empty NDJSON.
+            fm.createFile(atPath: url.path, contents: nil)
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     // MARK: UI-07 status text router (mirror of Phase 4 routeOutcomeToOverlay)
