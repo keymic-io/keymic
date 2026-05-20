@@ -121,6 +121,24 @@ struct ShortcutVoiceConfigSection: View {
     /// monotonicity.
     @State private var messageGeneration: Int = 0
 
+    // MARK: UI-10 / UI-09 shell-actions toggle (Plan 05-05)
+
+    /// UI-10: bound to UserDefaults key `"shortcutVoiceShellEnabled"`.
+    ///
+    /// Phase 3's `ShortcutYAMLImporter` reads
+    /// `UserDefaults.standard.bool(forKey: "shortcutVoiceShellEnabled")`
+    /// per call (IMP-08 / 03 P-05) — no caching, so toggle changes take
+    /// effect on the NEXT import. Same `UserDefaults.standard` instance
+    /// bridges to `@AppStorage`; no extra coordination needed.
+    ///
+    /// CRITICAL: `@AppStorage` does NOT write the default value to
+    /// UserDefaults on first read. Absent key → returns the `false`
+    /// default. `UserDefaults.standard.bool(forKey:)` ALSO returns `false`
+    /// for absent keys. The contract holds without any defensive
+    /// `.onAppear` writes (per 05-RESEARCH Anti-Patterns: writing a
+    /// defensive default on appear pollutes UserDefaults and is forbidden).
+    @AppStorage("shortcutVoiceShellEnabled") private var shellEnabled: Bool = false
+
     // MARK: Constants
 
     /// UI-side mirror of `ShortcutVoiceCoordinator.armDuration` (30s).
@@ -193,6 +211,22 @@ struct ShortcutVoiceConfigSection: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+
+            // UI-09 / UI-10: shell-actions toggle + warning banner (Plan 05-05).
+            //
+            // Order locked by D-E-1 recommendation: banner ABOVE the toggle.
+            // When the user is about to toggle OFF, the banner is the LAST
+            // thing they see before their click — the right safety affordance.
+            // When the toggle is OFF (default), no banner is rendered (the
+            // toggle's own label is sufficient).
+            //
+            // The `@AppStorage` binding is shared with the Phase 3 importer
+            // (IMP-08): the importer reads `UserDefaults.standard.bool(...)`
+            // per call so toggle changes take effect on the NEXT import.
+            if shellEnabled {
+                ShellWarningBanner()
+            }
+            Toggle(String(localized: "Allow voice-generated shell actions"), isOn: $shellEnabled)
 
             // UI-07 / UI-08: transient status row + Undo button (Plan 05-04).
             //
@@ -473,5 +507,39 @@ struct ShortcutVoiceConfigSection: View {
         statusMessage = nil
         statusBindingId = nil
         ShortcutYAMLImporter.shared.removeLastImport(id: id)
+    }
+
+    // MARK: - UI-09 Warning Banner (nested file-local View)
+
+    /// UI-09: warning banner rendered when the shell-actions toggle is on.
+    ///
+    /// Style per 05-CONTEXT.md D-E-1 (locked):
+    ///   - Background: `.yellow.opacity(0.15)` (light tint, not screaming).
+    ///   - Leading SF Symbol: `exclamationmark.triangle.fill` (yellow).
+    ///   - Copy: direct + factual ("Voice-generated shortcuts may include
+    ///     shell actions. Only enable if you trust the LLM endpoint.") —
+    ///     aims for accuracy without alarmism.
+    ///   - Corner radius 8, padding 12.
+    ///
+    /// Renders conditionally only when `shellEnabled == true`; when the
+    /// toggle flips off the banner disappears with SwiftUI's default
+    /// insertion/removal transition.
+    ///
+    /// Nested inside `ShortcutVoiceConfigSection` (file-local, not exported)
+    /// to keep the file's surface small — this banner has no consumers
+    /// outside this section.
+    private struct ShellWarningBanner: View {
+        var body: some View {
+            HStack(spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                Text(String(localized: "Voice-generated shortcuts may include shell actions. Only enable if you trust the LLM endpoint."))
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+        }
     }
 }
