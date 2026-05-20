@@ -391,7 +391,7 @@ test-secure-input-monitor:
 test-shell-logger:
 	mkdir -p .build
 	swiftc Tests/ShellLoggerTests.swift \
-	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       -o .build/shell-logger-tests
 	.build/shell-logger-tests
 
@@ -407,17 +407,17 @@ test-tool-protocol:
 test-shell-snapshot:
 	mkdir -p .build
 	swiftc Tests/ShellSnapshotTests.swift \
-	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
-	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       -o .build/shell-snapshot-tests
 	.build/shell-snapshot-tests
 
 test-shell-runner:
 	mkdir -p .build
 	swiftc Tests/ShellRunnerTests.swift \
-	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
-	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
-	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
