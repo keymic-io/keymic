@@ -10,7 +10,13 @@ private final class ShellRunnerTests {
         try testCommandContainingSingleQuote()
         try testStderrCapturedToLog()
         try testTimeoutSigterm()
+        try testRunAndCaptureReturnsOutput()
         print("ShellRunnerTests passed")
+    }
+
+    enum TestError: Error {
+        case message(String)
+        init(_ m: String) { self = .message(m) }
     }
 
     final class CapturedLogger: ShellLogger {
@@ -135,6 +141,27 @@ private final class ShellRunnerTests {
         let validExits: [Int32] = [15, 9]  // SIGTERM=15, SIGKILL=9
         guard validExits.contains(code) else {
             fatalError("testTimeoutSigterm: expected 15 or 9, got \(code)")
+        }
+    }
+
+    static func testRunAndCaptureReturnsOutput() throws {
+        let captured = CapturedLogger()
+        let runner = makeRunner(snapshot: nil, captured: captured)
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: (exitCode: Int32, stdout: String, stderr: String)!
+        Task {
+            result = await runner.runAndCapture("echo hello && echo oops 1>&2")
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        guard result.exitCode == 0 else { throw TestError("expected exit 0, got \(result.exitCode)") }
+        guard result.stdout.contains("hello") else {
+            throw TestError("stdout missing 'hello': '\(result.stdout)'")
+        }
+        guard result.stderr.contains("oops") else {
+            throw TestError("stderr missing 'oops': '\(result.stderr)'")
         }
     }
 }

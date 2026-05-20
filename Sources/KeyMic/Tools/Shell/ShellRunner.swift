@@ -65,6 +65,34 @@ final class ShellRunner {
         return exit
     }
 
+    /// Like `run(_:)` but returns stdout / stderr separately. Used by
+    /// `BashTool` and any other capture-needing consumers. The original
+    /// `run(_:)` (which only returns the exit code) is preserved for
+    /// existing hotkey shell-action callers that log via ShellLogger.
+    func runAndCapture(_ command: String) async -> (exitCode: Int32, stdout: String, stderr: String) {
+        let t0 = Date()
+        let snapshot = snapshotProvider()
+        let fallback = (snapshot == nil)
+
+        let args: [String]
+        if let snap = snapshot {
+            let wrapped = "source \(posixQuote(snap.path)) 2>/dev/null || true; eval \(posixQuote(command))"
+            args = ["-c", wrapped]
+        } else {
+            let wrapped = "eval \(posixQuote(command))"
+            args = ["-l", "-c", wrapped]
+        }
+
+        let (exit, stdout, stderr) = runProcess(args: args)
+        let durationMs = Int(Date().timeIntervalSince(t0) * 1000)
+        logger.log(ShellLogEntry(
+            timestamp: t0, command: command, exitCode: exit,
+            stdout: stdout, stderr: stderr,
+            durationMs: durationMs, fallback: fallback
+        ))
+        return (exit, stdout, stderr)
+    }
+
     private func runProcess(args: [String]) -> (Int32, String, String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: shellPath)
