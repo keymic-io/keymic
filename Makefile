@@ -376,16 +376,19 @@ test-persona-store:
 test-persona-hidden:
 	mkdir -p .build
 	swiftc -target arm64-apple-macos14 \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Tests/PersonaHiddenTests.swift \
 	       -o .build/persona-hidden-tests-arm64-probe
 	swiftc -target x86_64-apple-macos14 \
+	       Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Tests/PersonaHiddenTests.swift \
 	       -o .build/persona-hidden-tests-x86_64-probe
-	swiftc Sources/KeyMic/LLM/Persona.swift \
+	swiftc Sources/KeyMic/LLM/HiddenPersonaPrompt.swift \
+	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Tests/PersonaHiddenTests.swift \
 	       -o .build/persona-hidden-tests

@@ -161,10 +161,7 @@ struct Persona: Codable, Identifiable, Equatable {
                 id: "builtin-shortcut-config",
                 name: "Shortcut Config",
                 icon: "command",
-                stylePrompt: """
-                    # Configured in Phase 6.
-                    Output YAML only. No prose. No fences.
-                    """,
+                stylePrompt: HiddenPersonaPrompt.text,
                 temperature: 0.0,
                 hotkey: nil,
                 contextMode: .none,
