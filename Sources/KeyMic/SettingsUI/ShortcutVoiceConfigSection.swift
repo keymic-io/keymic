@@ -74,10 +74,30 @@ struct ShortcutVoiceConfigSection: View {
 
     /// UI-04 caption-flip + button-disable driver. Flipped to `true` from
     /// `startArm()` immediately after the AppDelegate-injected arm closure
-    /// fires; flipped back to `false` by the Esc local monitor (Task 3),
-    /// the 30s UI-side timeout mirror (Task 3), and (in 05-04) the
+    /// fires; flipped back to `false` by the Esc local monitor, the 30s
+    /// UI-side timeout mirror, and (in 05-04) the
     /// `.shortcutImportDidComplete` notification handler.
     @State private var isArmed: Bool = false
+
+    /// UI-05: holds the opaque token returned by
+    /// `NSEvent.addLocalMonitorForEvents` while the section is armed.
+    /// Registered when `isArmed` flips true; removed when it flips false
+    /// or `.onDisappear` fires (defensive). Per 05-RESEARCH Pitfall 4
+    /// (token leak): always remove the prior token before reassigning.
+    @State private var escMonitor: Any? = nil
+
+    // MARK: Constants
+
+    /// UI-side mirror of `ShortcutVoiceCoordinator.armDuration` (30s).
+    ///
+    /// Per 05-RESEARCH Assumption A5 + Pitfall §8 the Phase 4 coordinator
+    /// silently expires after 30s with no UI-visible notification, so the
+    /// view drives its own `Task.sleep(for: .seconds(30))` mirror to flip
+    /// `isArmed` back to `false`. Keep this constant byte-identical with
+    /// the coordinator's `armDuration` (Sources/KeyMic/Hotkey/ShortcutVoiceCoordinator.swift:218).
+    /// Future audit item: hoist into a shared module-level constant once
+    /// Phase 6 lands.
+    private static let mirroredArmDuration: TimeInterval = 30.0
 
     // MARK: Body
 
@@ -125,6 +145,37 @@ struct ShortcutVoiceConfigSection: View {
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             refreshVoiceTriggerLabel()
         }
+        // UI-05: register/unregister the Esc local monitor lifecycle.
+        // Local monitors are app-scoped, NOT window-scoped (05-RESEARCH
+        // Pitfall 4), so we must register only while armed and remove
+        // promptly when armed flips false to avoid swallowing Esc app-wide.
+        .onChange(of: isArmed) { _, armed in
+            if armed {
+                registerEscMonitor()
+            } else {
+                unregisterEscMonitor()
+            }
+        }
+        // UI-05: UI-side 30s timeout mirror.
+        //
+        // The Phase 4 coordinator's armDuration (30s) silently cancels with
+        // no notification when it expires (05-RESEARCH Pitfall §8), so the
+        // view drives its own timer to flip `isArmed` back to false. When
+        // `isArmed` flips false externally (Esc / success), `.task(id:)`
+        // cancels this task, the sleep throws, and the post-sleep flip is
+        // skipped — which is correct because something else already cleared
+        // the state.
+        .task(id: isArmed) {
+            guard isArmed else { return }
+            try? await Task.sleep(for: .seconds(Self.mirroredArmDuration))
+            guard !Task.isCancelled else { return }
+            if isArmed { isArmed = false }
+        }
+        // Defensive cleanup safety net per D-D-3. UI-11 (cancel(.settingsReload)
+        // on disappear) lands in plan 05-05.
+        .onDisappear {
+            unregisterEscMonitor()
+        }
     }
 
     // MARK: Helpers
@@ -145,5 +196,41 @@ struct ShortcutVoiceConfigSection: View {
     private func startArm() {
         armShortcutVoice()
         isArmed = true
+    }
+
+    /// UI-05: register the Esc local monitor. Per 05-RESEARCH Pitfall 4 we
+    /// always remove a prior token before reassigning to avoid leaking
+    /// stacked monitors.
+    ///
+    /// The monitor handler:
+    ///   - lets every non-Esc keyDown pass through unchanged
+    ///   - on Esc (`kVK_Escape == 0x35`): calls
+    ///     `ShortcutVoiceCoordinator.shared.cancel(reason: .userEscape)`,
+    ///     flips `isArmed = false` on the main actor, returns `nil` to
+    ///     swallow the keystroke so it doesn't bubble up to other handlers.
+    ///
+    /// NSEvent.addLocalMonitorForEvents handlers run on the main thread
+    /// already, but we still bounce the `isArmed = false` flip through
+    /// `DispatchQueue.main.async` to defer the SwiftUI state mutation past
+    /// the current event-dispatch frame (avoids re-entrancy weirdness).
+    private func registerEscMonitor() {
+        unregisterEscMonitor()
+        escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            guard event.keyCode == 0x35 /* kVK_Escape */ else { return event }
+            ShortcutVoiceCoordinator.shared.cancel(reason: .userEscape)
+            DispatchQueue.main.async {
+                isArmed = false
+            }
+            return nil // swallow Esc
+        }
+    }
+
+    /// UI-05: paired cleanup. Always nil out `escMonitor` after removal so
+    /// the next `addLocalMonitorForEvents` can't double-register.
+    private func unregisterEscMonitor() {
+        if let monitor = escMonitor {
+            NSEvent.removeMonitor(monitor)
+            escMonitor = nil
+        }
     }
 }
