@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-tool-protocol
 
 
 build:
@@ -394,6 +394,14 @@ test-shell-logger:
 	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
 	       -o .build/shell-logger-tests
 	.build/shell-logger-tests
+
+test-tool-protocol:
+	mkdir -p .build
+	swiftc Tests/ToolProtocolTests.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/tool-protocol-tests
+	.build/tool-protocol-tests
 
 test-shell-snapshot:
 	mkdir -p .build
