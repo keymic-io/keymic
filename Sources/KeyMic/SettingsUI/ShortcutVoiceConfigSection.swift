@@ -492,26 +492,17 @@ struct ShortcutVoiceConfigSection: View {
     ///
     /// Empty content is a valid first state for the audit log:
     /// `ShortcutAuditLog.append(_:)` at lines 304-325 opens-fresh-per-write
-    /// (no header expected) and appends via `seekToEnd()`. Phase 3's writer
-    /// already creates the file itself on first write (`fileExists` →
-    /// `createFile(atPath:contents:)` at lines 310-312), so this helper's
-    /// pre-creation matches the existing audit-log file-shape contract.
+    /// (no header expected) and appends via `seekToEnd()`.
     ///
-    /// Errors during directory creation are silently swallowed (`try?`) —
-    /// the reveal call's fallback (open parent dir) is acceptable degraded
-    /// behaviour if the user's Application Support directory is unusual.
+    /// WR-04 (05-REVIEW.md): the create-empty path is now delegated to
+    /// `ShortcutAuditLog.ensureFileExists()` which serialises on the
+    /// audit-log queue, avoiding the TOCTOU race where a concurrent
+    /// `append(_:)` could have its NDJSON line overwritten by an
+    /// inline `FileManager.createFile(atPath:contents:nil)` call.
     private func revealAuditLog() {
-        let url = ShortcutAuditLog.defaultURL
-        let fm = FileManager.default
-        let parent = url.deletingLastPathComponent()
-        if !fm.fileExists(atPath: parent.path) {
-            try? fm.createDirectory(at: parent, withIntermediateDirectories: true)
-        }
-        if !fm.fileExists(atPath: url.path) {
-            // contents: nil creates a zero-byte file — valid empty NDJSON.
-            fm.createFile(atPath: url.path, contents: nil)
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        // WR-04: serialised create-empty path through the audit-log queue.
+        ShortcutAuditLog.shared.ensureFileExists()
+        NSWorkspace.shared.activateFileViewerSelecting([ShortcutAuditLog.defaultURL])
     }
 
     // MARK: UI-07 status text router (mirror of Phase 4 routeOutcomeToOverlay)

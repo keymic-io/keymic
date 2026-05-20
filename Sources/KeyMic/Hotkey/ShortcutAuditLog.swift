@@ -244,6 +244,45 @@ final class ShortcutAuditLog {
         queue.sync { }
     }
 
+    /// WR-04 (05-REVIEW.md): create the parent directory + empty audit log
+    /// file if absent, serialised against `append(_:)` via the internal
+    /// serial queue. Used by Phase 5's "Reveal Audit Log" button so the
+    /// `NSWorkspace.activateFileViewerSelecting([url])` call always has a
+    /// real file to select (it falls back to opening the parent dir if
+    /// the target doesn't exist).
+    ///
+    /// Without queue serialisation, the prior inline implementation in
+    /// `ShortcutVoiceConfigSection.revealAuditLog` had a TOCTOU race:
+    ///   - T=0ms: main thread `fileExists(...)` returns false
+    ///   - T=1ms: audit queue `append(_)` createFile + writes NDJSON line
+    ///   - T=2ms: main thread `createFile(...)` REPLACES the just-written
+    ///            file with empty content — data loss in an audit-relevant
+    ///            artifact.
+    ///
+    /// `queue.sync` runs the check + create on the same serial queue that
+    /// `append(_:)` uses, so the two paths interleave atomically: either
+    /// `ensureFileExists` runs entirely before a pending `append`, or
+    /// entirely after. In either ordering the audit line is preserved.
+    ///
+    /// `queue.sync` is safe to call from the main thread here because this
+    /// queue does NOT call back into the main thread synchronously — no
+    /// deadlock risk. Errors during directory creation are silently
+    /// swallowed (`try?`) — degraded behaviour is acceptable (reveal opens
+    /// parent dir with no selection) if the user's Application Support
+    /// directory is unusual.
+    func ensureFileExists() {
+        queue.sync {
+            let fm = FileManager.default
+            let dir = self.logURL.deletingLastPathComponent()
+            if !fm.fileExists(atPath: dir.path) {
+                try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            }
+            if !fm.fileExists(atPath: self.logURL.path) {
+                fm.createFile(atPath: self.logURL.path, contents: nil)
+            }
+        }
+    }
+
     // MARK: - Private helpers
 
     private func rotateIfNeeded() throws {
