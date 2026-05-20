@@ -289,4 +289,105 @@ final class ShortcutVoiceCoordinator {
         armTimer = nil
         logger.info("beforeTriggerDown — activeVoiceMode=\(String(describing: self.activeVoiceMode), privacy: .public)")
     }
+
+    /// COORD-06 / COORD-07 / COORD-08 — handle a finished transcription in
+    /// shortcut-config mode. Captures a per-call UUID token BEFORE invoking
+    /// `refiner.refine(...)`; the completion closure compares the captured
+    /// token against `self.currentRequestToken` and SILENTLY DISCARDS on
+    /// mismatch (returns without mutating the store / writing audit /
+    /// changing overlay). This is the source of truth for arm-cycle
+    /// membership — `LLMRefiner.cancel()` does NOT prevent the URLSession
+    /// completion from firing (it surfaces `URLError(.cancelled)`); per
+    /// 04-RESEARCH §"LLM token-discard pattern" the closure-side token
+    /// check is the only reliable late-completion filter.
+    ///
+    /// Deterministic UI state machine per WR-04: the arm-hint overlay
+    /// (`"Speak your shortcut (30s)…"` set by `arm()`) stays visible until
+    /// the completion closure replaces it via `routeOutcomeToOverlay` (on
+    /// success) or `updateText("Could not configure shortcut")` (on
+    /// failure). NO intermediate in-flight toast — exactly three
+    /// observable overlay states per cycle: arm-hint → success-toast OR
+    /// failure-toast.
+    ///
+    /// `stylePrompt` is a hard-coded TODO placeholder for Phase 6
+    /// (PROMPT-01..07). Temperature is 0.0 per COORD-06 — deterministic
+    /// LLM output for schema-driven YAML.
+    ///
+    /// On success: `importer.importYAML(yaml, transcript:)` is consumed
+    /// DIRECTLY from the function-return Outcome per 04-RESEARCH
+    /// constraint #3 — the importer's `NotificationCenter` post is for
+    /// Phase 5 UI consumers, NOT for the coordinator (no self-loop
+    /// observer registered here).
+    ///
+    /// On failure: `importer.recordLLMFailure(transcript:errorMessage:)`
+    /// (Plan 04-01) writes the audit line with `parseError.kind ==
+    /// "llm-error"` + posts the standard notification — preserving the
+    /// D-G single-writer invariant (coordinator never calls
+    /// `auditLog.write(_)` directly).
+    ///
+    /// Both branches end with `resetActiveMode()` — clears
+    /// `activeVoiceMode` + `currentRequestToken`. The cycle is complete.
+    func handleTranscription(_ transcript: String) {
+        let token = UUID()
+        self.currentRequestToken = token
+
+        let stylePrompt = "TODO(Phase-6): hidden builtin-shortcut-config stylePrompt — replace in Phase 6"
+
+        logger.info("handleTranscription start: transcriptLen=\(transcript.count, privacy: .public) token=\(token, privacy: .public)")
+
+        refiner.refine(transcript, systemPrompt: stylePrompt, temperature: 0.0) { [weak self] result in
+            guard let self else { return }
+            // Token-discard contract — the FIRST statement after the
+            // strong-self bind. Stale completion: silently return without
+            // mutating store / writing audit / touching overlay.
+            guard self.currentRequestToken == token else { return }
+
+            switch result {
+            case .success(let yaml):
+                let outcome = self.importer.importYAML(yaml, transcript: transcript)
+                self.routeOutcomeToOverlay(outcome)
+            case .failure(let error):
+                self.importer.recordLLMFailure(transcript: transcript, errorMessage: error.localizedDescription)
+                self.overlayPanel.updateText("Could not configure shortcut")
+            }
+
+            // resetActiveMode() clears activeVoiceMode + currentRequestToken
+            // — the token nil-ing inside resetActiveMode is sufficient,
+            // do NOT also nil it inline here.
+            self.resetActiveMode()
+        }
+    }
+
+    /// Toast text router for the success branch of `handleTranscription`.
+    /// Maps an importer `Outcome` to the canonical overlay literal per
+    /// 04-CONTEXT.md D-B-3 / `<specifics>` toast-text-routing rules.
+    ///
+    /// Disposition order:
+    ///   1. `parseError != nil` → "Could not parse shortcut"
+    ///   2. `conflictCleared == true` → "Trigger cleared (<source>) — set it in Settings"
+    ///   3. `bindingId != nil` → "Added: <trigger> → <label>" (looked up from store)
+    ///   4. defensive (bindingId nil + no parse error + no conflict) → "Added shortcut"
+    ///
+    /// `shellStripped == true` adds NO additional toast in Plan 04 —
+    /// 04-CONTEXT.md `<specifics>` line 313 notes Phase 5 may refine this.
+    private func routeOutcomeToOverlay(_ outcome: Outcome) {
+        if outcome.parseError != nil {
+            overlayPanel.updateText("Could not parse shortcut")
+            return
+        }
+        if outcome.conflictCleared {
+            let source = outcome.conflictSource ?? ""
+            overlayPanel.updateText("Trigger cleared (\(source)) — set it in Settings")
+            return
+        }
+        if let bindingId = outcome.bindingId,
+           let binding = HotkeyBindingsStore.shared.bindings.first(where: { $0.id == bindingId }) {
+            overlayPanel.updateText("Added: \(binding.trigger) → \(binding.label ?? "")")
+            return
+        }
+        // Defensive: success path without a binding lookup hit (shouldn't
+        // happen under normal conditions because importYAML only returns
+        // a non-nil bindingId after appending to the store).
+        overlayPanel.updateText("Added shortcut")
+    }
 }
