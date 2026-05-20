@@ -5,6 +5,8 @@ private final class BashToolTests {
         try testEchoCommand()
         try testNonZeroExitReportedInOutput()
         try testSchemaHasCommandRequired()
+        try testTruncationWithCJK()
+        try testNoOutputSentinel()
         print("BashToolTests passed")
     }
 
@@ -55,6 +57,46 @@ private final class BashToolTests {
               (command["type"] as? String) == "string"
         else {
             fatalError("schema.properties.command.type must be 'string'")
+        }
+    }
+
+    static func testTruncationWithCJK() throws {
+        let tool = makeTool()
+        // Output 200 copies of a 3-byte UTF-8 character (CJK '中') = 600 bytes.
+        // With maxOutputBytes=120, half is 60 bytes — 20 chars worth.
+        // Without UTF-8-safe truncation, the boundary would land mid-sequence
+        // and either half could decode to "" (silent data loss).
+        let input = #"{"command":"printf '中%.0s' {1..200}"}"#.data(using: .utf8)!
+        let context = ToolContext(maxOutputBytes: 120)
+        let output = try runAsync {
+            try await tool.call(argumentsJSON: input, context: context)
+        }
+        guard output.contains("... [output truncated] ...") else {
+            fatalError("expected truncation marker, got: \(output.prefix(200))")
+        }
+        // Both halves should contain '中' characters — proves UTF-8 safety.
+        let parts = output.components(separatedBy: "... [output truncated] ...")
+        guard parts.count == 2 else {
+            fatalError("expected 2 parts split by marker, got \(parts.count)")
+        }
+        guard parts[0].contains("中") else {
+            fatalError("prefix half lost CJK content (UTF-8 boundary bug?), got: '\(parts[0])'")
+        }
+        guard parts[1].contains("中") else {
+            fatalError("suffix half lost CJK content (UTF-8 boundary bug?), got: '\(parts[1])'")
+        }
+    }
+
+    static func testNoOutputSentinel() throws {
+        let tool = makeTool()
+        // `true` exits 0 with no stdout or stderr.
+        let input = #"{"command":"true"}"#.data(using: .utf8)!
+        let context = ToolContext()
+        let output = try runAsync {
+            try await tool.call(argumentsJSON: input, context: context)
+        }
+        guard output == "(no output)" else {
+            fatalError("expected literal '(no output)', got: '\(output)'")
         }
     }
 

@@ -77,15 +77,45 @@ struct BashTool: Tool {
         }
 
         // Truncate per context.maxOutputBytes (head + tail preserved).
+        // Walks back to a UTF-8 sequence boundary so multibyte characters
+        // (CJK, emoji) are never split.
         if context.maxOutputBytes > 0,
            let outputData = output.data(using: .utf8),
            outputData.count > context.maxOutputBytes {
             let keep = context.maxOutputBytes / 2
-            let prefix = String(data: outputData.prefix(keep), encoding: .utf8) ?? ""
-            let suffix = String(data: outputData.suffix(keep), encoding: .utf8) ?? ""
+            let prefixBytes = Self.utf8SafePrefix(outputData, length: keep)
+            let suffixBytes = Self.utf8SafeSuffix(outputData, length: keep)
+            let prefix = String(data: prefixBytes, encoding: .utf8) ?? ""
+            let suffix = String(data: suffixBytes, encoding: .utf8) ?? ""
             output = "\(prefix)\n... [output truncated] ...\n\(suffix)"
         }
 
         return output.isEmpty ? "(no output)" : output
+    }
+
+    /// Returns the longest prefix of `data` no longer than `length` bytes that
+    /// ends on a UTF-8 character boundary. Walks back at most 3 bytes (the
+    /// maximum UTF-8 continuation-byte run).
+    private static func utf8SafePrefix(_ data: Data, length: Int) -> Data {
+        guard length < data.count else { return data }
+        var end = length
+        // UTF-8 continuation bytes start with 0b10xxxxxx (range 0x80..<0xC0).
+        // Walk back while the byte AT `end` is a continuation byte — meaning
+        // `end` lands mid-sequence — until we find a leading byte boundary.
+        while end > 0, end < data.count, (data[end] & 0xC0) == 0x80 {
+            end -= 1
+        }
+        return data.prefix(end)
+    }
+
+    /// Returns the longest suffix of `data` no longer than `length` bytes that
+    /// starts on a UTF-8 character boundary. Walks forward at most 3 bytes.
+    private static func utf8SafeSuffix(_ data: Data, length: Int) -> Data {
+        guard length < data.count else { return data }
+        var start = data.count - length
+        while start < data.count, (data[start] & 0xC0) == 0x80 {
+            start += 1
+        }
+        return data.suffix(from: start)
     }
 }
