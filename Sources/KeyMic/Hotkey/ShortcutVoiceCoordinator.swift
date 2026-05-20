@@ -399,9 +399,10 @@ final class ShortcutVoiceCoordinator {
     /// observable overlay states per cycle: arm-hint → success-toast OR
     /// failure-toast.
     ///
-    /// `stylePrompt` is a hard-coded TODO placeholder for Phase 6
-    /// (PROMPT-01..07). Temperature is 0.0 per COORD-06 — deterministic
-    /// LLM output for schema-driven YAML.
+    /// `stylePrompt` is sourced from `hiddenPersonaPrompt()` which reads from
+    /// `PersonaStore.shared.shortcutConfigPersona` (implements PROMPT-01..07
+    /// via HiddenPersonaPrompt.text). Temperature is 0.0 per COORD-06 —
+    /// deterministic LLM output for schema-driven YAML.
     ///
     /// On success: `importer.importYAML(yaml, transcript:)` is consumed
     /// DIRECTLY from the function-return Outcome per 04-RESEARCH
@@ -421,7 +422,7 @@ final class ShortcutVoiceCoordinator {
         let token = UUID()
         self.currentRequestToken = token
 
-        let stylePrompt = "TODO(Phase-6): hidden builtin-shortcut-config stylePrompt — replace in Phase 6"
+        let stylePrompt = hiddenPersonaPrompt()
 
         logger.info("handleTranscription start: transcriptLen=\(transcript.count, privacy: .public) token=\(token, privacy: .public)")
 
@@ -459,6 +460,26 @@ final class ShortcutVoiceCoordinator {
             // do NOT also nil it inline here.
             self.resetActiveMode()
         }
+    }
+
+    /// D-B-1 helper — reads the hidden persona's stylePrompt from the store.
+    /// Returns "" if the hidden persona is missing (only reachable if the
+    /// seed has been physically removed AND mergeWithBuiltIns failed to
+    /// re-inject it; "shouldn't happen" but logged as an error so we have
+    /// evidence in /Library/Logs/ if it ever does).
+    ///
+    /// Helper form (not direct `PersonaStore.shared.shortcutConfigPersona?
+    /// .stylePrompt ?? ""`) per D-B-2 — keeps the wiring grep-pinnable and
+    /// absorbs the nil edge in one place. Intentionally NOT cached (D-B-2):
+    /// a static cache would shadow the Plan 06-02 D-E re-sync that lets a
+    /// same-process call observe prompt updates from a hand-edited
+    /// personas.json.
+    private func hiddenPersonaPrompt() -> String {
+        if let persona = PersonaStore.shared.shortcutConfigPersona {
+            return persona.stylePrompt
+        }
+        logger.error("hidden persona missing; using empty stylePrompt — voice import will fail")
+        return ""
     }
 
     /// Toast text router for the success branch of `handleTranscription`.
