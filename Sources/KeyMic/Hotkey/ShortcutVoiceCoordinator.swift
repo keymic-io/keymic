@@ -290,15 +290,25 @@ final class ShortcutVoiceCoordinator {
         logger.info("arm — armDuration=\(self.armDuration, privacy: .public)s")
     }
 
-    /// Clear arm state ONLY per D-F-1 (`pendingVoiceMode`, `armTimer`,
-    /// overlay if showing arm hint). Does NOT touch `activeVoiceMode`,
-    /// `currentRequestToken`, or call `refiner.cancel()` — those belong
-    /// to `resetAllState(reason:)`.
+    /// Clear arm state per D-F-1 (`pendingVoiceMode`, `armTimer`, overlay
+    /// if showing arm hint) plus invalidate any in-flight `currentRequestToken`
+    /// so a late LLM completion from a prior cycle (e.g. user pressed Esc
+    /// after recording started) gets silently discarded by the token guard.
+    /// Does NOT touch `activeVoiceMode` or call `refiner.cancel()` — those
+    /// belong to `resetAllState(reason:)`.
+    ///
+    /// WR-04 fix: nil-out `currentRequestToken` here so the token-discard
+    /// closure inside `handleTranscription` filters stale completions that
+    /// arrive after `cancel(.userEscape)`. Without this, a late refiner
+    /// completion from the cancelled cycle would mutate the importer +
+    /// audit + overlay because the captured token still matched
+    /// `self.currentRequestToken`.
     func cancel(reason: CancelReason) {
         // Always pair cancel + nil per 04-RESEARCH Anti-Patterns.
         armTimer?.cancel()
         armTimer = nil
         pendingVoiceMode = .normal
+        currentRequestToken = nil
         overlayPanel.dismiss()
         logger.info("cancel reason=\(String(describing: reason), privacy: .public)")
     }

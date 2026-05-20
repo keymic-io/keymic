@@ -42,6 +42,7 @@ struct ShortcutVoiceCoordinatorTestRunner {
         try testHandleTranscriptionLLMFailure(tmp: tmp)
         try testTokenDiscardOnStaleCompletion(tmp: tmp)
         try testEmptyTranscriptResetsActiveMode(tmp: tmp)
+        try testCancelInvalidatesInFlightToken(tmp: tmp)
 
         print("ShortcutVoiceCoordinatorTests passed")
     }
@@ -419,6 +420,64 @@ struct ShortcutVoiceCoordinatorTestRunner {
                "resetActiveMode did NOT touch pending (got \(f.coord.pendingVoiceMode))")
 
         print("testEmptyTranscriptResetsActiveMode: ok")
+    }
+
+    /// WR-04 regression: cancel(reason:) must nil out currentRequestToken so a
+    /// stale late-arriving LLM completion from a cancelled cycle is silently
+    /// discarded by the token guard inside handleTranscription's closure.
+    ///
+    /// Scenario:
+    ///   1. arm + beforeTriggerDown + handleTranscription("first") — refiner
+    ///      captures the completion, currentRequestToken = tokenA.
+    ///   2. cancel(.userEscape) — must nil currentRequestToken (the WR-04 fix).
+    ///   3. fire the captured completion with .success(...) — closure compares
+    ///      its captured tokenA against (now-nil) self.currentRequestToken →
+    ///      mismatch → silent discard. Store, audit, overlay all unchanged.
+    @MainActor
+    private static func testCancelInvalidatesInFlightToken(tmp: URL) throws {
+        let f = makeFixture(tmp: tmp, name: "cancel-invalidates-token")
+        defer { f.defaults.removePersistentDomain(forName: f.suiteName) }
+
+        // Step 1: arm + start a transcription so a token is live.
+        f.coord.arm()
+        f.coord.beforeTriggerDown()
+        f.coord.handleTranscription("user cancelled mid-flight")
+        expect(f.refiner.capturedCompletion != nil,
+               "refiner captured the completion (token live)")
+
+        let bindingsBefore = f.store.bindings.count
+        f.importer.terminate()
+        let preContent = (try? String(contentsOf: f.auditURL, encoding: .utf8)) ?? ""
+        let preLines = preContent.split(separator: "\n", omittingEmptySubsequences: true).count
+        let updatesBefore = f.overlay.updateCalls.count
+
+        // Step 2: user-escape cancel — WR-04 fix nils currentRequestToken.
+        f.coord.cancel(reason: .userEscape)
+        expect(f.coord.pendingVoiceMode == .normal,
+               "pending cleared by cancel(.userEscape)")
+
+        // Step 3: STALE FIRE — the cancelled cycle's completion arrives late.
+        // The token guard must discard it.
+        let yaml = """
+            version: 1
+            shortcut: "alt+x"
+            actions:
+              - text: "should not import"
+            """
+        f.refiner.fire(.success(yaml))
+
+        f.importer.terminate()
+        let postContent = (try? String(contentsOf: f.auditURL, encoding: .utf8)) ?? ""
+        let postLines = postContent.split(separator: "\n", omittingEmptySubsequences: true).count
+
+        expect(f.store.bindings.count == bindingsBefore,
+               "store unchanged by stale completion after cancel(.userEscape) (before=\(bindingsBefore), after=\(f.store.bindings.count))")
+        expect(postLines == preLines,
+               "audit-log line count unchanged (before=\(preLines), after=\(postLines))")
+        expect(f.overlay.updateCalls.count == updatesBefore,
+               "no overlay.updateText calls from the stale path (before=\(updatesBefore), after=\(f.overlay.updateCalls.count))")
+
+        print("testCancelInvalidatesInFlightToken: ok")
     }
 
     // MARK: - Helpers (verbatim project-wide test idiom from Tests/ShortcutYAMLImporterTests.swift:1014-1026)
