@@ -238,24 +238,52 @@ struct ShortcutVoiceConfigSection: View {
             // the entire HStack in `if let` so the row keeps its slot in the
             // VStack and the layout above/below does not reflow each time
             // the status appears/disappears.
+            //
+            // WR-01 (05-REVIEW.md): the inner HStack content is now
+            // UNCONDITIONAL (Text + Spacer + Button always exist in the
+            // view tree). Two reasons:
+            //
+            //  1. Animation: with `if let msg = statusMessage` inside the
+            //     HStack, the children collapsed at the START of the
+            //     250ms fade-out (because `statusMessage` was already nil),
+            //     leaving only empty padding to "fade". Keeping children
+            //     alive means Text + Button fade out together with the
+            //     outer .opacity transition.
+            //
+            //  2. Undo race near T≈3s: with the children gated on
+            //     `if let bid = statusBindingId`, the .task TTL could
+            //     unmount the Button between the SwiftUI hit-test and the
+            //     action dispatch — the click would land on whatever
+            //     replaced it. Keeping the Button alive with
+            //     `.disabled(statusBindingId == nil)` means the action
+            //     handler captures the bindingId at tap time, not at
+            //     render time, and a late click still completes safely.
+            //
+            // Tradeoff: empty `Text("")` collapses to zero-size in macOS
+            // SwiftUI 14, so the row still appears empty when statusMessage
+            // is nil — visually identical to the prior conditional design.
             HStack(spacing: 8) {
-                if let msg = statusMessage {
-                    Text(msg)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                Text(statusMessage ?? "")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(String(localized: "Undo")) {
+                    // Read bindingId at TAP time (not render time) — keeps
+                    // the action correct even if the .task TTL clears
+                    // statusBindingId between the hit-test and dispatch.
                     if let bid = statusBindingId {
-                        Button(String(localized: "Undo")) {
-                            undoLastImport(id: bid)
-                        }
-                        .controlSize(.small)
-                        .buttonStyle(.bordered)
+                        undoLastImport(id: bid)
                     }
                 }
+                .controlSize(.small)
+                .buttonStyle(.bordered)
+                .opacity(statusBindingId == nil ? 0 : 1)
+                .disabled(statusBindingId == nil)
             }
             .padding(.vertical, 4)
             .opacity(statusMessage == nil ? 0 : 1)
             .animation(.easeInOut(duration: 0.25), value: statusMessage)
+            .animation(.easeInOut(duration: 0.25), value: statusBindingId)
         }
         .onAppear { refreshVoiceTriggerLabel() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
