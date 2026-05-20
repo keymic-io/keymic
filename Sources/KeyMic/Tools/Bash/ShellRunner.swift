@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-final class ShellRunner {
+final class ShellRunner: @unchecked Sendable {
     static let shared = ShellRunner()
 
     typealias SnapshotProvider = () -> URL?
