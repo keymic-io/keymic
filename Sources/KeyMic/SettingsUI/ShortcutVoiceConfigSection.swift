@@ -328,10 +328,32 @@ struct ShortcutVoiceConfigSection: View {
             statusMessage = nil
             statusBindingId = nil
         }
-        // Defensive cleanup safety net per D-D-3. UI-11 (cancel(.settingsReload)
-        // on disappear) lands in plan 05-05.
+        // UI-05 defensive cleanup safety net per D-D-3, +
+        // UI-11 in-flight-arm cancellation per D-F-1 (Plan 05-05).
+        //
+        // `.onDisappear` fires for BOTH window-close AND tab-switch within
+        // the settings sidebar (D-F-2). Both are sensible cancel signals —
+        // the user has stopped attending to the arm flow either way. Do
+        // NOT try to narrow this to "window-close only"; the dual-trigger
+        // behavior is intentional and matches UI-11 wording
+        // ("settings-window-close-while-armed").
+        //
+        // The cancel call is idempotent + silent when not armed (D-F-3 +
+        // ShortcutVoiceCoordinator.cancel at ShortcutVoiceCoordinator.swift:
+        // 306-322), so invoking it on every onDisappear regardless of state
+        // is safe.
         .onDisappear {
+            // 1. Defensive Esc-monitor cleanup. The `.onChange(of: isArmed)`
+            //    handler already removes the monitor when isArmed flips
+            //    false, but `.onDisappear` may fire BEFORE that flip in
+            //    some lifecycles (e.g. window close while armed) so this
+            //    second removal is a belt-and-braces safety net.
             unregisterEscMonitor()
+            // 2. UI-11 / D-F-1: cancel any in-flight arm on settings-window-
+            //    close or tab-switch. `.settingsReload` is the canonical
+            //    reason; the coordinator's cancel() is idempotent and
+            //    silent when not armed (no log noise, no state churn).
+            ShortcutVoiceCoordinator.shared.cancel(reason: .settingsReload)
         }
     }
 
