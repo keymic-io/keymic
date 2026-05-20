@@ -29,6 +29,16 @@ struct ShortcutYAMLImporterTestRunner {
         try testBindingBindingConflictClearsTrigger(tmp: tmp)
         try testAuditLogRotationAt5MB(tmp: tmp)
 
+        // Plan 04-01 (Phase 3 amendment): canonicalKind .llmFailure mapping
+        // + userInfo transcript extension + recordLLMFailure helper.
+        try testCanonicalKindMapsLLMFailureToLLMErrorKind()
+        try testCanonicalKindTruncatesLLMFailureMessageTo64Chars()
+        try testExhaustiveSwitchStillCompiles()
+        try testNotificationUserInfoIncludesTranscriptOnHappyPath(tmp: tmp)
+        try testNotificationUserInfoIncludesTranscriptOnParseError(tmp: tmp)
+        try testRecordLLMFailureWritesAuditLineAndPostsNotification(tmp: tmp)
+        try testRemoveLastImportPostsEmptyTranscript(tmp: tmp)
+
         print("ShortcutYAMLImporterTests passed")
     }
 
@@ -1009,6 +1019,380 @@ struct ShortcutYAMLImporterTestRunner {
         }
 
         print("testAuditLogRotationAt5MB: ok")
+    }
+
+    // MARK: - Plan 04-01 tests (Phase 3 amendment — coordinator audit-write path)
+    //
+    // These tests cover the additive changes that the Phase 4
+    // ShortcutVoiceCoordinator (plans 04-03 / 04-04) depends on:
+    //   - `.llmFailure(message:)` case on ShortcutImporterError
+    //   - canonicalKind arm mapping it to ParseErrorPayload(kind: "llm-error", ...)
+    //   - userInfo["transcript"] extension on all 5 .shortcutImportDidComplete
+    //     post sites in ShortcutYAMLImporter
+    //   - public `recordLLMFailure(transcript:errorMessage:)` helper
+    //
+    // Per 04-RESEARCH constraint #3, the importer posts notifications on the
+    // caller's thread synchronously, so observer callbacks run BEFORE the
+    // importYAML / recordLLMFailure call returns — no async waits needed.
+
+    /// canonicalKind(.llmFailure) returns kind == "llm-error" and stuffs the
+    /// message into `field` (mirrors actionTriggersVoiceKey contract).
+    private static func testCanonicalKindMapsLLMFailureToLLMErrorKind() throws {
+        let payload = ShortcutAuditLog.canonicalKind(
+            ShortcutImporterError.llmFailure(message: "Network timeout after 10s")
+        )
+        expect(payload.kind == "llm-error",
+               "canonicalKind .llmFailure kind == 'llm-error' (got '\(payload.kind)')")
+        expect(payload.field == "Network timeout after 10s",
+               "canonicalKind .llmFailure field carries message (got \(String(describing: payload.field)))")
+        expect(payload.line == nil,
+               "canonicalKind .llmFailure line is nil (got \(String(describing: payload.line)))")
+        expect(payload.token == nil,
+               "canonicalKind .llmFailure token is nil (got \(String(describing: payload.token)))")
+
+        print("testCanonicalKindMapsLLMFailureToLLMErrorKind: ok")
+    }
+
+    /// canonicalKind truncates the .llmFailure message to 64 chars defensively
+    /// (mirrors the actionTriggersVoiceKey contract at ShortcutAuditLog.swift:372).
+    private static func testCanonicalKindTruncatesLLMFailureMessageTo64Chars() throws {
+        // 200-char ASCII payload — easy to assert exactly 64 chars survive.
+        let long = String(repeating: "a", count: 200)
+        let payload = ShortcutAuditLog.canonicalKind(
+            ShortcutImporterError.llmFailure(message: long)
+        )
+        expect(payload.kind == "llm-error",
+               "kind unchanged on truncation (got '\(payload.kind)')")
+        guard let field = payload.field else {
+            fail("field must not be nil for .llmFailure (got nil)")
+        }
+        expect(field.count == 64,
+               "field truncated to exactly 64 chars (got \(field.count))")
+        expect(field == String(repeating: "a", count: 64),
+               "field is the first 64 chars of the input message")
+
+        print("testCanonicalKindTruncatesLLMFailureMessageTo64Chars: ok")
+    }
+
+    /// Compile-time exhaustiveness gate: instantiate every
+    /// ShortcutImporterError case and convert through canonicalKind. If the
+    /// switch loses a `default:` arm AND a new case is added without
+    /// updating the switch, this test FAILS to compile (the desired Phase
+    /// 2 P-05 / Phase 3 P-05 precedent). At runtime, this test merely
+    /// verifies that each case round-trips to a distinct kind string.
+    private static func testExhaustiveSwitchStillCompiles() throws {
+        let errors: [ShortcutImporterError] = [
+            .actionTriggersVoiceKey(triggerSource: "voice"),
+            .ownedTriggerCollision(owner: "clipboardPanel"),
+            .llmFailure(message: "boom"),
+        ]
+        let kinds = errors.map { ShortcutAuditLog.canonicalKind($0).kind }
+        expect(Set(kinds).count == errors.count,
+               "each ShortcutImporterError case maps to a distinct kind (got \(kinds))")
+        expect(kinds.contains("actionTriggersVoiceKey"),
+               "actionTriggersVoiceKey kind present")
+        expect(kinds.contains("ownedTriggerCollision"),
+               "ownedTriggerCollision kind present")
+        expect(kinds.contains("llm-error"),
+               "llm-error kind present")
+
+        print("testExhaustiveSwitchStillCompiles: ok")
+    }
+
+    /// Happy-path import posts .shortcutImportDidComplete with userInfo
+    /// containing BOTH "outcome" (typed Outcome) AND "transcript" (the
+    /// original call-site String) — D-C-3 user-info contract.
+    private static func testNotificationUserInfoIncludesTranscriptOnHappyPath(tmp: URL) throws {
+        let suiteName = "test.ShortcutYAMLImporter.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let auditURL = tmp.appendingPathComponent("audit-userinfo-happy.log")
+        let auditLog = ShortcutAuditLog(logURL: auditURL, maxBytes: 5 * 1024 * 1024)
+        let store = HotkeyBindingsStore(defaults: defaults)
+        let importer = ShortcutYAMLImporter(
+            store: store,
+            registry: HotkeyRegistry.shared,
+            auditLog: auditLog,
+            userDefaults: defaults
+        )
+
+        var capturedUserInfo: [AnyHashable: Any]? = nil
+        let token = NotificationCenter.default.addObserver(
+            forName: .shortcutImportDidComplete,
+            object: importer,
+            queue: nil
+        ) { note in
+            capturedUserInfo = note.userInfo
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let yaml = """
+        version: 1
+        shortcut: "alt+g"
+        label: "Open Chrome"
+        actions:
+          - text: "hello"
+        """
+        let transcript = "按 alt+g 打开 chrome"
+        let outcome = importer.importYAML(yaml, transcript: transcript)
+        auditLog.flushForTesting()
+
+        // RESEARCH constraint #3: synchronous post on caller's thread.
+        guard let userInfo = capturedUserInfo else {
+            fail("observer must have been called synchronously before importYAML returns")
+        }
+        // outcome present + typed correctly
+        guard let captured = userInfo["outcome"] as? Outcome else {
+            fail("userInfo['outcome'] must be a non-nil Outcome (got \(String(describing: userInfo["outcome"])))")
+        }
+        expect(captured.bindingId == outcome.bindingId,
+               "userInfo.outcome.bindingId matches return value")
+        // transcript present + round-trips the call-site String exactly.
+        guard let capturedTranscript = userInfo["transcript"] as? String else {
+            fail("userInfo['transcript'] must be a String (got \(String(describing: userInfo["transcript"])))")
+        }
+        expect(capturedTranscript == transcript,
+               "userInfo.transcript round-trips (got '\(capturedTranscript)', expected '\(transcript)')")
+
+        print("testNotificationUserInfoIncludesTranscriptOnHappyPath: ok")
+    }
+
+    /// Parse-error import path ALSO carries userInfo["transcript"] — D-C-3
+    /// uniformity across all 5 post sites.
+    private static func testNotificationUserInfoIncludesTranscriptOnParseError(tmp: URL) throws {
+        let suiteName = "test.ShortcutYAMLImporter.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let auditURL = tmp.appendingPathComponent("audit-userinfo-parse-err.log")
+        let auditLog = ShortcutAuditLog(logURL: auditURL, maxBytes: 5 * 1024 * 1024)
+        let store = HotkeyBindingsStore(defaults: defaults)
+        let importer = ShortcutYAMLImporter(
+            store: store,
+            registry: HotkeyRegistry.shared,
+            auditLog: auditLog,
+            userDefaults: defaults
+        )
+
+        var capturedUserInfo: [AnyHashable: Any]? = nil
+        let token = NotificationCenter.default.addObserver(
+            forName: .shortcutImportDidComplete,
+            object: importer,
+            queue: nil
+        ) { note in
+            capturedUserInfo = note.userInfo
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        // YAML without `shortcut:` triggers ShortcutYAMLError.missingShortcut.
+        let yaml = "version: 1\nactions:\n  - text: \"hi\"\n"
+        let transcript = "parse-error userInfo transcript"
+        let outcome = importer.importYAML(yaml, transcript: transcript)
+        auditLog.flushForTesting()
+
+        expect(outcome.parseError == "missingShortcut",
+               "sanity: parse error kicks in on missing shortcut (got \(String(describing: outcome.parseError)))")
+
+        guard let userInfo = capturedUserInfo else {
+            fail("observer must have been called synchronously before importYAML returns")
+        }
+        guard let capturedTranscript = userInfo["transcript"] as? String else {
+            fail("userInfo['transcript'] must be a String on parse-error path (got \(String(describing: userInfo["transcript"])))")
+        }
+        expect(capturedTranscript == transcript,
+               "parse-error path round-trips transcript (got '\(capturedTranscript)')")
+        // Outcome still present.
+        expect(userInfo["outcome"] is Outcome,
+               "userInfo['outcome'] is Outcome on parse-error path")
+
+        print("testNotificationUserInfoIncludesTranscriptOnParseError: ok")
+    }
+
+    /// recordLLMFailure(transcript:errorMessage:) writes ONE audit line with
+    /// the canonical "llm-error" shape AND posts the standard
+    /// .shortcutImportDidComplete notification — preserving the D-G
+    /// single-writer invariant.
+    private static func testRecordLLMFailureWritesAuditLineAndPostsNotification(tmp: URL) throws {
+        let suiteName = "test.ShortcutYAMLImporter.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let auditURL = tmp.appendingPathComponent("audit-llm-failure.log")
+        let auditLog = ShortcutAuditLog(logURL: auditURL, maxBytes: 5 * 1024 * 1024)
+        let store = HotkeyBindingsStore(defaults: defaults)
+        let importer = ShortcutYAMLImporter(
+            store: store,
+            registry: HotkeyRegistry.shared,
+            auditLog: auditLog,
+            userDefaults: defaults
+        )
+
+        var capturedUserInfo: [AnyHashable: Any]? = nil
+        let token = NotificationCenter.default.addObserver(
+            forName: .shortcutImportDidComplete,
+            object: importer,
+            queue: nil
+        ) { note in
+            capturedUserInfo = note.userInfo
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let transcript = "test transcript for llm failure"
+        let errorMessage = "Network timeout"
+        importer.recordLLMFailure(transcript: transcript, errorMessage: errorMessage)
+        auditLog.flushForTesting()
+
+        // 1. Audit log: exactly one line.
+        let content = try String(contentsOf: auditURL, encoding: .utf8)
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: true)
+        expect(lines.count == 1,
+               "recordLLMFailure writes exactly one audit line (got \(lines.count))")
+        guard let lineData = lines[0].data(using: .utf8),
+              let any = try? JSONSerialization.jsonObject(with: lineData, options: []),
+              let dict = any as? [String: Any]
+        else {
+            fail("audit line did not parse as JSON: \(lines[0])")
+        }
+        // 2. action == "import" (originating event is the import attempt).
+        expect(dict["action"] as? String == "import",
+               "recordLLMFailure audit action == 'import' (got \(String(describing: dict["action"])))")
+        // 3. bindingId == null (no binding inserted).
+        let bindingIdVal = dict["bindingId"]
+        let isBindingIdNull = bindingIdVal == nil || bindingIdVal is NSNull
+        expect(isBindingIdNull,
+               "recordLLMFailure audit bindingId is null (got \(String(describing: bindingIdVal)))")
+        // 4. transcript round-trips.
+        expect(dict["transcript"] as? String == transcript,
+               "recordLLMFailure audit transcript round-trips (got \(String(describing: dict["transcript"])))")
+        // 5. yaml == "" (LLM never produced parsable body).
+        expect(dict["yaml"] as? String == "",
+               "recordLLMFailure audit yaml is empty string (got \(String(describing: dict["yaml"])))")
+        // 6. parseError is a JSON sub-object with kind == "llm-error" + field == errorMessage.
+        guard let parseErrorDict = dict["parseError"] as? [String: Any] else {
+            fail("recordLLMFailure audit parseError must be a JSON object (got \(String(describing: dict["parseError"])))")
+        }
+        expect(parseErrorDict["kind"] as? String == "llm-error",
+               "audit parseError.kind == 'llm-error' (got \(String(describing: parseErrorDict["kind"])))")
+        expect(parseErrorDict["field"] as? String == errorMessage,
+               "audit parseError.field carries error message (got \(String(describing: parseErrorDict["field"])))")
+        // 7. conflictCleared / shellStripped / droppedBundleIDs at defaults.
+        expect(dict["conflictCleared"] as? Bool == false,
+               "audit conflictCleared == false")
+        expect(dict["shellStripped"] as? Bool == false,
+               "audit shellStripped == false")
+        if let arr = dict["droppedBundleIDs"] as? [Any] {
+            expect(arr.isEmpty, "audit droppedBundleIDs is empty")
+        } else {
+            fail("audit droppedBundleIDs must be array (got \(String(describing: dict["droppedBundleIDs"])))")
+        }
+        // 8. Store NOT mutated (LLM failure precedes any insert).
+        expect(store.bindings.isEmpty, "recordLLMFailure must NOT mutate the store")
+
+        // 9. Notification observed with the right userInfo shape.
+        guard let userInfo = capturedUserInfo else {
+            fail("recordLLMFailure must post .shortcutImportDidComplete synchronously")
+        }
+        guard let outcome = userInfo["outcome"] as? Outcome else {
+            fail("userInfo['outcome'] must be an Outcome (got \(String(describing: userInfo["outcome"])))")
+        }
+        expect(outcome.bindingId == nil,
+               "outcome.bindingId == nil on LLM failure (got \(String(describing: outcome.bindingId)))")
+        expect(outcome.parseError == "llm-error",
+               "outcome.parseError == 'llm-error' (got \(String(describing: outcome.parseError)))")
+        expect(userInfo["transcript"] as? String == transcript,
+               "userInfo['transcript'] round-trips (got \(String(describing: userInfo["transcript"])))")
+
+        // 10. Also assert the 64-char truncation runs end-to-end via recordLLMFailure
+        //     (analog of testCanonicalKindTruncatesLLMFailureMessageTo64Chars but
+        //     through the helper's full path — audit line → JSON → parseError.field).
+        let longMessage = String(repeating: "x", count: 200)
+        importer.recordLLMFailure(transcript: "again", errorMessage: longMessage)
+        auditLog.flushForTesting()
+        let content2 = try String(contentsOf: auditURL, encoding: .utf8)
+        let lines2 = content2.split(separator: "\n", omittingEmptySubsequences: true)
+        expect(lines2.count == 2,
+               "second recordLLMFailure appends a second audit line (got \(lines2.count))")
+        guard let line2Data = lines2[1].data(using: .utf8),
+              let any2 = try? JSONSerialization.jsonObject(with: line2Data, options: []),
+              let dict2 = any2 as? [String: Any],
+              let parseError2 = dict2["parseError"] as? [String: Any],
+              let truncatedField = parseError2["field"] as? String
+        else {
+            fail("second audit line did not parse / missing parseError.field: \(lines2[1])")
+        }
+        expect(truncatedField.count == 64,
+               "audit parseError.field truncated to 64 chars end-to-end (got \(truncatedField.count))")
+        expect(truncatedField == String(repeating: "x", count: 64),
+               "truncated field is the first 64 chars of input")
+
+        print("testRecordLLMFailureWritesAuditLineAndPostsNotification: ok")
+    }
+
+    /// removeLastImport(id:) follow-up notification carries
+    /// userInfo["transcript"] == "" per PATTERNS.md option (b) — undo has
+    /// no originating transcript in scope.
+    private static func testRemoveLastImportPostsEmptyTranscript(tmp: URL) throws {
+        let suiteName = "test.ShortcutYAMLImporter.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let auditURL = tmp.appendingPathComponent("audit-userinfo-undo.log")
+        let auditLog = ShortcutAuditLog(logURL: auditURL, maxBytes: 5 * 1024 * 1024)
+        let store = HotkeyBindingsStore(defaults: defaults)
+        let importer = ShortcutYAMLImporter(
+            store: store,
+            registry: HotkeyRegistry.shared,
+            auditLog: auditLog,
+            userDefaults: defaults
+        )
+
+        // Capture EVERY userInfo posted so we can assert on the undo one
+        // (the second notification) without losing the import one.
+        var captured: [[AnyHashable: Any]] = []
+        let token = NotificationCenter.default.addObserver(
+            forName: .shortcutImportDidComplete,
+            object: importer,
+            queue: nil
+        ) { note in
+            if let info = note.userInfo {
+                captured.append(info)
+            }
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        let yaml = """
+        version: 1
+        shortcut: "alt+g"
+        label: "Open Chrome"
+        actions:
+          - text: "hello"
+        """
+        let outcome = importer.importYAML(yaml, transcript: "原始 transcript")
+        auditLog.flushForTesting()
+        guard let bindingId = outcome.bindingId else {
+            fail("happy import must return a non-nil bindingId")
+        }
+        // Sanity: import notification's transcript is the original.
+        expect(captured.count == 1, "one notification observed after import")
+        expect(captured[0]["transcript"] as? String == "原始 transcript",
+               "import notification transcript preserved")
+
+        importer.removeLastImport(id: bindingId)
+        auditLog.flushForTesting()
+        expect(captured.count == 2,
+               "second notification observed after removeLastImport (got \(captured.count))")
+        // Undo notification: transcript MUST be "" per PATTERNS.md option (b).
+        expect(captured[1]["transcript"] as? String == "",
+               "undo notification transcript == '' (got \(String(describing: captured[1]["transcript"])))")
+        // Outcome still present + carries the original bindingId.
+        guard let undoOutcome = captured[1]["outcome"] as? Outcome else {
+            fail("undo notification userInfo['outcome'] must be Outcome (got \(String(describing: captured[1]["outcome"])))")
+        }
+        expect(undoOutcome.bindingId == bindingId,
+               "undo outcome carries original bindingId (got \(String(describing: undoOutcome.bindingId)))")
+
+        print("testRemoveLastImportPostsEmptyTranscript: ok")
     }
 
     // MARK: - Helpers (copied verbatim from project-wide test idiom)
