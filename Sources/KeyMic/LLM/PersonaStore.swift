@@ -150,6 +150,27 @@ final class PersonaStore {
                 return
             }
             self.personas = mergeWithBuiltIns(loaded: envelope.personas)
+
+            // D-E re-sync: hidden persona stylePrompt is built-in, not user data.
+            // Overwrite the post-merge value with HiddenPersonaPrompt.text whenever
+            // they differ. This ships Phase 6 prompt updates to existing installs
+            // without requiring users to delete personas.json (Plan 06-02).
+            //
+            // Safe because the hidden persona is hidden: true + builtIn: true and
+            // the UI never exposes it — users cannot have legitimately customized it.
+            // The condition is the dirty-check; without it, every launch would
+            // re-save the file even when in sync (write amplification — mirrors
+            // the WR-02 pattern at setActive:62-65).
+            if let idx = self.personas.firstIndex(where: { $0.id == "builtin-shortcut-config" }),
+               self.personas[idx].stylePrompt != HiddenPersonaPrompt.text {
+                self.personas[idx].stylePrompt = HiddenPersonaPrompt.text
+                self.personas[idx].updatedAt = Date()
+                // Persist immediately so the next launch's load() short-circuits the
+                // != comparison. Idempotent + atomic; harmless if the active-id
+                // sanity check below also fires its own save() in the same load.
+                save()
+            }
+
             self.activePersonaId = envelope.activePersonaId
             // Drop active id if the persona no longer exists OR is hidden.
             // Hidden personas must never be active — same invariant as setActive(_:).
