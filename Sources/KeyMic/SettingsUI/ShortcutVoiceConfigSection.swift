@@ -86,6 +86,41 @@ struct ShortcutVoiceConfigSection: View {
     /// (token leak): always remove the prior token before reassigning.
     @State private var escMonitor: Any? = nil
 
+    // MARK: UI-07 / UI-08 status-line state (Plan 05-04)
+    //
+    // The status line consumes `.shortcutImportDidComplete` notifications and
+    // renders a transient message for ~3s. Three pieces of view-local state
+    // drive it:
+    //
+    //   - `statusMessage`: the current displayed text (nil = hidden row).
+    //   - `statusBindingId`: the bindingId of the most recent successful
+    //     insert, used as the argument to `removeLastImport(id:)` when the
+    //     user clicks the Undo button. Set only for true successful inserts
+    //     (parseError nil AND conflictCleared false AND bindingId non-nil)
+    //     per D-G-2 — non-success outcomes leave this `nil` so the Undo
+    //     button stays hidden.
+    //   - `messageGeneration`: monotonically-bumped counter feeding the
+    //     `.task(id:)` modifier. Each new notification bumps the counter,
+    //     which cancels the prior 3s sleep task and starts a fresh one.
+    //     Race-free per 05-RESEARCH Pattern 3 cooperative-cancellation
+    //     analysis.
+
+    /// UI-07: transient status text shown after `.shortcutImportDidComplete`.
+    /// `nil` collapses the status row. Auto-cleared by the 3s
+    /// `.task(id: messageGeneration)` TTL or the Undo handler.
+    @State private var statusMessage: String? = nil
+
+    /// UI-08: bindingId of the most-recent SUCCESSFUL insert. `nil` when the
+    /// last outcome was a parse error, conflict-cleared, or shell-stripped
+    /// non-insert — Undo button stays hidden in those cases per D-G-2.
+    @State private var statusBindingId: UUID? = nil
+
+    /// UI-07: bumped on every notification so `.task(id: messageGeneration)`
+    /// cancels the prior 3s task and starts a fresh one. Overflow-safe
+    /// `&+= 1` because `.task(id:)` only cares about value change, not
+    /// monotonicity.
+    @State private var messageGeneration: Int = 0
+
     // MARK: Constants
 
     /// UI-side mirror of `ShortcutVoiceCoordinator.armDuration` (30s).
@@ -144,6 +179,28 @@ struct ShortcutVoiceConfigSection: View {
         .onAppear { refreshVoiceTriggerLabel() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             refreshVoiceTriggerLabel()
+        }
+        // UI-07: status-line driver. Mirrors Phase 4's `routeOutcomeToOverlay`
+        // (ShortcutVoiceCoordinator.swift:458-477) — same 4-disposition order,
+        // same `String(localized:)` keys so `Localizable.xcstrings` is the
+        // single source of truth (no translation drift). Phase 5 adds one
+        // extra branch ("llm-error" → "Could not configure shortcut") that
+        // Phase 4 collapses into the generic parse-error literal.
+        //
+        // The handler also flips `isArmed = false` because reaching this
+        // notification means the arm cycle completed (success OR failure) —
+        // the view should return to the idle caption regardless of outcome.
+        .onReceive(NotificationCenter.default.publisher(for: .shortcutImportDidComplete)) { notif in
+            guard let outcome = notif.userInfo?["outcome"] as? Outcome else { return }
+            statusMessage = computeStatusText(for: outcome)
+            // D-G-2: Undo is offered ONLY for true successful inserts.
+            statusBindingId = (outcome.parseError == nil
+                               && !outcome.conflictCleared
+                               && outcome.bindingId != nil)
+                ? outcome.bindingId
+                : nil
+            messageGeneration &+= 1
+            isArmed = false
         }
         // UI-05: register/unregister the Esc local monitor lifecycle.
         // Local monitors are app-scoped, NOT window-scoped (05-RESEARCH
@@ -232,5 +289,53 @@ struct ShortcutVoiceConfigSection: View {
             NSEvent.removeMonitor(monitor)
             escMonitor = nil
         }
+    }
+
+    // MARK: UI-07 status text router (mirror of Phase 4 routeOutcomeToOverlay)
+
+    /// UI-07 status text router. Mirrors
+    /// `ShortcutVoiceCoordinator.routeOutcomeToOverlay`
+    /// (ShortcutVoiceCoordinator.swift:458-477) — same disposition order,
+    /// same English literals, all routed through `String(localized:)` so
+    /// `Localizable.xcstrings` is the single source of truth for the four
+    /// overlapping keys. Phase 5 adds one extra branch for `"llm-error"`
+    /// that Phase 4 collapses into the generic parse-error message.
+    ///
+    /// Disposition priority (locked, must match Phase 4):
+    ///   1. `parseError != nil`:
+    ///        - `"llm-error"` → "Could not configure shortcut"  (Phase 5-only)
+    ///        - any other     → "Could not parse shortcut"      (matches Phase 4)
+    ///   2. `conflictCleared == true` → "Trigger cleared (<source>) — set it in Settings"
+    ///      The em-dash is U+2014 single-character, BYTE-IDENTICAL with
+    ///      Phase 4 (ShortcutVoiceCoordinator.swift:465). Do NOT replace
+    ///      with a hyphen-minus or two hyphens.
+    ///   3. `bindingId != nil` + lookup hits store → "Added: <trigger> → <label>"
+    ///      The arrow is U+2192 single-character, BYTE-IDENTICAL with
+    ///      Phase 4 (ShortcutVoiceCoordinator.swift:470). Trigger is
+    ///      pretty-printed via `HotkeyConfig.parse(...)?.displayString()`
+    ///      (mirrors ShortcutRow.triggerDisplay precedent at
+    ///      SettingsRoot.swift:1188); falls back to the raw trigger
+    ///      string if parse fails.
+    ///   4. Defensive fallback → "Shortcut updated"
+    ///
+    /// Returns a non-nil String in every branch (no nil return); the
+    /// `String?` return type is preserved for future "no message" cases.
+    private func computeStatusText(for outcome: Outcome) -> String? {
+        if let kind = outcome.parseError {
+            return kind == "llm-error"
+                ? String(localized: "Could not configure shortcut")
+                : String(localized: "Could not parse shortcut")
+        }
+        if outcome.conflictCleared {
+            let source = outcome.conflictSource ?? ""
+            return String(localized: "Trigger cleared (\(source)) — set it in Settings")
+        }
+        if let bindingId = outcome.bindingId,
+           let binding = HotkeyBindingsStore.shared.bindings.first(where: { $0.id == bindingId }) {
+            let triggerDisplay = HotkeyConfig.parse(binding.trigger)?.displayString() ?? binding.trigger
+            let label = binding.label ?? String(localized: "shortcut")
+            return String(localized: "Added: \(triggerDisplay) → \(label)")
+        }
+        return String(localized: "Shortcut updated")
     }
 }
