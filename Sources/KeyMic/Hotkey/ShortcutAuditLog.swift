@@ -364,6 +364,11 @@ final class ShortcutAuditLog {
     /// `ParseErrorPayload`. Field payloads are truncated to 64 chars
     /// defensively at the conversion site (the enum stores raw strings
     /// already truncated at the throw site per ShortcutImporterError docs).
+    ///
+    /// Exhaustive switch with NO `default:` arm — adding a new case to
+    /// `ShortcutImporterError` becomes a compile-time test-update gate per
+    /// Phase 2 P-05 / Phase 3 P-05 precedent (mirrors the YAMLError-variant
+    /// `canonicalKind(_:ShortcutYAMLError)` switch above).
     static func canonicalKind(_ error: ShortcutImporterError) -> ParseErrorPayload {
         switch error {
         case .actionTriggersVoiceKey(let triggerSource):
@@ -375,6 +380,16 @@ final class ShortcutAuditLog {
             return ParseErrorPayload(
                 kind: "ownedTriggerCollision",
                 field: String(owner.prefix(64))
+            )
+        case .llmFailure(let message):
+            // Phase 4 amendment per 04-CONTEXT.md `<phase3_amendment>`:
+            // `llm-error` is the canonical `kind:` string consumed by the
+            // status-line / overlay-toast subscribers. `message` is
+            // attacker-controlled (LLM / URLSession descriptor) — defensive
+            // 64-char truncation mirrors `actionTriggersVoiceKey` above.
+            return ParseErrorPayload(
+                kind: "llm-error",
+                field: String(message.prefix(64))
             )
         }
     }

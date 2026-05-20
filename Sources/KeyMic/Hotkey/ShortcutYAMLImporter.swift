@@ -182,7 +182,7 @@ final class ShortcutYAMLImporter {
             NotificationCenter.default.post(
                 name: .shortcutImportDidComplete,
                 object: self,
-                userInfo: ["outcome": outcome]
+                userInfo: ["outcome": outcome, "transcript": transcript]
             )
             return outcome
         } catch {
@@ -216,7 +216,7 @@ final class ShortcutYAMLImporter {
             NotificationCenter.default.post(
                 name: .shortcutImportDidComplete,
                 object: self,
-                userInfo: ["outcome": outcome]
+                userInfo: ["outcome": outcome, "transcript": transcript]
             )
             return outcome
         }
@@ -350,7 +350,7 @@ final class ShortcutYAMLImporter {
             NotificationCenter.default.post(
                 name: .shortcutImportDidComplete,
                 object: self,
-                userInfo: ["outcome": outcome]
+                userInfo: ["outcome": outcome, "transcript": transcript]
             )
             return outcome
         }
@@ -447,7 +447,7 @@ final class ShortcutYAMLImporter {
         NotificationCenter.default.post(
             name: .shortcutImportDidComplete,
             object: self,
-            userInfo: ["outcome": outcome]
+            userInfo: ["outcome": outcome, "transcript": transcript]
         )
 
         // Step 10: RETURN.
@@ -515,7 +515,69 @@ final class ShortcutYAMLImporter {
         NotificationCenter.default.post(
             name: .shortcutImportDidComplete,
             object: self,
-            userInfo: ["outcome": outcome]
+            // No original transcript in scope (undo is a follow-up action,
+            // not a new transcription event). Per 04-PATTERNS.md
+            // "Special-case `removeLastImport(id:)`" option (b): emit the
+            // empty string so the userInfo schema is uniform across all 5
+            // post sites — subscribers may discriminate undo vs. import via
+            // `outcome.bindingId` + their own bookkeeping.
+            userInfo: ["outcome": outcome, "transcript": ""]
+        )
+    }
+
+    // MARK: - LLM-failure audit-write path (COORD-08 / 04-CONTEXT.md `<phase3_amendment>`)
+
+    /// Record an LLM-side failure that prevented the YAML pipeline from
+    /// running (e.g. `LLMRefiner.refine` returned a non-200 HTTP response,
+    /// the URLSession errored out, JSON decode failed, or the request
+    /// timed out). Writes EXACTLY ONE NDJSON audit line + posts the
+    /// standard `.shortcutImportDidComplete` notification — preserving the
+    /// D-G single-writer invariant established in Phase 3 (the importer is
+    /// the only audit-log writer; the coordinator never calls
+    /// `auditLog.write(_)` directly).
+    ///
+    /// The audit line carries `action: "import"` (the same value as the
+    /// happy path / parse-error path) because the import attempt is the
+    /// originating event — analytics consumers filter by
+    /// `parseError.kind == "llm-error"` to isolate this branch.
+    ///
+    /// `errorMessage` is attacker-controlled (LLM endpoint / URLSession
+    /// descriptor); `ShortcutAuditLog.canonicalKind(_:ShortcutImporterError)`
+    /// truncates it to 64 chars defensively before it enters the
+    /// `ParseErrorPayload.field`.
+    ///
+    /// Called from `ShortcutVoiceCoordinator.handleTranscription`
+    /// (built in plan 04-04).
+    func recordLLMFailure(transcript: String, errorMessage: String) {
+        let importerErr = ShortcutImporterError.llmFailure(message: errorMessage)
+        let payload = ShortcutAuditLog.canonicalKind(importerErr)
+
+        let record = AuditRecord(
+            timestamp: Self.currentTimestamp(),
+            transcript: transcript,
+            yaml: "",                 // No YAML produced — LLM never returned a parsable body.
+            bindingId: nil,           // No binding inserted.
+            conflictCleared: false,
+            conflictSource: nil,
+            parseError: payload,
+            shellStripped: false,
+            droppedBundleIDs: [],
+            action: "import"          // Originating event is the import attempt; D-C-3.
+        )
+        auditLog.write(record)
+
+        let outcome = Outcome(
+            bindingId: nil,
+            parseError: payload.kind, // "llm-error"
+            conflictCleared: false,
+            conflictSource: nil,
+            shellStripped: false,
+            droppedBundleIDs: []
+        )
+        NotificationCenter.default.post(
+            name: .shortcutImportDidComplete,
+            object: self,
+            userInfo: ["outcome": outcome, "transcript": transcript]
         )
     }
 
