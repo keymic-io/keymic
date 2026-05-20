@@ -4,6 +4,8 @@ private final class ToolProtocolTests {
     static func main() throws {
         try testEchoToolBasicCall()
         try testEchoToolSchemaShape()
+        try testRegistryRegisterAndLookup()
+        try testRegistryDuplicateNameThrows()
         print("ToolProtocolTests passed")
     }
 
@@ -43,6 +45,34 @@ private final class ToolProtocolTests {
         }
         guard tool.parametersJSONSchema["properties"] is [String: Any] else {
             throw TestFailure("schema properties missing")
+        }
+    }
+
+    static func testRegistryRegisterAndLookup() throws {
+        let registry = ToolRegistry()
+        try runAsync {
+            await registry.register(EchoTool())
+            let found = await registry.tool(named: "echo")
+            guard found != nil else {
+                throw TestFailure("registry could not find registered tool")
+            }
+            let all = await registry.allNames()
+            guard all == ["echo"] else {
+                throw TestFailure("allNames mismatch: \(all)")
+            }
+        }
+    }
+
+    static func testRegistryDuplicateNameThrows() throws {
+        let registry = ToolRegistry()
+        try runAsync {
+            await registry.register(EchoTool())
+            do {
+                try await registry.registerThrowing(EchoTool())
+                throw TestFailure("expected duplicate-name error")
+            } catch is ToolRegistryError {
+                // expected
+            }
         }
     }
 

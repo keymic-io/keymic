@@ -400,6 +400,7 @@ test-tool-protocol:
 	swiftc Tests/ToolProtocolTests.swift \
 	       Sources/KeyMic/Tools/Protocol/Tool.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
 	       -o .build/tool-protocol-tests
 	.build/tool-protocol-tests
 
