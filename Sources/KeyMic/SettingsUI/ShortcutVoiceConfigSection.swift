@@ -173,8 +173,34 @@ struct ShortcutVoiceConfigSection: View {
             .controlSize(.large)
             .disabled(isArmed)
 
-            // Esc handling (Task 3) and status line / Undo (05-04) land in
-            // subsequent commits.
+            // UI-07 / UI-08: transient status row + Undo button (Plan 05-04).
+            //
+            // Layout choice (D-G-1): status text on the left, Undo button on
+            // the right of the SAME HStack. Both disappear together when
+            // `statusMessage` becomes nil.
+            //
+            // We use `.opacity` + `.animation(_:value:)` rather than wrapping
+            // the entire HStack in `if let` so the row keeps its slot in the
+            // VStack and the layout above/below does not reflow each time
+            // the status appears/disappears.
+            HStack(spacing: 8) {
+                if let msg = statusMessage {
+                    Text(msg)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if let bid = statusBindingId {
+                        Button(String(localized: "Undo")) {
+                            undoLastImport(id: bid)
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+            .opacity(statusMessage == nil ? 0 : 1)
+            .animation(.easeInOut(duration: 0.25), value: statusMessage)
         }
         .onAppear { refreshVoiceTriggerLabel() }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
@@ -227,6 +253,25 @@ struct ShortcutVoiceConfigSection: View {
             try? await Task.sleep(for: .seconds(Self.mirroredArmDuration))
             guard !Task.isCancelled else { return }
             if isArmed { isArmed = false }
+        }
+        // UI-07: 3s status-line TTL.
+        //
+        // `.task(id: messageGeneration)` launches a fresh sleep task on every
+        // notification (each bump cancels the prior task). Cooperative
+        // cancellation: when the id changes mid-window, `Task.sleep` throws
+        // CancellationError → `try?` swallows it → control exits the function
+        // BEFORE the `statusMessage = nil` line runs. So the post-sleep
+        // clear only fires for the LATEST notification's window, not racing
+        // any earlier one. Race-free per 05-RESEARCH Pattern 3 analysis.
+        //
+        // Multiple `.task(id:)` modifiers on the same view stack independently
+        // — each has its own id keyspace.
+        .task(id: messageGeneration) {
+            guard statusMessage != nil else { return }
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled else { return }
+            statusMessage = nil
+            statusBindingId = nil
         }
         // Defensive cleanup safety net per D-D-3. UI-11 (cancel(.settingsReload)
         // on disappear) lands in plan 05-05.
@@ -337,5 +382,40 @@ struct ShortcutVoiceConfigSection: View {
             return String(localized: "Added: \(triggerDisplay) → \(label)")
         }
         return String(localized: "Shortcut updated")
+    }
+
+    // MARK: UI-08 Undo handler
+
+    /// UI-08: removes the most-recent imported binding via the Phase 3
+    /// importer.
+    ///
+    /// PITFALL #5 (05-RESEARCH "Importer notification posted with
+    /// transcript == '' from undo path"):
+    ///   `ShortcutYAMLImporter.removeLastImport(id:)` posts
+    ///   `.shortcutImportDidComplete` with `userInfo["transcript"] == ""`
+    ///   and `outcome.bindingId == id` (the just-removed binding's id) on
+    ///   the success branch [VERIFIED: ShortcutYAMLImporter.swift:516-535].
+    ///   The `.onReceive` handler in this view does NOT differentiate
+    ///   "import" from "undo echo" — it just renders. If we called
+    ///   `removeLastImport` FIRST, the echo notification would arrive
+    ///   with the same bindingId, `computeStatusText` would find the
+    ///   binding already removed from `HotkeyBindingsStore`, the
+    ///   `Added: …` branch would fall through, and the row would re-render
+    ///   as the defensive "Shortcut updated" fallback — confusing UX
+    ///   ("did Undo work? why is there still a status?").
+    ///
+    /// MITIGATION: clear `statusMessage` and `statusBindingId` BEFORE
+    /// calling `removeLastImport`. The KEY invariant is that the
+    /// view's status state is already cleared by the time the importer
+    /// posts its undo notification. The subsequent `.onReceive` will
+    /// re-set them (because the binding is now gone, status text falls
+    /// through to "Shortcut updated") and `messageGeneration` will bump
+    /// → a fresh 3s TTL covers the brief echo flash. Acceptable v1
+    /// behavior; the binding's removal from the list is the real
+    /// confirmation of undo (D-G-4).
+    private func undoLastImport(id: UUID) {
+        statusMessage = nil
+        statusBindingId = nil
+        ShortcutYAMLImporter.shared.removeLastImport(id: id)
     }
 }
