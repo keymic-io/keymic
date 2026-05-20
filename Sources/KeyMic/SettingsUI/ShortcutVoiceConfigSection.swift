@@ -420,10 +420,27 @@ struct ShortcutVoiceConfigSection: View {
     /// already, but we still bounce the `isArmed = false` flip through
     /// `DispatchQueue.main.async` to defer the SwiftUI state mutation past
     /// the current event-dispatch frame (avoids re-entrancy weirdness).
+    ///
+    /// WR-02 (05-REVIEW.md): `addLocalMonitorForEvents` is APP-SCOPED, not
+    /// view-scoped. Without further guards the handler swallows Esc app-
+    /// wide while `isArmed == true` — including Esc events targeted at a
+    /// `.sheet` (e.g. BindingEditorSheet) presented OVER this section.
+    /// The sheet's Cancel `.keyboardShortcut(.cancelAction)` then never
+    /// fires.
+    ///
+    /// Guard: if the event's target window has an attached sheet
+    /// (`event.window?.attachedSheet != nil`), return the event unmodified
+    /// so the sheet's own key handlers see it. This is the bullet-proof
+    /// "modal is in front of us" check — AppKit guarantees `attachedSheet`
+    /// is non-nil exactly while a sheet is presented on that window.
     private func registerEscMonitor() {
         unregisterEscMonitor()
         escMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard event.keyCode == 0x35 /* kVK_Escape */ else { return event }
+            // WR-02: don't swallow Esc while a modal sheet is presented
+            // over the settings window — let the sheet's Cancel keyboard
+            // shortcut handle it.
+            if event.window?.attachedSheet != nil { return event }
             ShortcutVoiceCoordinator.shared.cancel(reason: .userEscape)
             DispatchQueue.main.async {
                 isArmed = false
