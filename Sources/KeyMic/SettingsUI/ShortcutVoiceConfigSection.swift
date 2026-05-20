@@ -399,11 +399,32 @@ struct ShortcutVoiceConfigSection: View {
             //    some lifecycles (e.g. window close while armed) so this
             //    second removal is a belt-and-braces safety net.
             unregisterEscMonitor()
-            // 2. UI-11 / D-F-1: cancel any in-flight arm on settings-window-
+            // 2. UI-11 / D-F-1: cancel any in-flight ARM on settings-window-
             //    close or tab-switch. `.settingsReload` is the canonical
             //    reason; the coordinator's cancel() is idempotent and
             //    silent when not armed (no log noise, no state churn).
-            ShortcutVoiceCoordinator.shared.cancel(reason: .settingsReload)
+            //
+            //    WR-06 (05-REVIEW.md): narrow the cancel scope so we DON'T
+            //    abort an in-flight LLM cycle if the user navigates away
+            //    after the recording finished. `cancel(reason:)` nils out
+            //    `currentRequestToken`, which causes the in-flight LLM
+            //    completion to be silently discarded by the token-guard
+            //    check inside `handleTranscription`. That leads to user-
+            //    visible data loss: the voice cycle completes, the LLM
+            //    response arrives, but it's never imported (no audit
+            //    line, no notification, no toast — silent failure).
+            //
+            //    Fix: only cancel when `activeVoiceMode == .normal` —
+            //    i.e. there is no active capture/LLM cycle in progress.
+            //    When `.shortcutConfig` is active the cycle owns its own
+            //    completion path (handleTranscription → routeOutcomeToOverlay
+            //    OR updateText("Could not configure shortcut") + auto-
+            //    dismiss after 1.5s). The overlay (Phase 4) surfaces the
+            //    result even with settings closed; status row is best-
+            //    effort.
+            if ShortcutVoiceCoordinator.shared.activeVoiceMode == .normal {
+                ShortcutVoiceCoordinator.shared.cancel(reason: .settingsReload)
+            }
         }
     }
 
