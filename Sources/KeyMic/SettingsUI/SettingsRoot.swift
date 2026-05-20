@@ -1069,6 +1069,18 @@ private struct ShortcutsSettingsSection: View {
 
     var body: some View {
         Form {
+            // D-B-1 (Plan 05-06): Voice Configuration section at the TOP of the
+            // Shortcuts tab Form, ABOVE the existing bindings-list Section.
+            // Existing "Add Shortcut" Section stays at the bottom (semantic
+            // positions unchanged — only visually shifted down by one Section).
+            Section {
+                ShortcutVoiceConfigSection()
+            } header: {
+                Text(String(localized: "Voice Configuration"))
+                    .font(.headline)
+                    .textCase(nil)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Section {
                 if store.bindings.isEmpty {
                     Text("No shortcuts yet — click Add Shortcut to create one.")
