@@ -11,6 +11,7 @@
 //   - 05-05: reveal-audit-log button + shell-action toggle + warning banner
 
 import AppKit
+import Foundation
 import os.log
 import SwiftUI
 
@@ -41,14 +42,70 @@ extension EnvironmentValues {
     }
 }
 
-// MARK: - Section view (placeholder; body populated in 05-03..05-05)
+// MARK: - Section view (skeleton populated in 05-03; status/reveal/toggle in 05-04/05-05)
 
-/// Placeholder SwiftUI section for the speak-to-bind voice-shortcut flow.
-/// Body is intentionally empty in plan 05-02 — only the file scaffold +
-/// EnvironmentKey wiring lands here. Subsequent plans populate the body:
-/// 05-03 (skeleton), 05-04 (status + undo), 05-05 (reveal + toggle + banner).
+/// SwiftUI section for the speak-to-bind voice-shortcut flow.
+///
+/// Plan 05-03 populates the load-bearing skeleton:
+///   - Subtitle / explanation row (D-B-2)
+///   - Voice trigger label sourced from `HotkeySettingsStore.shared`,
+///     reactive to `UserDefaults.didChangeNotification` (UI-02)
+///
+/// Subsequent plans extend this view:
+///   - 05-04: status line + Undo toast (NotificationCenter consumption + TTL)
+///   - 05-05: Reveal Audit Log button + shell-action toggle + warning banner
+///   - 05-06: embedding into ShortcutsSettingsSection
 struct ShortcutVoiceConfigSection: View {
+    // MARK: AppDelegate-injected arm closure (UI-03)
+    //
+    // Captured here (declared at the View struct scope) so Task 2's Start
+    // button action can invoke it. The closure is set by
+    // `SwiftUISettingsWindow.init(armShortcutVoice:)` in plan 05-02 via the
+    // file-local `ArmShortcutVoiceKey` EnvironmentKey above.
+    @Environment(\.armShortcutVoice) private var armShortcutVoice
+
+    // MARK: View-local state
+
+    /// UI-02 source-of-truth mirror. Default fallback "fn" matches
+    /// `HotkeyFeature.defaults` (HotkeySettingsStore.swift:26). Updated by
+    /// `refreshVoiceTriggerLabel()` on `.onAppear` and whenever
+    /// `UserDefaults.didChangeNotification` fires.
+    @State private var voiceTriggerLabel: String = "fn"
+
+    // MARK: Body
+
     var body: some View {
-        EmptyView()
+        VStack(alignment: .leading, spacing: 12) {
+            // D-B-2: section subtitle / explanation (foregroundStyle secondary).
+            Text(String(localized: "Press a hotkey, speak your shortcut. KeyMic configures it for you."))
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            // UI-02: voice-trigger label row. LabeledContent style mirrors
+            // existing VoiceSettingsView (SettingsRoot.swift:427+).
+            LabeledContent {
+                Text(voiceTriggerLabel)
+                    .font(.system(.body, design: .monospaced))
+            } label: {
+                Text(String(localized: "Voice trigger key:"))
+            }
+
+            // Start button + Esc handling + status line land in Tasks 2/3 and
+            // plans 05-04/05-05 respectively.
+        }
+        .onAppear { refreshVoiceTriggerLabel() }
+        .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
+            refreshVoiceTriggerLabel()
+        }
+    }
+
+    // MARK: Helpers
+
+    /// UI-02: reads the current voice-trigger hotkey from
+    /// `HotkeySettingsStore.shared` and renders it via `displayString()`.
+    /// Default fallback "fn" matches the seeded default in
+    /// `HotkeyFeature.defaults`.
+    private func refreshVoiceTriggerLabel() {
+        voiceTriggerLabel = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString() ?? "fn"
     }
 }
