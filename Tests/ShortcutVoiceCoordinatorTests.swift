@@ -83,6 +83,7 @@ struct ShortcutVoiceCoordinatorTestRunner {
             importer: importer,
             overlayPanel: overlay,
             refiner: refiner,
+            bindingStore: store,
             armDuration: armDuration
         )
         return (coord, importer, store, overlay, refiner, auditURL, suiteName, defaults)
@@ -266,6 +267,21 @@ struct ShortcutVoiceCoordinatorTestRunner {
         let hasAddedToast = updates.contains(where: { $0.hasPrefix("Added") })
         expect(hasAddedToast,
                "overlay received an 'Added' toast on happy path (got updates=\(updates))")
+
+        // CR-01 (05-REVIEW.md) regression: the success-toast pretty-prints
+        // the trigger via HotkeyConfig.displayString() AND falls back to
+        // String(localized: "shortcut") for nil labels — matching Phase 5's
+        // ShortcutVoiceConfigSection.computeStatusText byte-for-byte. With
+        // the test YAML (`shortcut: "alt+g"`, label "Open Chrome") the
+        // expected toast is "Added: ⌥G → Open Chrome". Verify the arrow +
+        // pretty trigger to lock the single-source-of-truth contract.
+        let addedToast = updates.first(where: { $0.hasPrefix("Added") }) ?? ""
+        expect(addedToast.contains(" → "),
+               "Added toast contains U+2192 arrow with surrounding spaces (got '\(addedToast)') — CR-01 byte-parity")
+        expect(addedToast.contains("Open Chrome"),
+               "Added toast contains the binding's label (got '\(addedToast)') — CR-01")
+        expect(!addedToast.contains("alt+g"),
+               "Added toast does NOT contain the raw trigger encoding — must be pretty-printed via displayString() (got '\(addedToast)') — CR-01")
 
         // CR-02 regression: the success-toast must be auto-dismissed by the
         // coordinator's DispatchQueue.main.asyncAfter scheduled inside the

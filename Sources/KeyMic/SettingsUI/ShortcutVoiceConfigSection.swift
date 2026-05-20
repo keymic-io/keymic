@@ -455,8 +455,20 @@ struct ShortcutVoiceConfigSection: View {
     /// (ShortcutVoiceCoordinator.swift:458-477) — same disposition order,
     /// same English literals, all routed through `String(localized:)` so
     /// `Localizable.xcstrings` is the single source of truth for the four
-    /// overlapping keys. Phase 5 adds one extra branch for `"llm-error"`
-    /// that Phase 4 collapses into the generic parse-error message.
+    /// overlapping keys.
+    ///
+    /// CR-01 (05-REVIEW.md) reconciliation: Phase 4's router was updated to
+    /// match Phase 5's wording byte-for-byte (defensive fallback "Shortcut
+    /// updated", pretty-printed trigger via `displayString()`, label
+    /// fallback `String(localized: "shortcut")`). Both surfaces now route
+    /// through the SAME xcstrings keys ("Could not parse shortcut",
+    /// "Trigger cleared (%@) — set it in Settings", "Added: %@ → %@",
+    /// "shortcut", "Shortcut updated"). Phase 4's LLM-failure path sets
+    /// `updateText("Could not configure shortcut")` BEFORE
+    /// `routeOutcomeToOverlay` runs, so `routeOutcomeToOverlay` never sees
+    /// `parseError == "llm-error"` — the "llm-error" branch below is
+    /// reached only via the `.shortcutImportDidComplete` notification
+    /// consumer (Phase 5).
     ///
     /// Disposition priority (locked, must match Phase 4):
     ///   1. `parseError != nil`:

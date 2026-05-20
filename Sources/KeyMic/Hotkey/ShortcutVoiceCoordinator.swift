@@ -195,6 +195,7 @@ final class ShortcutVoiceCoordinator {
     private let importer: ShortcutYAMLImporter
     private var overlayPanel: OverlayDisplaying  // var so `configure(overlayPanel:)` can replace placeholder
     private let refiner: LLMRefining
+    private let bindingStore: HotkeyBindingsStore
     private let armDuration: TimeInterval
 
     // MARK: - Inits
@@ -215,24 +216,38 @@ final class ShortcutVoiceCoordinator {
         // The adapter's inner closure bridges via MainActor.assumeIsolated
         // — safe because LLMRefiner.refine dispatches completion on `.main`.
         self.refiner = MainActorLLMRefiner(underlying: .shared)
+        // CR-01: bindingStore is used by `routeOutcomeToOverlay` to look up
+        // the just-inserted binding for pretty-printed toast text. Production
+        // wires `.shared` (matching the singleton the production importer
+        // writes to). Tests inject their per-fixture store via the DI init.
+        self.bindingStore = .shared
         self.armDuration = 30.0
     }
 
-    /// Test-DI init. ALL four parameters are required (no defaults) so the
+    /// Test-DI init. ALL parameters are required (no defaults) so the
     /// test harness is forced to be explicit about every dependency — no
     /// accidental leakage of `.shared` singletons into test state.
     ///
     /// Used ONLY by `Tests/ShortcutVoiceCoordinatorTests.swift` (Plan 04-06).
     /// Production accesses the coordinator via `.shared`.
+    ///
+    /// CR-01 (05-REVIEW.md): `bindingStore` was added so the success-branch
+    /// pretty-print lookup in `routeOutcomeToOverlay` matches the same
+    /// store the importer writes to. Without this the test-injected
+    /// importer would insert into a per-test store while the router
+    /// queried the singleton (lookup miss → defensive fallback), masking
+    /// success-branch byte-parity regressions.
     init(
         importer: ShortcutYAMLImporter,
         overlayPanel: OverlayDisplaying,
         refiner: LLMRefining,
+        bindingStore: HotkeyBindingsStore = .shared,
         armDuration: TimeInterval = 30.0
     ) {
         self.importer = importer
         self.overlayPanel = overlayPanel
         self.refiner = refiner
+        self.bindingStore = bindingStore
         self.armDuration = armDuration
     }
 
@@ -423,7 +438,10 @@ final class ShortcutVoiceCoordinator {
                 self.routeOutcomeToOverlay(outcome)
             case .failure(let error):
                 self.importer.recordLLMFailure(transcript: transcript, errorMessage: error.localizedDescription)
-                self.overlayPanel.updateText("Could not configure shortcut")
+                // CR-01 (05-REVIEW.md): route via String(localized:) so Phase
+                // 4 overlay and Phase 5 status row share the same xcstrings
+                // key ("Could not configure shortcut").
+                self.overlayPanel.updateText(String(localized: "Could not configure shortcut"))
             }
 
             // CR-02 fix: schedule overlay dismissal so the success/failure
@@ -451,28 +469,53 @@ final class ShortcutVoiceCoordinator {
     ///   1. `parseError != nil` → "Could not parse shortcut"
     ///   2. `conflictCleared == true` → "Trigger cleared (<source>) — set it in Settings"
     ///   3. `bindingId != nil` → "Added: <trigger> → <label>" (looked up from store)
-    ///   4. defensive (bindingId nil + no parse error + no conflict) → "Added shortcut"
+    ///   4. defensive (bindingId nil + no parse error + no conflict) → "Shortcut updated"
     ///
     /// `shellStripped == true` adds NO additional toast in Plan 04 —
     /// 04-CONTEXT.md `<specifics>` line 313 notes Phase 5 may refine this.
+    ///
+    /// CR-01 (05-REVIEW.md): this router is BYTE-IDENTICAL with Phase 5's
+    /// `ShortcutVoiceConfigSection.computeStatusText(for:)` so the overlay
+    /// toast and the settings status line render the same string for the
+    /// same event. Both routers pull through `String(localized:)` against
+    /// the same `Localizable.xcstrings` keys (single source of truth — no
+    /// translation drift):
+    ///   - "Could not parse shortcut"
+    ///   - "Trigger cleared (%@) — set it in Settings"
+    ///   - "Added: %@ → %@"
+    ///   - "shortcut" (label fallback)
+    ///   - "Shortcut updated" (defensive fallback)
+    /// Trigger pretty-printing via `HotkeyConfig.parse(...)?.displayString()`
+    /// mirrors Phase 5 (e.g. "⇧⌘A" rather than raw "cmd+shift+a"). Label
+    /// fallback uses `String(localized: "shortcut")` rather than empty
+    /// string — also mirroring Phase 5. Phase 5 additionally branches on
+    /// `kind == "llm-error"`, but that path is only reached via the
+    /// notification consumer (Phase 5 only); Phase 4's `handleTranscription`
+    /// already routes LLM-failure overlay text via `updateText("Could not
+    /// configure shortcut")` BEFORE this router is reached, so the two
+    /// surfaces still agree end-to-end.
     private func routeOutcomeToOverlay(_ outcome: Outcome) {
         if outcome.parseError != nil {
-            overlayPanel.updateText("Could not parse shortcut")
+            overlayPanel.updateText(String(localized: "Could not parse shortcut"))
             return
         }
         if outcome.conflictCleared {
             let source = outcome.conflictSource ?? ""
-            overlayPanel.updateText("Trigger cleared (\(source)) — set it in Settings")
+            overlayPanel.updateText(String(localized: "Trigger cleared (\(source)) — set it in Settings"))
             return
         }
         if let bindingId = outcome.bindingId,
-           let binding = HotkeyBindingsStore.shared.bindings.first(where: { $0.id == bindingId }) {
-            overlayPanel.updateText("Added: \(binding.trigger) → \(binding.label ?? "")")
+           let binding = bindingStore.bindings.first(where: { $0.id == bindingId }) {
+            let triggerDisplay = HotkeyConfig.parse(binding.trigger)?.displayString() ?? binding.trigger
+            let label = binding.label ?? String(localized: "shortcut")
+            overlayPanel.updateText(String(localized: "Added: \(triggerDisplay) → \(label)"))
             return
         }
         // Defensive: success path without a binding lookup hit (shouldn't
         // happen under normal conditions because importYAML only returns
-        // a non-nil bindingId after appending to the store).
-        overlayPanel.updateText("Added shortcut")
+        // a non-nil bindingId after appending to the store). Literal
+        // "Shortcut updated" matches Phase 5's defensive fallback so the
+        // single-source-of-truth contract holds (CR-01).
+        overlayPanel.updateText(String(localized: "Shortcut updated"))
     }
 }
