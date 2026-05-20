@@ -27,16 +27,26 @@ private let logger = Logger(subsystem: "io.keymic.app", category: "ShortcutVoice
 /// The default value is an intentional no-op fallback that logs a warning so
 /// accidental missing injection (e.g. in SwiftUI previews or test harnesses
 /// without the AppDelegate wiring) is loud during development.
+///
+/// WR-03 (05-REVIEW.md): the closure returns `Bool` — `true` when the
+/// coordinator actually transitioned to `.shortcutConfig` (pendingVoiceMode
+/// flipped), `false` when arm was a no-op (e.g. an active capture cycle
+/// was in progress). The view uses the return value to gate the
+/// `isArmed = true` flip, so the UI does not falsely show "Waiting for
+/// voice key…" when the coordinator silently rejected the arm.
 private struct ArmShortcutVoiceKey: EnvironmentKey {
-    static let defaultValue: () -> Void = {
+    static let defaultValue: () -> Bool = {
         logger.warning("armShortcutVoice invoked but no closure was injected via .environment(...)")
+        return false
     }
 }
 
 extension EnvironmentValues {
     /// AppDelegate-supplied closure that arms `ShortcutVoiceCoordinator.shared`.
     /// Injected at the SwiftUI root in `SwiftUISettingsWindow.init(armShortcutVoice:)`.
-    var armShortcutVoice: () -> Void {
+    ///
+    /// WR-03: returns `Bool` — see `ArmShortcutVoiceKey` doc-comment.
+    var armShortcutVoice: () -> Bool {
         get { self[ArmShortcutVoiceKey.self] }
         set { self[ArmShortcutVoiceKey.self] = newValue }
     }
@@ -400,9 +410,20 @@ struct ShortcutVoiceConfigSection: View {
     /// disable state. Ordering matters: arm first (coordinator transitions
     /// to `.shortcutConfig`), THEN flip the view — keeps the state
     /// machines coherent if the closure ever becomes async.
+    ///
+    /// WR-03 (05-REVIEW.md): only flip `isArmed = true` when the closure
+    /// returns `true` (coordinator actually entered `.shortcutConfig`). If
+    /// the coordinator silently rejected the arm (e.g. a prior capture
+    /// cycle was still in progress), the UI stays in the idle caption
+    /// so the user can see their click was a no-op and try again rather
+    /// than staring at "Waiting for voice key…" for 30s with no actual
+    /// arm in flight.
     private func startArm() {
-        armShortcutVoice()
-        isArmed = true
+        if armShortcutVoice() {
+            isArmed = true
+        } else {
+            logger.warning("startArm: arm closure returned false; coordinator did not enter .shortcutConfig — leaving isArmed=false")
+        }
     }
 
     /// UI-05: register the Esc local monitor. Per 05-RESEARCH Pitfall 4 we

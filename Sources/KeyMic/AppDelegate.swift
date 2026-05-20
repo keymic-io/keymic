@@ -57,7 +57,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardMenuItem: NSMenuItem!
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
-    private lazy var settingsWindow = SwiftUISettingsWindow(armShortcutVoice: { ShortcutVoiceCoordinator.shared.arm() })
+    // WR-03 (05-REVIEW.md): the arm closure returns `true` when the
+    // coordinator actually entered `.shortcutConfig` after `arm()`,
+    // `false` otherwise. The Phase 5 view uses this to avoid flipping
+    // its `isArmed` UI state when the coordinator silently rejected
+    // the arm (e.g. an active capture cycle was still in progress).
+    private lazy var settingsWindow = SwiftUISettingsWindow(armShortcutVoice: {
+        ShortcutVoiceCoordinator.shared.arm()
+        return ShortcutVoiceCoordinator.shared.pendingVoiceMode == .shortcutConfig
+    })
     var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }

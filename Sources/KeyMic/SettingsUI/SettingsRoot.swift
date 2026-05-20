@@ -9,7 +9,12 @@ import UniformTypeIdentifiers
 // MARK: - Window host
 
 final class SwiftUISettingsWindow: NSPanel {
-    init(armShortcutVoice: @escaping () -> Void) {
+    /// WR-03 (05-REVIEW.md): `armShortcutVoice` returns `Bool` —
+    /// `true` when the coordinator actually entered `.shortcutConfig`,
+    /// `false` when arm was rejected (e.g. an active capture is in
+    /// progress). The Phase 5 Voice Config section uses the return to
+    /// gate `isArmed` so the UI doesn't lie about being armed.
+    init(armShortcutVoice: @escaping () -> Bool) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 540),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
