@@ -27,9 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
 
-    private var isRecording = false
-    private var lastPartialResult = ""
-    private var finalResultTimer: Timer?
+    private var voice = VoiceStateMachine()
+    private var graceTimer: Timer?
+    private var recordingTimeoutTimer: Timer?
+    private static let recordingMaxDuration: TimeInterval = 6 * 60
+    private static let graceDuration: TimeInterval = 2.0
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
 
@@ -123,6 +125,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onTriggerDown = { [weak self] in self?.triggerDown() }
         keyMonitor.onTriggerUp = { [weak self] in self?.triggerUp() }
         keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
+        keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in self?.extraneousKeyDuringVoice() }
+        keyMonitor.isVoiceActive = { [weak self] in self?.voice.state.isActive ?? false }
         keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
         clipboardController = ClipboardController()
         clipboardController.overlayPanel = overlayPanel
@@ -231,109 +235,127 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Key events
 
     private func triggerDown() {
-        guard isVoiceEnabled, !isRecording else { return }
+        guard isVoiceEnabled else { return }
+        guard !voice.state.isListening else { return }
         LLMRefiner.shared.cancel()
-        isRecording = true
-        lastPartialResult = ""
-
-        updateStatusIcon(recording: true)
-        overlayPanel.show(text: "Listening...")
-        NSSound(named: .init("Tink"))?.play()
-
-        speechEngine.startRecording()
-    }
-
-    private func triggerUp() {
-        guard isRecording else { return }
-        isRecording = false
-
-        updateStatusIcon(recording: false)
-        speechEngine.stopRecording()
-
-        finalResultTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.finishTranscription()
+        do {
+            let session = try speechEngine.startSession()
+            let effects = voice.handle(.triggerDown(session: session))
+            apply(effects)
+        } catch let err as VoiceError {
+            apply(voice.handle(.error(err)))
+        } catch {
+            apply(voice.handle(.error(.audioEngineFailed(error.localizedDescription))))
         }
     }
 
+    private func triggerUp() {
+        guard voice.state.isActive else { return }
+        speechEngine.endAudio()
+        apply(voice.handle(.triggerUp))
+    }
+
     private func cancelRecording() {
-        guard isRecording else { return }
-        isRecording = false
-        finalResultTimer?.invalidate()
-        finalResultTimer = nil
-        lastPartialResult = ""
-        speechEngine.cancel()
-        updateStatusIcon(recording: false)
-        overlayPanel.dismiss()
+        guard voice.state.isActive else { return }
+        apply(voice.handle(.extraneousKey))
+    }
+
+    private func extraneousKeyDuringVoice() {
+        guard voice.state.isActive else { return }
+        apply(voice.handle(.extraneousKey))
+    }
+
+    private func apply(_ effects: [VoiceSideEffect]) {
+        for e in effects {
+            switch e {
+            case .cancelSession(let s):
+                s.cancel()
+            case .stopAudio(_):
+                speechEngine.endAudio()
+            case .startGraceTimer:
+                graceTimer?.invalidate()
+                graceTimer = Timer.scheduledTimer(withTimeInterval: Self.graceDuration, repeats: false) { [weak self] _ in
+                    self?.apply(self?.voice.handle(.graceTimeout) ?? [])
+                }
+            case .cancelGraceTimer:
+                graceTimer?.invalidate(); graceTimer = nil
+            case .startRecordingTimeoutTimer(_):
+                recordingTimeoutTimer?.invalidate()
+                recordingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: Self.recordingMaxDuration, repeats: false) { [weak self] _ in
+                    self?.apply(self?.voice.handle(.recordingTimeout) ?? [])
+                }
+            case .cancelRecordingTimeoutTimer:
+                recordingTimeoutTimer?.invalidate(); recordingTimeoutTimer = nil
+            case .updateStatusIcon(let on):
+                updateStatusIcon(recording: on)
+            case .overlayShow(let t):
+                overlayPanel.show(text: t)
+            case .overlayUpdate(let t):
+                overlayPanel.updateText(t)
+            case .overlayShowRefining:
+                overlayPanel.showRefining()
+            case .overlayDismiss:
+                overlayPanel.dismiss()
+            case .overlayShowError(let err):
+                overlayPanel.showMessage(err.displayMessage)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlayPanel.dismiss() }
+            case .injectAndFinish(let text):
+                finishTranscription(text: text)
+            case .playSound(let name):
+                NSSound(named: .init(name))?.play()
+            case .bufferPartial, .clearPartial:
+                break  // lastPartial lives in the reducer; runtime doesn't duplicate it
+            }
+        }
     }
 
     // MARK: - Speech callbacks
 
     private func setupSpeechCallbacks() {
         speechEngine.onPartialResult = { [weak self] text in
-            guard let self else { return }
-            self.lastPartialResult = text
-            self.overlayPanel.updateText(text)
-        }
-
-        speechEngine.onFinalResult = { [weak self] text in
-            guard let self else { return }
-            self.lastPartialResult = text
-            self.finalResultTimer?.invalidate()
-            self.finalResultTimer = nil
-            self.finishTranscription()
-        }
-
-        speechEngine.onError = { [weak self] msg in
-            guard let self else { return }
-            self.overlayPanel.updateText(msg)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                self?.overlayPanel.dismiss()
+            DispatchQueue.main.async { [weak self] in
+                self?.apply(self?.voice.handle(.partialResult(text)) ?? [])
             }
         }
-
+        speechEngine.onFinalResult = { [weak self] text in
+            DispatchQueue.main.async { [weak self] in
+                self?.apply(self?.voice.handle(.finalResult(text)) ?? [])
+            }
+        }
+        speechEngine.onError = { [weak self] msg in
+            DispatchQueue.main.async { [weak self] in
+                self?.apply(self?.voice.handle(.error(.audioEngineFailed(msg))) ?? [])
+            }
+        }
         speechEngine.onAudioLevel = { [weak self] level in
             self?.overlayPanel.updateAudioLevel(level)
         }
-
         speechEngine.onLocaleUnavailable = { [weak self] msg in
-            self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
+            DispatchQueue.main.async { [weak self] in
+                self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
+            }
         }
     }
 
-    private func finishTranscription() {
-        finalResultTimer?.invalidate()
-        finalResultTimer = nil
-
-        let text = lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            overlayPanel.dismiss()
-            lastPartialResult = ""
-            return
-        }
+    private func finishTranscription(text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { overlayPanel.dismiss(); return }
 
         let persona = PersonaStore.shared.activePersona
         let refiner = LLMRefiner.shared
-
-        // Passthrough: no active persona, or LLM endpoint not configured (silent, no toast).
         guard let persona, refiner.isReady else {
-            if persona != nil {
-                logger.info("LLM not ready; passthrough")
-            }
             overlayPanel.dismiss()
-            injectAfterPop(text)
-            lastPartialResult = ""
+            injectAfterPop(trimmed)
             return
         }
 
-        let userText = buildUserText(transcript: text, contextMode: persona.contextMode)
-
+        let userText = buildUserText(transcript: trimmed, contextMode: persona.contextMode)
         overlayPanel.showRefining()
-        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) {
-            [weak self] result in
+        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
             guard let self else { return }
             switch result {
             case .success(let refined):
-                let finalText = refined.isEmpty ? text : refined
+                let finalText = refined.isEmpty ? trimmed : refined
                 self.overlayPanel.dismiss()
                 self.injectAfterPop(finalText)
             case .failure(let error):
@@ -341,10 +363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                     self?.overlayPanel.dismiss()
-                    self?.injectAfterPop(text)
+                    self?.injectAfterPop(trimmed)
                 }
             }
-            self.lastPartialResult = ""
         }
     }
 
@@ -531,11 +552,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(enabled, forKey: Self.voiceEnabledKey)
         voiceEnabledMenuItem.state = enabled ? .on : .off
 
-        if !enabled, isRecording {
-            speechEngine.cancel()
-            overlayPanel.dismiss()
-            isRecording = false
-            updateStatusIcon(recording: false)
+        if !enabled, voice.state.isActive {
+            apply(voice.handle(.voiceDisabled))
         }
     }
 

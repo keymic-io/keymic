@@ -145,7 +145,12 @@ final class OverlayPanel: NSPanel {
     func showMessage(_ text: String) {
         state.isAnimating = false
         resetAudioLevel()
-        updateText(text)
+        if isVisible {
+            updateText(text)
+        } else {
+            show(text: text)
+            state.isAnimating = false  // override show()'s animating=true since this is a static toast
+        }
     }
 
     private var isShowingTranscript: Bool {
