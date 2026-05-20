@@ -204,36 +204,89 @@ final class ShortcutVoiceCoordinator {
 
     // MARK: - State machine
 
-    /// Enter armed state per COORD-03. Plan 04-04 fills the body.
+    /// Enter armed state per COORD-03. Shows the overlay hint, sets
+    /// `pendingVoiceMode = .shortcutConfig`, and schedules a one-shot
+    /// `DispatchSourceTimer` that fires `cancel(reason: .timeout)` after
+    /// `armDuration` seconds (30s production; ~0.1s in tests).
+    ///
+    /// If already armed, logs a warning and REPLACES the prior arm: the
+    /// existing timer is cancelled before a new one is scheduled
+    /// (04-CONTEXT.md `<deferred>` recommendation (a) — replace + reset).
     func arm() {
-        // TODO: implementation in Task 2 of this plan (04-03 T2)
+        if pendingVoiceMode == .shortcutConfig {
+            logger.warning("arm() called while already armed — replacing previous arm")
+            armTimer?.cancel()
+            armTimer = nil
+        }
+
+        pendingVoiceMode = .shortcutConfig
+        overlayPanel.show(text: "Speak your shortcut (30s)…")
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + armDuration)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            // Race guard per 04-RESEARCH Pitfall §3: a concurrent
+            // cancel()/beforeTriggerDown() may have already cleared the
+            // pending mode between timer fire and handler execution.
+            guard self.pendingVoiceMode == .shortcutConfig else { return }
+            self.cancel(reason: .timeout)
+        }
+        armTimer = timer
+        timer.resume()
+
+        logger.info("arm — armDuration=\(self.armDuration, privacy: .public)s")
     }
 
     /// Clear arm state ONLY per D-F-1 (`pendingVoiceMode`, `armTimer`,
-    /// overlay if showing arm hint). Does NOT touch `activeVoiceMode`.
+    /// overlay if showing arm hint). Does NOT touch `activeVoiceMode`,
+    /// `currentRequestToken`, or call `refiner.cancel()` — those belong
+    /// to `resetAllState(reason:)`.
     func cancel(reason: CancelReason) {
-        // TODO: implementation in Task 2 of this plan (04-03 T2)
+        // Always pair cancel + nil per 04-RESEARCH Anti-Patterns.
+        armTimer?.cancel()
+        armTimer = nil
+        pendingVoiceMode = .normal
+        overlayPanel.dismiss()
+        logger.info("cancel reason=\(String(describing: reason), privacy: .public)")
     }
 
     /// Hard reset per COORD-09: clears arm state + `activeVoiceMode` +
     /// in-flight LLM call + token. Used by `applicationWillTerminate`,
-    /// secure-input enter, `cancelRecording`.
+    /// secure-input enter, `cancelRecording`. Composes `cancel(reason:)`
+    /// for the arm-clearing half so the two methods stay in lockstep.
     func resetAllState(reason: CancelReason) {
-        // TODO: implementation in Task 2 of this plan (04-03 T2)
+        cancel(reason: reason)
+        activeVoiceMode = .normal
+        // Hard-cancel any in-flight LLM call (URLSession task.cancel()).
+        // Per LLMRefiner.swift:99-102 the completion still fires with
+        // URLError(.cancelled); the token-discard below is the source
+        // of truth for "did this request belong to the current arm cycle?"
+        refiner.cancel()
+        currentRequestToken = nil
+        logger.info("resetAllState reason=\(String(describing: reason), privacy: .public)")
     }
 
     /// APP-02 light reset — clears `activeVoiceMode` + `currentRequestToken`
     /// only. Does NOT touch `pendingVoiceMode`, `armTimer`, or overlay.
-    /// Used by `finishTranscription` empty-transcript early-return.
+    /// Used by `finishTranscription` empty-transcript early-return: the
+    /// user dictated nothing; just zero out active so the next press
+    /// starts clean.
     func resetActiveMode() {
-        // TODO: implementation in Task 2 of this plan (04-03 T2)
+        activeVoiceMode = .normal
+        currentRequestToken = nil
+        logger.info("resetActiveMode")
     }
 
     /// COORD-05 transition: consume `pendingVoiceMode` into `activeVoiceMode`
-    /// and cancel the arm timer (the trigger arrived within the arm window).
-    /// Called from `AppDelegate.triggerDown` BEFORE recording starts
-    /// (Plan 04-05).
+    /// and cancel the arm timer (the trigger arrived within the arm
+    /// window). Called from `AppDelegate.triggerDown` BEFORE recording
+    /// starts (Plan 04-05 wires this).
     func beforeTriggerDown() {
-        // TODO: implementation in Task 2 of this plan (04-03 T2)
+        activeVoiceMode = pendingVoiceMode
+        pendingVoiceMode = .normal
+        armTimer?.cancel()
+        armTimer = nil
+        logger.info("beforeTriggerDown — activeVoiceMode=\(String(describing: self.activeVoiceMode), privacy: .public)")
     }
 }
