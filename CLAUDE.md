@@ -10,6 +10,7 @@ KeyMic is a single macOS menu-bar app (`LSUIElement`) that bundles several produ
 - **Clipboard history** — text-only background monitor, SwiftData-backed storage, hotkey panel (`⌥V`) with search, arrow navigation, `⌥1`–`⌥0` quick paste.
 - **Key mapping** — Karabiner-style modifier remaps applied via a session-level `CGEvent` tap (e.g. Right Cmd → Forward Delete, Caps Lock → Left Control).
 - **Hotkey actions** — user-configurable shortcuts bound to `HotkeyAction` cases (`HotkeyConfig` + `HotkeyBindingsStore` + `HotkeyActionRunner`).
+- **Agent tools** — Claude-Code-compatible tool layer (`Tools/Protocol/Tool` + `ToolContext` + `ToolRegistry`, `Tools/Bash/BashTool` wrapping the existing `ShellRunner`). Foundation for future File / Search / MCP / Skill tools used by an in-app agent loop.
 - **Vault** — secret-aware clipboard escalation. `SecretScanner` (driven by bundled `gitleaks.toml`) classifies clipboard text; matches are persisted in macOS Keychain via `KeychainBackend` + `VaultStore`, surfaced through `VaultListView`.
 - **Screenshot annotation** — selection overlay + editor (`Sources/KeyMic/Screenshot/`) for capture, pixelation, annotation, and export.
 - **Auto-update** — Sparkle 2 EdDSA-signed appcast (`UpdaterController`).
@@ -124,4 +125,5 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 - Logging: `os.Logger` with subsystem `io.keymic.app`. `LLMRefiner` additionally writes to `~/Library/Logs/KeyMic.log` for offline debugging.
 - Singletons (`KeyMappingManager.shared`, `LLMRefiner.shared`) for cross-cutting state; everything else is owned by `AppDelegate`.
 - Persistent locations: SwiftData store + lock file under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.
+- Agent tools follow Claude-Code-compatible naming (`Read`/`Write`/`Edit`/`Bash`/...) and exchange JSON `Data` as input + string output, allowing `[any Tool]` arrays without associatedtype gymnastics. The `Tool` protocol lives in `Sources/KeyMic/Tools/Protocol/`; concrete tools live in sibling directories (`Tools/Bash/` today; `Tools/File/`, `Tools/Search/`, `Tools/MCP/`, `Tools/Skill/`, `Tools/Agent/` in future plans).
 - `AGENTS.md` (repo root) documents non-obvious macOS HID + TCC gotchas — read it before editing `KeyMonitor.swift` or codesign/Info.plist plumbing.
