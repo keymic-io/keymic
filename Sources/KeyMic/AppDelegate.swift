@@ -4,6 +4,7 @@ import os.log
 
 private let logger = Logger(subsystem: "io.keymic.app", category: "AppDelegate")
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
@@ -152,11 +153,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
+        // SecureInputMonitor.onEnter is a non-isolated `() -> Void` closure type.
+        // SecureInputMonitor schedules its DispatchSourceTimer on DispatchQueue.main,
+        // so the callback runs on the main thread — we bridge into MainActor isolation
+        // explicitly here because the closure type cannot inherit AppDelegate's @MainActor.
         secureInputMonitor.onEnter = { [weak self] in
-            self?.keyMonitor.onSecureInputEnter()
-            ShortcutVoiceCoordinator.shared.resetAllState(reason: .secureInputEnter)
+            MainActor.assumeIsolated {
+                self?.keyMonitor.onSecureInputEnter()
+                ShortcutVoiceCoordinator.shared.resetAllState(reason: .secureInputEnter)
+            }
         }
-        secureInputMonitor.onExit = { [weak self] in self?.keyMonitor.onSecureInputExit() }
+        secureInputMonitor.onExit = { [weak self] in
+            MainActor.assumeIsolated {
+                self?.keyMonitor.onSecureInputExit()
+            }
+        }
         secureInputMonitor.start()
         clipboardController.start()
         _ = UpdaterController.shared
@@ -179,11 +190,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         AppDelegate.syncPersonaHotkeysToRegistry()
+        // addObserver(forName:queue:) takes a non-isolated `(Notification) -> Void`
+        // closure even when `queue: .main`. Bridge into MainActor explicitly.
         personaObserverToken = NotificationCenter.default.addObserver(
             forName: PersonaStore.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            AppDelegate.syncPersonaHotkeysToRegistry()
-            self?.rebuildPersonasMenu()
+            MainActor.assumeIsolated {
+                AppDelegate.syncPersonaHotkeysToRegistry()
+                self?.rebuildPersonasMenu()
+            }
         }
 
         NotificationCenter.default.addObserver(
@@ -219,9 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         //   3. ShortcutYAMLImporter.shared.terminate() — drain audit-log serial queue (AUD-06).
         //      Any pending audit writes from cancelled LLM cycle land here.
         LLMRefiner.shared.cancel()
-        MainActor.assumeIsolated {
-            ShortcutVoiceCoordinator.shared.resetAllState(reason: .appQuit)
-        }
+        ShortcutVoiceCoordinator.shared.resetAllState(reason: .appQuit)
         ShortcutYAMLImporter.shared.terminate()
 
         HIDRemapper.reset()
@@ -253,10 +266,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func triggerDown() {
         guard isVoiceEnabled, !isRecording else { return }
-        // AppKit guarantees this runs on main; bridge to @MainActor coordinator (Rule 3).
-        MainActor.assumeIsolated {
-            ShortcutVoiceCoordinator.shared.beforeTriggerDown()
-        }
+        // AppDelegate is @MainActor (CR-01); coordinator call inherits isolation.
+        ShortcutVoiceCoordinator.shared.beforeTriggerDown()
         LLMRefiner.shared.cancel()
         isRecording = true
         lastPartialResult = ""
@@ -275,8 +286,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         updateStatusIcon(recording: false)
         speechEngine.stopRecording()
 
+        // Timer.scheduledTimer fires on the current run loop (main). Bridge the
+        // non-isolated closure into MainActor so @MainActor finishTranscription
+        // can be called safely (CR-01).
         finalResultTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.finishTranscription()
+            MainActor.assumeIsolated {
+                self?.finishTranscription()
+            }
         }
     }
 
@@ -289,9 +305,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngine.cancel()
         updateStatusIcon(recording: false)
         overlayPanel.dismiss()
-        MainActor.assumeIsolated {
-            ShortcutVoiceCoordinator.shared.resetAllState(reason: .cancelRecording)
-        }
+        ShortcutVoiceCoordinator.shared.resetAllState(reason: .cancelRecording)
     }
 
     // MARK: - Speech callbacks
@@ -335,22 +349,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let text = lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             // APP-02: clear stale activeVoiceMode so the next arm cycle starts clean.
-            MainActor.assumeIsolated {
-                ShortcutVoiceCoordinator.shared.resetActiveMode()
-            }
+            ShortcutVoiceCoordinator.shared.resetActiveMode()
             overlayPanel.dismiss()
             lastPartialResult = ""
             return
         }
 
         // Phase 4 mode-aware dispatch: route shortcut-config voice cycles to the coordinator.
-        let activeVoiceMode = MainActor.assumeIsolated {
-            ShortcutVoiceCoordinator.shared.activeVoiceMode
-        }
+        let activeVoiceMode = ShortcutVoiceCoordinator.shared.activeVoiceMode
         if activeVoiceMode == .shortcutConfig {
-            MainActor.assumeIsolated {
-                ShortcutVoiceCoordinator.shared.handleTranscription(text)
-            }
+            ShortcutVoiceCoordinator.shared.handleTranscription(text)
             lastPartialResult = ""
             return
         }
