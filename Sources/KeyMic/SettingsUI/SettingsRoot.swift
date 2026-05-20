@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 // MARK: - Window host
 
 final class SwiftUISettingsWindow: NSPanel {
-    init() {
+    init(armShortcutVoice: @escaping () -> Void) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 540),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -20,7 +20,10 @@ final class SwiftUISettingsWindow: NSPanel {
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
-        let host = NSHostingController(rootView: SettingsRootView())
+        let host = NSHostingController(
+            rootView: SettingsRootView()
+                .environment(\.armShortcutVoice, armShortcutVoice)
+        )
         host.view.translatesAutoresizingMaskIntoConstraints = false
         contentViewController = host
         center()
