@@ -27,11 +27,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
 
-    private var isRecording = false
-    private var lastPartialResult = ""
-    private var finalResultTimer: Timer?
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
+
+    private var personaEngine: PersonaEngine!
+    private var voiceTrigger: VoiceTrigger!
+    private var speechSessionHost: DefaultSpeechSessionHost!
+    private var llmClient: OpenAICompatibleLLMClient!
 
     /// Cached frontmost-app bundle ID. Updated via `NSWorkspace.didActivateApplicationNotification`.
     /// KeyMonitor's event-tap callback reads this O(1); calling
@@ -94,7 +96,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupMainMenu()
         setupStatusBar()
-        setupSpeechCallbacks()
 
         SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
             if !granted, let msg = errorMsg {
@@ -120,9 +121,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyMonitor.currentFrontBundleID = { [weak self] in self?.cachedFrontBundleID }
 
-        keyMonitor.onTriggerDown = { [weak self] in self?.triggerDown() }
-        keyMonitor.onTriggerUp = { [weak self] in self?.triggerUp() }
-        keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
         keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
         clipboardController = ClipboardController()
         clipboardController.overlayPanel = overlayPanel
@@ -138,6 +136,64 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         textInjector.onMarkIgnored = { [weak self] text in
             self?.clipboardController.markPasteboardWrite(text)
+        }
+
+        // PersonaPlatform construction
+        llmClient = OpenAICompatibleLLMClient()
+        let contextResolver = ContextResolver(
+            selection: SelectionSource(),
+            clipboard: ClipboardSource(store: clipboardController.store),
+            clipboardHistory: ClipboardHistorySource(store: clipboardController.store),
+            windowOCR: WindowOCRSource()
+        )
+        let focusedText = FocusedTextStrategy(
+            inject: { [textInjector] text in textInjector.inject(text) },
+            reactivate: { bundleID in
+                if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+                    app.activate(options: [])
+                }
+            }
+        )
+        let outputRouter = OutputRouter(
+            focusedText: focusedText,
+            replaceSelection: ReplaceSelectionStrategy(fallback: focusedText),
+            clipboard: ClipboardStrategy(write: { [weak clipboardController] text in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(text, forType: .string)
+                clipboardController?.markPasteboardWrite(text)
+            }),
+            openURLFactory: { template in OpenURLStrategy(template: template) }
+        )
+        personaEngine = PersonaEngine(
+            llmClient: llmClient,
+            contextResolver: contextResolver,
+            outputRouter: outputRouter
+        )
+        speechSessionHost = DefaultSpeechSessionHost(speechEngine: speechEngine)
+        voiceTrigger = VoiceTrigger(
+            engine: personaEngine,
+            sessionHost: speechSessionHost,
+            overlayPanel: overlayPanel,
+            personaStore: PersonaStore.shared,
+            textInjector: textInjector,
+            currentFrontBundleID: { [weak self] in self?.cachedFrontBundleID }
+        )
+        keyMonitor.onTriggerDown = { [weak self] in
+            guard let self, self.isVoiceEnabled else { return }
+            Task { @MainActor in self.voiceTrigger.onTriggerDown() }
+        }
+        keyMonitor.onTriggerUp = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onTriggerUp() }
+        }
+        keyMonitor.onTriggerInterrupted = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onTriggerInterrupted() }
+        }
+        speechEngine.onPartialResult     = { [weak self] t in self?.speechSessionHost.routePartial(t) }
+        speechEngine.onFinalResult       = { [weak self] t in self?.speechSessionHost.routeFinal(t) }
+        speechEngine.onError             = { [weak self] m in self?.speechSessionHost.routeError(m) }
+        speechEngine.onAudioLevel        = { [weak self] l in self?.speechSessionHost.routeAudioLevel(l) }
+        speechEngine.onLocaleUnavailable = { [weak self] msg in
+            self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
         }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onVaultHotkey = { [weak self] in
@@ -228,173 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    // MARK: - Key events
-
-    private func triggerDown() {
-        guard isVoiceEnabled, !isRecording else { return }
-        LLMRefiner.shared.cancel()
-        isRecording = true
-        lastPartialResult = ""
-
-        updateStatusIcon(recording: true)
-        overlayPanel.show(text: "Listening...")
-        NSSound(named: .init("Tink"))?.play()
-
-        speechEngine.startRecording()
-    }
-
-    private func triggerUp() {
-        guard isRecording else { return }
-        isRecording = false
-
-        updateStatusIcon(recording: false)
-        speechEngine.stopRecording()
-
-        finalResultTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
-            self?.finishTranscription()
-        }
-    }
-
-    private func cancelRecording() {
-        guard isRecording else { return }
-        isRecording = false
-        finalResultTimer?.invalidate()
-        finalResultTimer = nil
-        lastPartialResult = ""
-        speechEngine.cancel()
-        updateStatusIcon(recording: false)
-        overlayPanel.dismiss()
-    }
-
-    // MARK: - Speech callbacks
-
-    private func setupSpeechCallbacks() {
-        speechEngine.onPartialResult = { [weak self] text in
-            guard let self else { return }
-            self.lastPartialResult = text
-            self.overlayPanel.updateText(text)
-        }
-
-        speechEngine.onFinalResult = { [weak self] text in
-            guard let self else { return }
-            self.lastPartialResult = text
-            self.finalResultTimer?.invalidate()
-            self.finalResultTimer = nil
-            self.finishTranscription()
-        }
-
-        speechEngine.onError = { [weak self] msg in
-            guard let self else { return }
-            self.overlayPanel.updateText(msg)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                self?.overlayPanel.dismiss()
-            }
-        }
-
-        speechEngine.onAudioLevel = { [weak self] level in
-            self?.overlayPanel.updateAudioLevel(level)
-        }
-
-        speechEngine.onLocaleUnavailable = { [weak self] msg in
-            self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
-        }
-    }
-
-    private func finishTranscription() {
-        finalResultTimer?.invalidate()
-        finalResultTimer = nil
-
-        let text = lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            overlayPanel.dismiss()
-            lastPartialResult = ""
-            return
-        }
-
-        let persona = PersonaStore.shared.activePersona
-        let refiner = LLMRefiner.shared
-
-        // Passthrough: no active persona, or LLM endpoint not configured (silent, no toast).
-        guard let persona, refiner.isReady else {
-            if persona != nil {
-                logger.info("LLM not ready; passthrough")
-            }
-            overlayPanel.dismiss()
-            injectAfterPop(text)
-            lastPartialResult = ""
-            return
-        }
-
-        let userText = buildUserText(transcript: text, contextMode: persona.contextMode)
-
-        overlayPanel.showRefining()
-        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) {
-            [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let refined):
-                let finalText = refined.isEmpty ? text : refined
-                self.overlayPanel.dismiss()
-                self.injectAfterPop(finalText)
-            case .failure(let error):
-                logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
-                self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                    self?.overlayPanel.dismiss()
-                    self?.injectAfterPop(text)
-                }
-            }
-            self.lastPartialResult = ""
-        }
-    }
-
-    /// Builds the LLM user prompt, injecting selected text + clipboard as context
-    /// when the persona's contextMode is `.selectionAndClipboard`.
-    private func buildUserText(transcript: String, contextMode: ContextMode) -> String {
-        guard contextMode == .selectionAndClipboard else { return transcript }
-
-        let selection =
-            SelectionSource.currentSelection()?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let clipboard =
-            NSPasteboard.general.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        var sections: [String] = []
-        var includeTranscript = true
-
-        if !selection.isEmpty {
-            sections.append("[Selected text]\n\(selection)")
-            if transcript == selection || selection.utf16.count > 2000 {
-                includeTranscript = false
-            }
-        }
-        if !clipboard.isEmpty && clipboard != selection {
-            sections.append("[Recent clipboard]\n\(clipboard)")
-        }
-        if includeTranscript {
-            sections.append("[User said]\n\(transcript)")
-        }
-
-        let result = sections.joined(separator: "\n\n")
-        // Cap at 7500 UTF-16 units, snapped to character boundary (avoids splitting surrogate pairs).
-        if result.utf16.count > 7500 {
-            var trimmed = ""
-            for ch in result {
-                if trimmed.utf16.count + ch.utf16.count > 7500 { break }
-                trimmed.append(ch)
-            }
-            return trimmed
-        }
-        return result
-    }
-
-    private func injectAfterPop(_ text: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.textInjector.inject(text)
-            NSSound(named: .init("Pop"))?.play()
-        }
-    }
+    // Voice pipeline lives in PersonaPlatform/Triggers/VoiceTrigger.
 
     // MARK: - Main Menu
 
@@ -531,11 +421,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(enabled, forKey: Self.voiceEnabledKey)
         voiceEnabledMenuItem.state = enabled ? .on : .off
 
-        if !enabled, isRecording {
-            speechEngine.cancel()
-            overlayPanel.dismiss()
-            isRecording = false
-            updateStatusIcon(recording: false)
+        if !enabled, let trigger = voiceTrigger {
+            Task { @MainActor in trigger.onTriggerInterrupted() }
         }
     }
 
