@@ -320,7 +320,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let text = lastPartialResult.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
+            // APP-02: clear stale activeVoiceMode so the next arm cycle starts clean.
+            MainActor.assumeIsolated {
+                ShortcutVoiceCoordinator.shared.resetActiveMode()
+            }
             overlayPanel.dismiss()
+            lastPartialResult = ""
+            return
+        }
+
+        // Phase 4 mode-aware dispatch: route shortcut-config voice cycles to the coordinator.
+        let activeVoiceMode = MainActor.assumeIsolated {
+            ShortcutVoiceCoordinator.shared.activeVoiceMode
+        }
+        if activeVoiceMode == .shortcutConfig {
+            MainActor.assumeIsolated {
+                ShortcutVoiceCoordinator.shared.handleTranscription(text)
+            }
             lastPartialResult = ""
             return
         }
