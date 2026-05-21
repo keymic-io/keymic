@@ -119,7 +119,18 @@ final class OutputRouter {
         case .clipboard:
             writeClipboard(output.text)
             return .injected
-        case .replaceSelection, .openURL, .runShell, .writeToITermPane:
+        case .replaceSelection:
+            await activateOriginatingApp(output.originatingApp)
+            guard readSelection() != nil else {
+                writeClipboard(output.text)
+                return .fellBackToClipboard(reason: .noFocusedElement)
+            }
+            if writeSelection(output.text) {
+                return .injected
+            }
+            writeClipboard(output.text)
+            return .fellBackToClipboard(reason: .selectionNotEditable)
+        case .openURL, .runShell, .writeToITermPane:
             return .failed(message: "strategy not yet implemented")
         }
     }

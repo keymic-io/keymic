@@ -14,7 +14,63 @@ struct OutputRouterTestRunner {
         testURLTemplateSchemeValidationAcceptsMailto()
         await testReplaceFocusedTextCallsInject()
         await testClipboardStrategyWritesAndMarksIgnored()
+        await testReplaceSelectionWriteSucceeds()
+        await testReplaceSelectionWriteFailsFallback()
+        await testReplaceSelectionNoSelectionFallback()
         print("✅ OutputRouterTests passed")
+    }
+
+    @MainActor
+    static func testReplaceSelectionWriteSucceeds() async {
+        var written: [String] = []
+        let router = OutputRouter(
+            inject: { _ in expect(false, "must not paste in happy path") },
+            readSelection: { "old" },
+            writeSelection: { txt in written.append(txt); return true },
+            onMarkIgnored: { _ in })
+        let output = PersonaOutput(text: "new", strategy: .replaceSelection,
+                                   originatingApp: nil, context: nil)
+        let result = await router.route(output)
+        expect(written == ["new"], "expected writeSelection call, got: \(written)")
+        expect(result == .injected, "got: \(result)")
+    }
+
+    @MainActor
+    static func testReplaceSelectionWriteFailsFallback() async {
+        let pb = NSPasteboard(name: NSPasteboard.Name("OutputRouterTest.replaceWriteFail"))
+        var injected: [String] = []
+        let router = OutputRouter(
+            inject: { injected.append($0) },
+            readSelection: { "ro" },
+            writeSelection: { _ in false },
+            pasteboard: pb,
+            onMarkIgnored: { _ in })
+        let output = PersonaOutput(text: "txt", strategy: .replaceSelection,
+                                   originatingApp: nil, context: nil)
+        let result = await router.route(output)
+        expect(injected.isEmpty, "fallback must not paste, got injects: \(injected)")
+        expect(pb.string(forType: .string) == "txt", "fallback must write clipboard")
+        expect(result == .fellBackToClipboard(reason: .selectionNotEditable),
+               "got: \(result)")
+    }
+
+    @MainActor
+    static func testReplaceSelectionNoSelectionFallback() async {
+        let pb = NSPasteboard(name: NSPasteboard.Name("OutputRouterTest.noSel"))
+        var writeAttempts = 0
+        let router = OutputRouter(
+            inject: { _ in },
+            readSelection: { nil },
+            writeSelection: { _ in writeAttempts += 1; return false },
+            pasteboard: pb,
+            onMarkIgnored: { _ in })
+        let output = PersonaOutput(text: "txt", strategy: .replaceSelection,
+                                   originatingApp: nil, context: nil)
+        let result = await router.route(output)
+        expect(writeAttempts == 0, "must not attempt write when selection nil, got \(writeAttempts)")
+        expect(pb.string(forType: .string) == "txt", "fallback must write clipboard")
+        expect(result == .fellBackToClipboard(reason: .noFocusedElement),
+               "got: \(result)")
     }
 
     @MainActor
