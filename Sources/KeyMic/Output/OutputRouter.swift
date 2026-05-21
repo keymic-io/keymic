@@ -108,10 +108,17 @@ final class OutputRouter {
         self.onMarkIgnored = onMarkIgnored
     }
 
-    /// Main entry point. Concrete strategy logic added in Tasks 5-9.
+    /// Main entry point.
     func route(_ output: PersonaOutput) async -> RouteResult {
         routerLogger.debug("route strategy=\(String(describing: output.strategy), privacy: .public) bundle=\(output.originatingApp?.bundleIdentifier ?? "nil", privacy: .public)")
-        return .failed(message: "router not yet implemented")
+        switch output.strategy {
+        case .replaceFocusedText:
+            await activateOriginatingApp(output.originatingApp)
+            inject(output.text)
+            return .injected
+        case .replaceSelection, .clipboard, .openURL, .runShell, .writeToITermPane:
+            return .failed(message: "strategy not yet implemented")
+        }
     }
 
     /// Restores focus to the originating app, yields one runloop tick to let it settle.

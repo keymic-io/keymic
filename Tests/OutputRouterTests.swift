@@ -12,8 +12,26 @@ struct OutputRouterTestRunner {
         testURLTemplateSchemeValidationRejectsFile()
         testURLTemplateSchemeValidationAcceptsHTTPS()
         testURLTemplateSchemeValidationAcceptsMailto()
-        // Strategy tests (added in Tasks 5-9) are `async` and called with `await`.
+        await testReplaceFocusedTextCallsInject()
         print("✅ OutputRouterTests passed")
+    }
+
+    @MainActor
+    static func testReplaceFocusedTextCallsInject() async {
+        var injected: [String] = []
+        let router = OutputRouter(
+            inject: { injected.append($0) },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in })
+        let output = PersonaOutput(
+            text: "hello",
+            strategy: .replaceFocusedText,
+            originatingApp: nil,
+            context: nil)
+        let result = await router.route(output)
+        expect(injected == ["hello"], "expected one inject call, got: \(injected)")
+        expect(result == .injected, "expected .injected, got: \(result)")
     }
 
     static func expect(_ cond: Bool, _ msg: String) {
