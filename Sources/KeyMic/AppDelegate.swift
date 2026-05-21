@@ -143,6 +143,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textInjector.onMarkIgnored = { [weak self] text in
             self?.clipboardController.markPasteboardWrite(text)
         }
+        SelectionTextProvider.onMarkIgnored = { [weak self] text in
+            self?.clipboardController.markPasteboardWrite(text)
+        }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onVaultHotkey = { [weak self] in
             self?.clipboardController.toggle(initialTab: .vault)
@@ -369,45 +372,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Builds the LLM user prompt, injecting selected text + clipboard as context
-    /// when the persona's contextMode is `.selectionAndClipboard`.
     private func buildUserText(transcript: String, contextMode: ContextMode) -> String {
-        guard contextMode == .selectionAndClipboard else { return transcript }
-
-        let selection =
-            SelectionTextProvider.currentSelection()?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let clipboard =
-            NSPasteboard.general.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        var sections: [String] = []
-        var includeTranscript = true
-
-        if !selection.isEmpty {
-            sections.append("[Selected text]\n\(selection)")
-            if transcript == selection || selection.utf16.count > 2000 {
-                includeTranscript = false
-            }
-        }
-        if !clipboard.isEmpty && clipboard != selection {
-            sections.append("[Recent clipboard]\n\(clipboard)")
-        }
-        if includeTranscript {
-            sections.append("[User said]\n\(transcript)")
-        }
-
-        let result = sections.joined(separator: "\n\n")
-        // Cap at 7500 UTF-16 units, snapped to character boundary (avoids splitting surrogate pairs).
-        if result.utf16.count > 7500 {
-            var trimmed = ""
-            for ch in result {
-                if trimmed.utf16.count + ch.utf16.count > 7500 { break }
-                trimmed.append(ch)
-            }
-            return trimmed
-        }
-        return result
+        let ctx = PersonaContext.snapshotCurrent()
+        return ctx.buildPrompt(transcript: transcript, contextMode: contextMode)
     }
 
     private func injectAfterPop(_ text: String) {
