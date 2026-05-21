@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager
 
 
 build:
@@ -554,6 +554,31 @@ test-mcp-adapter:
 	       -o .build/mcp-tool-adapter-tests
 	.build/mcp-tool-adapter-tests
 
+
+test-mcp-manager:
+	mkdir -p .build
+	swift build
+	$(eval MCP_DEBUG_BUILD_DIR := $(shell swift build --show-bin-path))
+	swiftc -I $(MCP_DEBUG_BUILD_DIR)/Modules \
+	       Tests/MCPClientManagerTests.swift \
+	       Sources/KeyMic/Tools/MCP/MCPToolAdapter.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientProtocol.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Value.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Data+Extensions.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Messages.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/ID.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Error.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Progress.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Tools.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Resources.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Icon.swift.o \
+	       -o .build/mcp-client-manager-tests
+	.build/mcp-client-manager-tests
+
 test-shell-snapshot:
 	mkdir -p .build
 	swiftc Tests/ShellSnapshotTests.swift \
@@ -571,7 +596,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-voice-session test-voice-state-machine
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-voice-session test-voice-state-machine
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
