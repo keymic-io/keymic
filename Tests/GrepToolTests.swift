@@ -9,6 +9,7 @@ private final class GrepToolTests {
         try testGlobFilter()
         try testCaseInsensitive()
         try testMultilineMode()
+        try testMultilineModeIncludesContext()
         try testBeforeAfterContext()
         try testHeadLimitAndOffset()
         try testEmptyResultIsSuccess()
@@ -17,6 +18,7 @@ private final class GrepToolTests {
         try testReadErrorsCollected()
         try testDefaultGlobIncludesTopLevelFiles()
         try testSymlinkEscapeFiltered()
+        try testSymlinkInsideWorkspaceIsReadSafely()
         try testTinyTruncationHonorsMaxOutputBytes()
         try testSchemaShape()
         print("GrepToolTests passed")
@@ -175,6 +177,32 @@ private final class GrepToolTests {
         }
     }
 
+    static func testMultilineModeIncludesContext() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.swift", "intro\nstruct Foo {\n    func bar() {}\n}\noutro\n")
+
+        let out = try toolOutput(
+            pattern: "struct[\\s\\S]*?bar",
+            outputMode: "content",
+            multiline: true,
+            beforeContext: 1,
+            afterContext: 1,
+            workingDirectory: dir
+        )
+        guard out.contains("1: intro") else {
+            fatalError("expected multiline before-context line, got: \(out)")
+        }
+        guard out.contains("2→struct Foo {") && out.contains("3→    func bar() {}") else {
+            fatalError("expected multiline match lines to be marked, got: \(out)")
+        }
+        guard out.contains("4: }") else {
+            fatalError("expected multiline after-context line, got: \(out)")
+        }
+        guard !out.contains("5: outro") else {
+            fatalError("unexpected line outside requested multiline context, got: \(out)")
+        }
+    }
+
     static func testBeforeAfterContext() throws {
         let dir = tmpDir()
         try writeFile(dir + "/a.txt", "alpha\nbeta\ngamma TARGET\ndelta\nepsilon\n")
@@ -298,6 +326,27 @@ private final class GrepToolTests {
         guard out.contains("local.txt") else { fatalError("expected local match, got: \(out)") }
         guard !out.contains("linked-secret.txt") else {
             fatalError("symlink escape should be filtered, got: \(out)")
+        }
+    }
+
+    static func testSymlinkInsideWorkspaceIsReadSafely() throws {
+        let dir = tmpDir()
+        try makeDir(dir + "/targets")
+        try writeFile(dir + "/targets/real.txt", "safe answer\n")
+
+        do {
+            try FileManager.default.createSymbolicLink(
+                atPath: dir + "/linked-real.txt",
+                withDestinationPath: dir + "/targets/real.txt"
+            )
+        } catch {
+            print("Skipping safe symlink assertion; createSymbolicLink failed: \(error)")
+            return
+        }
+
+        let out = try toolOutput(pattern: "safe answer", path: "linked-real.txt", workingDirectory: dir)
+        guard out.contains("linked-real.txt") else {
+            fatalError("expected safe symlink base file to be searched, got: \(out)")
         }
     }
 

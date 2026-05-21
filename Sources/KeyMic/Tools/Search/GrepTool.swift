@@ -165,6 +165,7 @@ public struct GrepTool: Tool {
             if context.isCancelled() { throw CancellationError() }
 
             do {
+                guard await fs.isPathSafe(file.absolutePath) else { continue }
                 let content = try await fs.readFile(atPath: file.absolutePath)
                 if args.multiline ?? false {
                     let fileMatchCount = regex.numberOfMatches(
@@ -180,6 +181,8 @@ public struct GrepTool: Tool {
                             relativePath: file.relativePath,
                             content: content,
                             regex: regex,
+                            beforeContext: beforeContext,
+                            afterContext: afterContext,
                             showLineNumbers: showLineNumbers
                         )
                         if let block { contentBlocks.append(block) }
@@ -294,16 +297,18 @@ public struct GrepTool: Tool {
 
             let resolvedAbsolutePath = next.resolvingSymlinksInPath().standardized.path
             guard resolvedAbsolutePath.hasPrefix(baseWithSlash) else { continue }
+            guard await fs.isPathSafe(resolvedAbsolutePath) else { continue }
 
             let relativePath = String(resolvedAbsolutePath.dropFirst(baseWithSlash.count))
             if relativePath.isEmpty || containsHiddenComponent(relativePath) { continue }
 
-            let values = try next.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
+            let resolvedURL = URL(fileURLWithPath: resolvedAbsolutePath)
+            let values = try resolvedURL.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey])
             if values.isDirectory == true || values.isRegularFile != true { continue }
 
             let range = NSRange(relativePath.startIndex..<relativePath.endIndex, in: relativePath)
             guard regex.firstMatch(in: relativePath, options: [], range: range) != nil else { continue }
-            files.append(SearchFile(absolutePath: absolutePath, relativePath: relativePath))
+            files.append(SearchFile(absolutePath: resolvedAbsolutePath, relativePath: relativePath))
         }
 
         return files
@@ -360,6 +365,8 @@ public struct GrepTool: Tool {
         relativePath: String,
         content: String,
         regex: NSRegularExpression,
+        beforeContext: Int,
+        afterContext: Int,
         showLineNumbers: Bool
     ) -> ContentBlock? {
         let matches = regex.matches(in: content, options: [], range: fullRange(of: content))
@@ -369,19 +376,79 @@ public struct GrepTool: Tool {
             guard let range = Range(match.range, in: content) else { return nil }
             let snippet = String(content[range])
             guard !snippet.isEmpty else { return nil }
-            guard showLineNumbers else { return snippet }
 
-            let startLine = lineNumber(forUTF16Location: match.range.location, in: content)
-            let snippetLines = snippet.components(separatedBy: .newlines)
-            return snippetLines.enumerated().map { offset, line in
-                let lineNumber = startLine + offset
-                let prefix = offset == 0 ? "\(lineNumber)→" : "\(lineNumber): "
-                return prefix + line
-            }.joined(separator: "\n")
+            if beforeContext == 0, afterContext == 0 {
+                guard showLineNumbers else { return snippet }
+                let startLine = lineNumber(forUTF16Location: match.range.location, in: content)
+                let snippetLines = snippet.components(separatedBy: .newlines)
+                return snippetLines.enumerated().map { offset, line in
+                    let lineNumber = startLine + offset
+                    let prefix = offset == 0 ? "\(lineNumber)→" : "\(lineNumber): "
+                    return prefix + line
+                }.joined(separator: "\n")
+            }
+
+            return renderMultilineContext(
+                content: content,
+                matchRange: match.range,
+                beforeContext: beforeContext,
+                afterContext: afterContext,
+                showLineNumbers: showLineNumbers
+            )
         }
 
         guard !snippets.isEmpty else { return nil }
         return ContentBlock(relativePath: relativePath, body: snippets.joined(separator: "\n---\n"))
+    }
+
+    private struct LineInfo {
+        let number: Int
+        let text: String
+        let range: NSRange
+    }
+
+    private func renderMultilineContext(
+        content: String,
+        matchRange: NSRange,
+        beforeContext: Int,
+        afterContext: Int,
+        showLineNumbers: Bool
+    ) -> String {
+        let lines = lineInfos(for: content)
+        guard !lines.isEmpty else { return "" }
+        let matchEnd = max(matchRange.location, matchRange.location + matchRange.length - 1)
+        let matchingIndices = lines.indices.filter { index in
+            let lineRange = lines[index].range
+            return lineRange.location <= matchEnd && NSMaxRange(lineRange) > matchRange.location
+        }
+        guard let firstMatchIndex = matchingIndices.first,
+              let lastMatchIndex = matchingIndices.last else {
+            return ""
+        }
+
+        let start = max(lines.startIndex, firstMatchIndex - beforeContext)
+        let end = min(lines.index(before: lines.endIndex), lastMatchIndex + afterContext)
+        let matchingIndexSet = Set(matchingIndices)
+
+        return (start...end).map { index in
+            let line = lines[index]
+            guard showLineNumbers else { return line.text }
+            let prefix = matchingIndexSet.contains(index) ? "\(line.number)→" : "\(line.number): "
+            return prefix + line.text
+        }.joined(separator: "\n")
+    }
+
+    private func lineInfos(for content: String) -> [LineInfo] {
+        let lines = content.components(separatedBy: .newlines)
+        var utf16Offset = 0
+        return lines.enumerated().map { offset, line in
+            defer { utf16Offset += line.utf16.count + 1 }
+            return LineInfo(
+                number: offset + 1,
+                text: line,
+                range: NSRange(location: utf16Offset, length: max(1, line.utf16.count))
+            )
+        }
     }
 
     private func paginate(_ entries: [String], offset: Int, limit: Int) -> [String] {
