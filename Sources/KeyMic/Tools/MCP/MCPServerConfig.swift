@@ -67,11 +67,15 @@ public enum MCPTransportConfig: Sendable, Codable, Equatable {
         forKey key: CodingKeys
     ) throws -> URL {
         let rawURL = try container.decode(String.self, forKey: key)
-        guard let url = URL(string: rawURL), url.scheme != nil else {
+        guard let url = URL(string: rawURL),
+              let scheme = url.scheme?.lowercased(),
+              ["http", "https"].contains(scheme),
+              let host = url.host,
+              !host.isEmpty else {
             throw DecodingError.dataCorruptedError(
                 forKey: key,
                 in: container,
-                debugDescription: "Expected an absolute URL string."
+                debugDescription: "Expected an absolute HTTP(S) URL string with a host."
             )
         }
         return url

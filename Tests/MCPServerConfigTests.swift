@@ -10,6 +10,7 @@ private enum MCPServerConfigTests {
         try testUnsupportedTransportRejected()
         try testMissingURLRejected()
         try testMalformedURLRejected()
+        try testNonHTTPEndpointsRejected()
         try testUnknownAuthTypeRejected()
         print("MCPServerConfigTests passed")
     }
@@ -134,6 +135,33 @@ private enum MCPServerConfigTests {
             fatalError("expected malformed url failure")
         } catch {
             expect(error is DecodingError, "malformed url throws decoding error")
+        }
+    }
+
+    static func testNonHTTPEndpointsRejected() throws {
+        for rawURL in [
+            "localhost:3000/mcp",
+            "http:/example.com",
+            "https://",
+            "file:///tmp/mcp",
+            "mailto:foo@example.com"
+        ] {
+            let data = Data("""
+            {
+              "name": "bad-endpoint",
+              "transport": {
+                "type": "http",
+                "url": "\(rawURL)"
+              }
+            }
+            """.utf8)
+
+            do {
+                _ = try JSONDecoder().decode(MCPServerConfig.self, from: data)
+                fatalError("expected invalid endpoint failure for \(rawURL)")
+            } catch {
+                expect(error is DecodingError, "invalid endpoint throws decoding error: \(rawURL)")
+            }
         }
     }
 
