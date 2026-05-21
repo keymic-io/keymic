@@ -47,9 +47,14 @@ public struct ReadTool: Tool {
     public init() {}
 
     private struct Arguments: Decodable {
-        let file_path: String
+        let filePath: String
         let offset: Int?
         let limit: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case filePath = "file_path"
+            case offset, limit
+        }
     }
 
     private static let defaultLineLimit = 2000
@@ -59,9 +64,9 @@ public struct ReadTool: Tool {
         let args = try JSONDecoder().decode(Arguments.self, from: argumentsJSON)
         let fs = FileSystemActor(workingDirectory: context.workingDirectory)
 
-        let normalizedPath = await fs.normalizePath(args.file_path)
+        let normalizedPath = await fs.normalizePath(args.filePath)
         guard await fs.isPathSafe(normalizedPath) else {
-            throw FileSystemError.pathNotSafe(path: args.file_path)
+            throw FileSystemError.pathNotSafe(path: args.filePath)
         }
 
         guard await fs.fileExists(atPath: normalizedPath) else {
@@ -75,12 +80,29 @@ public struct ReadTool: Tool {
         }
 
         let content = try await fs.readFile(atPath: normalizedPath)
-        let lines = content.components(separatedBy: .newlines)
+        var lines = content.components(separatedBy: .newlines)
+        // components(separatedBy: .newlines) leaves an empty trailing element
+        // for any file that ends with a newline. Drop it so reported line counts
+        // and the formatted "lineN→" rows match the file's actual content.
+        if lines.last == "" && content.hasSuffix("\n") {
+            lines.removeLast()
+        }
         let totalLines = lines.count
 
         let offset = max(0, args.offset ?? 0)
         let limitValue = args.limit ?? 0
         let limit = limitValue > 0 ? limitValue : Self.defaultLineLimit
+
+        // Empty file: return a structured header but no content rows (matches
+        // the docstring promise "you will receive an empty string" for the
+        // content portion).
+        if content.isEmpty {
+            return """
+            Read Operation [Success]
+            Path: \(normalizedPath)
+            Lines: 0 of 0 (empty file)
+            """
+        }
 
         let startLine = offset + 1
         let endLine = min(offset + limit, totalLines)

@@ -6,6 +6,9 @@ private final class ReadToolTests {
         try testReadWithOffsetLimit()
         try testReadMissingFileThrows()
         try testReadSandboxEscapeRejected()
+        try testReadEmptyFile()
+        try testReadTrailingNewlineDoesNotCountExtraLine()
+        try testReadDirectoryRejectedAsNotAFile()
         try testSchemaShape()
         print("ReadToolTests passed")
     }
@@ -77,6 +80,58 @@ private final class ReadToolTests {
             // expected
         } catch {
             fatalError("expected pathNotSafe, got: \(error)")
+        }
+    }
+
+    static func testReadEmptyFile() throws {
+        let dir = tmpDir()
+        _ = writeFixture(dir, content: "")
+        let tool = ReadTool()
+        let input = #"{"file_path":"fixture.txt"}"#.data(using: .utf8)!
+        let ctx = ToolContext(workingDirectory: dir)
+        let out = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
+        guard out.contains("Lines: 0 of 0") else {
+            fatalError("expected 'Lines: 0 of 0' for empty file, got: \(out)")
+        }
+        // Must NOT contain a bogus "1→" line-number row.
+        guard !out.contains("1→") else {
+            fatalError("empty file should not produce any line-numbered rows, got: \(out)")
+        }
+    }
+
+    static func testReadTrailingNewlineDoesNotCountExtraLine() throws {
+        let dir = tmpDir()
+        // Three lines of content, each terminated with \n (standard Unix text file).
+        _ = writeFixture(dir, content: "alpha\nbeta\ngamma\n")
+        let tool = ReadTool()
+        let input = #"{"file_path":"fixture.txt"}"#.data(using: .utf8)!
+        let ctx = ToolContext(workingDirectory: dir)
+        let out = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
+        // Trailing newline should NOT count as a 4th empty line.
+        guard out.contains("Lines: 1-3 of 3") else {
+            fatalError("expected 'Lines: 1-3 of 3' for trailing-newline file, got: \(out)")
+        }
+        // The 4th row "4→" must not appear.
+        guard !out.contains("4→") else {
+            fatalError("trailing newline incorrectly produced a 4th row, got: \(out)")
+        }
+    }
+
+    static func testReadDirectoryRejectedAsNotAFile() throws {
+        let dir = tmpDir()
+        // Create a subdirectory and try to Read it.
+        let subdir = dir + "/subdir"
+        try FileManager.default.createDirectory(atPath: subdir, withIntermediateDirectories: true)
+        let tool = ReadTool()
+        let input = #"{"file_path":"subdir"}"#.data(using: .utf8)!
+        let ctx = ToolContext(workingDirectory: dir)
+        do {
+            _ = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
+            fatalError("expected notAFile error for directory")
+        } catch FileSystemError.notAFile {
+            // expected
+        } catch {
+            fatalError("expected notAFile, got: \(error)")
         }
     }
 
