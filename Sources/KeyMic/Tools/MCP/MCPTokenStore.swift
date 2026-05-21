@@ -19,7 +19,7 @@ public struct MCPTokenStore: Sendable {
     public func write(account: String, token: String) throws {
         let data = Data(token.utf8)
         var query = baseQuery(account: account)
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         query[kSecValueData as String] = data
 
         let status = SecItemAdd(query as CFDictionary, nil)
@@ -30,7 +30,10 @@ public struct MCPTokenStore: Sendable {
         if status == errSecDuplicateItem {
             let updateStatus = SecItemUpdate(
                 baseQuery(account: account) as CFDictionary,
-                [kSecValueData as String: data] as CFDictionary
+                [
+                    kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                    kSecValueData as String: data
+                ] as CFDictionary
             )
             guard updateStatus == errSecSuccess else {
                 throw KeychainError.writeFailed(updateStatus)

@@ -561,21 +561,22 @@ test-mcp-manager:
 	$(eval MCP_DEBUG_BUILD_DIR := $(shell swift build --show-bin-path))
 	swiftc -I $(MCP_DEBUG_BUILD_DIR)/Modules \
 	       Tests/MCPClientManagerTests.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientManager.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClient.swift \
 	       Sources/KeyMic/Tools/MCP/MCPToolAdapter.swift \
 	       Sources/KeyMic/Tools/MCP/MCPClientProtocol.swift \
+	       Sources/KeyMic/Tools/MCP/MCPConfigStore.swift \
+	       Sources/KeyMic/Tools/MCP/MCPServerConfig.swift \
+	       Sources/KeyMic/Tools/MCP/MCPTokenStore.swift \
 	       Sources/KeyMic/Tools/MCP/MCPClientError.swift \
+	       Sources/KeyMic/Vault/KeychainBackend.swift \
 	       Sources/KeyMic/Tools/Protocol/Tool.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Value.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Data+Extensions.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Messages.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/ID.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Error.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Progress.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Tools.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Resources.swift.o \
-	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Icon.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/*.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/EventSource.build/*.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/Logging.build/*.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/SystemPackage.build/*.swift.o \
 	       -o .build/mcp-client-manager-tests
 	.build/mcp-client-manager-tests
 

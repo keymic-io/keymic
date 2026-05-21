@@ -21,13 +21,16 @@ public actor MCPClientManager {
         }
     }
 
+    private struct StaleConnection: Error {}
+
     private let configStore: MCPConfigStore
     private let tokenStore: MCPTokenStore
     private let logger = Logger(subsystem: "io.keymic.app", category: "MCP")
 
     private var clients: [String: MCPClient] = [:]
-    private var registeredToolNames: Set<String> = []
+    private var registeredToolNamesByServer: [String: Set<String>] = [:]
     private var statuses: [String: ServerStatus] = [:]
+    private var generation: UInt64 = 0
 
     public init(configStore: MCPConfigStore = MCPConfigStore(), tokenStore: MCPTokenStore = MCPTokenStore()) {
         self.configStore = configStore
@@ -46,6 +49,15 @@ public actor MCPClientManager {
         statuses[serverName] = ServerStatus(name: serverName, state: state)
     }
 
+    private func advanceGeneration() -> UInt64 {
+        generation &+= 1
+        return generation
+    }
+
+    private func isCurrentGeneration(_ capturedGeneration: UInt64) -> Bool {
+        generation == capturedGeneration
+    }
+
     public func loadAndConnectAll(registry: ToolRegistry) async {
         let document: MCPConfigDocument
         do {
@@ -55,23 +67,32 @@ public actor MCPClientManager {
             return
         }
 
+        let capturedGeneration = advanceGeneration()
+        await cleanupCurrentState(registry: registry)
+
+        guard isCurrentGeneration(capturedGeneration) else { return }
+
         for config in document.servers where config.enabled {
-            await connectOne(config, registry: registry)
+            guard isCurrentGeneration(capturedGeneration) else { return }
+            await connectOne(config, registry: registry, generation: capturedGeneration)
         }
     }
 
-    private func connectOne(_ config: MCPServerConfig, registry: ToolRegistry) async {
+    private func connectOne(_ config: MCPServerConfig, registry: ToolRegistry, generation capturedGeneration: UInt64) async {
+        guard isCurrentGeneration(capturedGeneration) else { return }
         setStatus(config.name, .connecting)
 
         let bearerToken: String?
         do {
             bearerToken = try resolveBearerToken(for: config)
         } catch let error as MCPClientError {
+            guard isCurrentGeneration(capturedGeneration) else { return }
             let message = error.localizedDescription
             setStatus(config.name, .error(message))
             logger.error("MCP auth failed for \(config.name, privacy: .public): \(message, privacy: .public)")
             return
         } catch {
+            guard isCurrentGeneration(capturedGeneration) else { return }
             let message = "keychain error: \(error.localizedDescription)"
             setStatus(config.name, .error(message))
             logger.error("MCP keychain read failed for \(config.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
@@ -79,27 +100,56 @@ public actor MCPClientManager {
         }
 
         let client = MCPClient(config: config, bearerToken: bearerToken)
-        var localRegisteredToolNames: [String] = []
+        var localRegisteredToolNames: Set<String> = []
 
         do {
             try await client.connect()
+            guard isCurrentGeneration(capturedGeneration) else {
+                await cleanupStale(client: client, registeredToolNames: localRegisteredToolNames, registry: registry)
+                return
+            }
+
             let descriptors = try await client.listTools()
+            guard isCurrentGeneration(capturedGeneration) else {
+                await cleanupStale(client: client, registeredToolNames: localRegisteredToolNames, registry: registry)
+                return
+            }
 
             for descriptor in descriptors {
-                let adapter = try MCPToolAdapter.make(from: descriptor, serverName: config.name, client: client)
-                try await registry.register(adapter, replacingExisting: true)
-                registeredToolNames.insert(adapter.name)
-                localRegisteredToolNames.append(adapter.name)
+                guard isCurrentGeneration(capturedGeneration) else {
+                    await cleanupStale(client: client, registeredToolNames: localRegisteredToolNames, registry: registry)
+                    return
+                }
+
+                do {
+                    let adapter = try MCPToolAdapter.make(from: descriptor, serverName: config.name, client: client)
+                    let toolName = try await registerAdapter(
+                        adapter,
+                        forServer: config.name,
+                        registry: registry,
+                        generation: capturedGeneration
+                    )
+                    localRegisteredToolNames.insert(toolName)
+                } catch is StaleConnection {
+                    await cleanupStale(client: client, registeredToolNames: localRegisteredToolNames, registry: registry)
+                    return
+                } catch {
+                    logger.error("Failed to register MCP tool from \(config.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                    continue
+                }
+            }
+
+            guard isCurrentGeneration(capturedGeneration) else {
+                await cleanupStale(client: client, registeredToolNames: localRegisteredToolNames, registry: registry)
+                return
             }
 
             clients[config.name] = client
-            setStatus(config.name, .connected(toolCount: descriptors.count))
+            setStatus(config.name, .connected(toolCount: localRegisteredToolNames.count))
         } catch {
-            await client.disconnect()
-            for toolName in localRegisteredToolNames {
-                await registry.unregister(name: toolName)
-                registeredToolNames.remove(toolName)
-            }
+            await cleanupStale(client: client, registeredToolNames: localRegisteredToolNames, registry: registry)
+
+            guard isCurrentGeneration(capturedGeneration) else { return }
 
             let message = error.localizedDescription
             setStatus(config.name, .error(message))
@@ -122,40 +172,74 @@ public actor MCPClientManager {
         return token
     }
 
+    @discardableResult
+    func registerAdapter(
+        _ adapter: MCPToolAdapter,
+        forServer serverName: String,
+        registry: ToolRegistry,
+        generation capturedGeneration: UInt64? = nil
+    ) async throws -> String {
+        try await registry.register(adapter, replacingExisting: true)
+
+        if let capturedGeneration, !isCurrentGeneration(capturedGeneration) {
+            await registry.unregister(name: adapter.name)
+            throw StaleConnection()
+        }
+
+        registeredToolNamesByServer[serverName, default: []].insert(adapter.name)
+        return adapter.name
+    }
+
     public func reloadConfig(registry: ToolRegistry) async {
-        await disconnectAll(registry: registry)
         await loadAndConnectAll(registry: registry)
     }
 
     public func disconnectAll(registry: ToolRegistry) async {
-        for client in clients.values {
-            await client.disconnect()
-        }
-
-        for toolName in registeredToolNames {
-            await registry.unregister(name: toolName)
-        }
-
-        clients.removeAll()
-        registeredToolNames.removeAll()
-        statuses.removeAll()
+        _ = advanceGeneration()
+        await cleanupCurrentState(registry: registry)
     }
 
     public func disconnect(serverName: String, registry: ToolRegistry) async {
+        let capturedGeneration = advanceGeneration()
         let client = clients.removeValue(forKey: serverName)
+        let toolNames = registeredToolNamesByServer.removeValue(forKey: serverName) ?? []
+
         await client?.disconnect()
 
-        let prefix = "\(serverName)."
-        let namesToRemove = registeredToolNames.filter { $0.hasPrefix(prefix) }
-        for toolName in namesToRemove {
+        for toolName in toolNames {
             await registry.unregister(name: toolName)
-            registeredToolNames.remove(toolName)
         }
 
+        guard isCurrentGeneration(capturedGeneration) else { return }
         setStatus(serverName, .disconnected)
     }
 
     public func connectedServers() -> [String] {
         clients.keys.sorted()
+    }
+
+    private func cleanupCurrentState(registry: ToolRegistry) async {
+        let clientsToDisconnect = clients.values
+        let toolNamesToUnregister = registeredToolNamesByServer.values.flatMap { $0 }
+
+        clients.removeAll()
+        registeredToolNamesByServer.removeAll()
+        statuses.removeAll()
+
+        for client in clientsToDisconnect {
+            await client.disconnect()
+        }
+
+        for toolName in toolNamesToUnregister {
+            await registry.unregister(name: toolName)
+        }
+    }
+
+    private func cleanupStale(client: MCPClient, registeredToolNames: Set<String>, registry: ToolRegistry) async {
+        await client.disconnect()
+
+        for toolName in registeredToolNames {
+            await registry.unregister(name: toolName)
+        }
     }
 }

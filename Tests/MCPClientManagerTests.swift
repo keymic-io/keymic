@@ -34,48 +34,48 @@ final class NeverCalledClient: MCPClientProtocol, @unchecked Sendable {
 @main
 struct MCPClientManagerTests {
     static func main() async throws {
-        try await testMCPAdapterDoesNotShadowBuiltinToolName()
-        try await testPerServerUnregisterLeavesOtherServersAndBuiltin()
+        try await testManagerRegistersAdapterWithoutShadowingBuiltinToolName()
+        try await testDisconnectUsesExplicitServerOwnershipForDottedNames()
         try await testOverlappingRemoteToolNamesStayNamespaced()
         print("MCPClientManagerTests passed")
     }
 
-    static func testMCPAdapterDoesNotShadowBuiltinToolName() async throws {
+    static func testManagerRegistersAdapterWithoutShadowingBuiltinToolName() async throws {
         let registry = ToolRegistry()
+        let manager = MCPClientManager()
         try await registry.register(DummyTool(name: "Read"))
 
-        let adapter = MCPToolAdapter(
-            serverName: "remote",
-            remoteName: "Read",
-            description: "Remote read",
-            parametersJSONSchema: ["type": "object", "properties": [:]],
-            client: NeverCalledClient(serverName: "remote")
+        try await manager.registerAdapter(
+            makeAdapter(serverName: "remote", remoteName: "Read"),
+            forServer: "remote",
+            registry: registry
         )
-        try await registry.register(adapter)
 
         let names = await registry.allNames()
         assertEqual(names, ["Read", "remote.Read"])
     }
 
-    static func testPerServerUnregisterLeavesOtherServersAndBuiltin() async throws {
+    static func testDisconnectUsesExplicitServerOwnershipForDottedNames() async throws {
         let registry = ToolRegistry()
+        let manager = MCPClientManager()
         try await registry.register(DummyTool(name: "Read"))
-        try await registry.register(makeAdapter(serverName: "a", remoteName: "X"))
-        try await registry.register(makeAdapter(serverName: "b", remoteName: "X"))
+        try await manager.registerAdapter(makeAdapter(serverName: "a", remoteName: "X"), forServer: "a", registry: registry)
+        try await manager.registerAdapter(makeAdapter(serverName: "a.b", remoteName: "X"), forServer: "a.b", registry: registry)
+        try await manager.registerAdapter(makeAdapter(serverName: "b", remoteName: "X"), forServer: "b", registry: registry)
 
-        let namesToRemove = await registry.allNames().filter { $0.hasPrefix("a.") }
-        for name in namesToRemove {
-            await registry.unregister(name: name)
-        }
+        await manager.disconnect(serverName: "a", registry: registry)
 
         let names = await registry.allNames()
-        assertEqual(names, ["Read", "b.X"])
+        assertEqual(names, ["Read", "a.b.X", "b.X"])
+        let status = await manager.status(for: "a")
+        assertEqual(status?.state, .disconnected)
     }
 
     static func testOverlappingRemoteToolNamesStayNamespaced() async throws {
         let registry = ToolRegistry()
-        try await registry.register(makeAdapter(serverName: "alpha", remoteName: "Search"))
-        try await registry.register(makeAdapter(serverName: "beta", remoteName: "Search"))
+        let manager = MCPClientManager()
+        try await manager.registerAdapter(makeAdapter(serverName: "alpha", remoteName: "Search"), forServer: "alpha", registry: registry)
+        try await manager.registerAdapter(makeAdapter(serverName: "beta", remoteName: "Search"), forServer: "beta", registry: registry)
 
         let names = await registry.allNames()
         assertEqual(names, ["alpha.Search", "beta.Search"])
@@ -89,6 +89,12 @@ struct MCPClientManagerTests {
             parametersJSONSchema: ["type": "object", "properties": [:]],
             client: NeverCalledClient(serverName: serverName)
         )
+    }
+
+    static func assertEqual<T: Equatable>(_ actual: T?, _ expected: T?, file: StaticString = #filePath, line: UInt = #line) {
+        if actual != expected {
+            fail("Expected \(String(describing: expected)), got \(String(describing: actual))", file: file, line: line)
+        }
     }
 
     static func assertEqual<T: Equatable>(_ actual: T, _ expected: T, file: StaticString = #filePath, line: UInt = #line) {
