@@ -150,6 +150,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         SelectionTextProvider.onMarkIgnored = { [weak self] text in
             self?.clipboardController.markPasteboardWrite(text)
         }
+        OutputRouter.shared = OutputRouter(
+            inject: { [weak self] text in self?.textInjector.inject(text) },
+            onMarkIgnored: { [weak self] text in
+                self?.clipboardController.markPasteboardWrite(text)
+            })
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onVaultHotkey = { [weak self] in
             self?.clipboardController.toggle(initialTab: .vault)
@@ -348,17 +353,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func finishTranscription(text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { overlayPanel.dismiss(); return }
-
-        let persona = PersonaStore.shared.activePersona
-        let refiner = LLMRefiner.shared
-        guard let persona, refiner.isReady else {
+        guard !trimmed.isEmpty else {
             overlayPanel.dismiss()
-            injectAfterPop(trimmed)
+            voiceOriginatingApp = nil
             return
         }
 
-        let userText = buildUserText(transcript: trimmed, contextMode: persona.contextMode)
+        let persona = PersonaStore.shared.activePersona
+        let refiner = LLMRefiner.shared
+
+        guard let persona, refiner.isReady else {
+            overlayPanel.dismiss()
+            routeAndInject(text: trimmed,
+                           strategy: persona?.injectionStrategy ?? .replaceFocusedText,
+                           context: nil)
+            return
+        }
+
+        let context = PersonaContext.snapshotCurrent()
+        let userText = context.buildPrompt(transcript: trimmed, contextMode: persona.contextMode)
         overlayPanel.showRefining()
         refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
             guard let self else { return }
@@ -366,27 +379,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case .success(let refined):
                 let finalText = refined.isEmpty ? trimmed : refined
                 self.overlayPanel.dismiss()
-                self.injectAfterPop(finalText)
+                self.routeAndInject(text: finalText,
+                                    strategy: persona.injectionStrategy,
+                                    context: context)
             case .failure(let error):
                 logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
                 self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                     self?.overlayPanel.dismiss()
-                    self?.injectAfterPop(trimmed)
+                    self?.routeAndInject(text: trimmed,
+                                         strategy: persona.injectionStrategy,
+                                         context: context)
                 }
             }
         }
     }
 
-    private func buildUserText(transcript: String, contextMode: ContextMode) -> String {
-        let ctx = PersonaContext.snapshotCurrent()
-        return ctx.buildPrompt(transcript: transcript, contextMode: contextMode)
-    }
-
-    private func injectAfterPop(_ text: String) {
+    /// Dispatches to OutputRouter after the 100ms pop-sound delay (matches today's injectAfterPop UX).
+    private func routeAndInject(text: String, strategy: InjectionStrategy, context: PersonaContext?) {
+        let app = voiceOriginatingApp
+        voiceOriginatingApp = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.textInjector.inject(text)
+            guard let self else { return }
             NSSound(named: .init("Pop"))?.play()
+            let output = PersonaOutput(text: text, strategy: strategy,
+                                       originatingApp: app, context: context)
+            Task { @MainActor [weak self] in
+                let result = await OutputRouter.shared.route(output)
+                self?.overlayPanel.showRouteResult(result)
+            }
         }
     }
 
