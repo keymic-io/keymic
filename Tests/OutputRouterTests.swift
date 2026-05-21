@@ -17,7 +17,52 @@ struct OutputRouterTestRunner {
         await testReplaceSelectionWriteSucceeds()
         await testReplaceSelectionWriteFailsFallback()
         await testReplaceSelectionNoSelectionFallback()
+        await testOpenURLHappyPath()
+        await testOpenURLRejectsJavascript()
         print("✅ OutputRouterTests passed")
+    }
+
+    @MainActor
+    static func testOpenURLHappyPath() async {
+        var openedURLs: [URL] = []
+        let router = OutputRouter(
+            inject: { _ in },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in })
+        router.openURLHandler = { url in openedURLs.append(url); return true }
+        let output = PersonaOutput(
+            text: "hello world",
+            strategy: .openURL(template: "https://example.com?q={query}"),
+            originatingApp: nil,
+            context: nil)
+        let result = await router.route(output)
+        expect(result == .injected, "got: \(result)")
+        expect(openedURLs.map(\.absoluteString) == ["https://example.com?q=hello%20world"],
+               "expected URL opened, got: \(openedURLs)")
+    }
+
+    @MainActor
+    static func testOpenURLRejectsJavascript() async {
+        var openedURLs: [URL] = []
+        let router = OutputRouter(
+            inject: { _ in },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in })
+        router.openURLHandler = { url in openedURLs.append(url); return true }
+        let output = PersonaOutput(
+            text: "x",
+            strategy: .openURL(template: "javascript:alert(1)"),
+            originatingApp: nil,
+            context: nil)
+        let result = await router.route(output)
+        if case .failed = result {
+            // OK
+        } else {
+            expect(false, "expected .failed for javascript: URL, got \(result)")
+        }
+        expect(openedURLs.isEmpty, "must not open rejected URL")
     }
 
     @MainActor

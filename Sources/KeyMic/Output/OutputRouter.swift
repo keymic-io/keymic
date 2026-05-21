@@ -130,7 +130,17 @@ final class OutputRouter {
             }
             writeClipboard(output.text)
             return .fellBackToClipboard(reason: .selectionNotEditable)
-        case .openURL, .runShell, .writeToITermPane:
+        case .openURL(let template):
+            guard let substituted = URLTemplate.substitute(
+                template: template, text: output.text, context: output.context),
+                  URLTemplate.validateScheme(substituted),
+                  let url = URL(string: substituted) else {
+                routerLogger.error("openURL invalid: template=\(template, privacy: .public)")
+                return .failed(message: "invalid URL after template substitution")
+            }
+            let opened = openURLHandler?(url) ?? workspace.open(url)
+            return opened ? .injected : .failed(message: "workspace failed to open URL")
+        case .runShell, .writeToITermPane:
             return .failed(message: "strategy not yet implemented")
         }
     }
