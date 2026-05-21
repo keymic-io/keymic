@@ -228,6 +228,9 @@ test-hotkey-action-runner:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyActionRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       Tests/HotkeyActionRunnerTests.swift \
 	       -o .build/hotkey-action-runner-tests
 	.build/hotkey-action-runner-tests
@@ -285,6 +288,8 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/Input/InputState.swift \
+	       Sources/KeyMic/Input/InputResetReason.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorClipboardPanelTests.swift \
 	       -o .build/keymonitor-clipboard-panel-tests
