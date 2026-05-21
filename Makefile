@@ -191,7 +191,12 @@ test-hotkey-settings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaContext.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
+	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
+	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Tests/HotkeySettingsStoreTests.swift \
 	       -o .build/hotkey-settings-store-tests
@@ -228,6 +233,9 @@ test-hotkey-action-runner:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyAction.swift \
 	       Sources/KeyMic/Hotkey/HotkeyActionRunner.swift \
+	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
 	       Tests/HotkeyActionRunnerTests.swift \
 	       -o .build/hotkey-action-runner-tests
 	.build/hotkey-action-runner-tests
@@ -284,7 +292,14 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaContext.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
+	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
+	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
+	       Sources/KeyMic/Input/InputState.swift \
+	       Sources/KeyMic/Input/InputResetReason.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorClipboardPanelTests.swift \
 	       -o .build/keymonitor-clipboard-panel-tests
@@ -372,6 +387,10 @@ test-overlay-state:
 test-persona:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
+	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
+	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaTests.swift \
 	       -o .build/persona-tests
@@ -380,7 +399,11 @@ test-persona:
 test-persona-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaContext.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
+	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
+	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaStoreTests.swift \
 	       -o .build/persona-store-tests
@@ -401,6 +424,10 @@ test-persona-context:
 test-persona-injection-strategy:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
+	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
+	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
+	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaInjectionStrategyTests.swift \
 	       -o .build/persona-injection-tests
