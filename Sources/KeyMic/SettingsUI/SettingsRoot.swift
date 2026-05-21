@@ -1207,6 +1207,8 @@ enum HotkeyActionFormatter {
         case .shell(let cmd):
             let trimmed = cmd.count > 24 ? String(cmd.prefix(24)) + "…" : cmd
             return "run \"\(trimmed)\""
+        case .runSkill(let name):
+            return "skill \"\(name)\""
         }
     }
 }
@@ -1347,7 +1349,7 @@ private struct BindingEditorSheet: View {
 
 private struct ActionDraft: Identifiable, Equatable {
     enum Kind: String, CaseIterable, Identifiable {
-        case typeText, keyPress, wait, shell
+        case typeText, keyPress, wait, shell, runSkill
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -1355,6 +1357,7 @@ private struct ActionDraft: Identifiable, Equatable {
             case .keyPress: String(localized: "Key")
             case .wait: String(localized: "Wait")
             case .shell: String(localized: "Shell")
+            case .runSkill: String(localized: "Skill")
             }
         }
     }
@@ -1379,6 +1382,9 @@ private struct ActionDraft: Identifiable, Equatable {
         case .shell(let cmd):
             kind = .shell
             text = cmd
+        case .runSkill(let name):
+            kind = .runSkill
+            text = name
         }
     }
 
@@ -1390,6 +1396,7 @@ private struct ActionDraft: Identifiable, Equatable {
             return !cfg.isPureModifier
         case .wait: return Int(text) != nil
         case .shell: return !text.isEmpty
+        case .runSkill: return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -1403,6 +1410,7 @@ private struct ActionDraft: Identifiable, Equatable {
             return .keyPress(keyCode: 0, modifiers: 0)
         case .wait: return .wait(ms: max(0, Int(text) ?? 100))
         case .shell: return .shell(text)
+        case .runSkill: return .runSkill(name: text.trimmingCharacters(in: .whitespacesAndNewlines))
         }
     }
 }
@@ -1441,6 +1449,7 @@ private struct ActionDraftRow: View {
         case .keyPress: String(localized: "e.g. cmd+shift+a")
         case .wait: String(localized: "Milliseconds")
         case .shell: String(localized: "Shell command")
+        case .runSkill: String(localized: "Skill name")
         }
     }
 }

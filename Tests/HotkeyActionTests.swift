@@ -27,6 +27,15 @@ struct HotkeyActionTestRunner {
         let back4 = try! JSONDecoder().decode(HotkeyAction.self, from: data4)
         expect(back4 == a4, "shell round-trip")
 
+        // runSkill round-trip
+        let a5: HotkeyAction = .runSkill(name: "my-skill")
+        let data5 = try! JSONEncoder().encode(a5)
+        let back5 = try! JSONDecoder().decode(HotkeyAction.self, from: data5)
+        expect(back5 == a5, "runSkill round-trip")
+        let json5 = String(data: data5, encoding: .utf8) ?? ""
+        expect(json5.contains("\"type\":\"runSkill\""), "runSkill JSON type: \(json5)")
+        expect(json5.contains("\"name\":\"my-skill\""), "runSkill JSON name: \(json5)")
+
         // unknown type rejection
         let badJSON = #"{"type":"nope","x":1}"#.data(using: .utf8)!
         do {

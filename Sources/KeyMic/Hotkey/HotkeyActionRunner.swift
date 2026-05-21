@@ -11,6 +11,7 @@ final class HotkeyActionRunner {
     private let typeText: TypeTextFn
     private let keyPress: KeyPressFn
     private let shell: ShellFn
+    private let skillBridge: SkillHotkeyBridge?
     private let queue = DispatchQueue(label: "io.keymic.app.hotkey-action-runner", qos: .userInitiated)
     private static let logger = Logger(subsystem: "io.keymic.app", category: "HotkeyActionRunner")
 
@@ -20,11 +21,13 @@ final class HotkeyActionRunner {
     init(
         typeText: @escaping TypeTextFn,
         keyPress: @escaping KeyPressFn = HotkeyActionRunner.defaultKeyPress,
-        shell:    @escaping ShellFn    = { ShellRunner.shared.run($0) }
+        shell:    @escaping ShellFn    = { ShellRunner.shared.run($0) },
+        skillBridge: SkillHotkeyBridge? = nil
     ) {
         self.typeText = typeText
         self.keyPress = keyPress
         self.shell = shell
+        self.skillBridge = skillBridge
     }
 
     func run(_ actions: [HotkeyAction]) {
@@ -48,6 +51,12 @@ final class HotkeyActionRunner {
             if code != 0 {
                 Self.logger.warning("shell exit \(code): \(cmd, privacy: .public)")
             }
+        case .runSkill(let name):
+            guard let bridge = skillBridge else {
+                Self.logger.warning("runSkill('\(name, privacy: .public)') fired but no SkillHotkeyBridge wired; ignoring")
+                return
+            }
+            bridge.fire(name: name)
         }
     }
 
