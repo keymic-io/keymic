@@ -170,7 +170,7 @@ public struct GlobTool: Tool {
         return try NSRegularExpression(pattern: regexPattern, options: options)
     }
 
-    private static func globToRegex(_ pattern: String) -> String {
+    static func globToRegex(_ pattern: String) -> String {
         let chars = Array(pattern)
         var i = 0
         var out = ""
