@@ -140,8 +140,10 @@ final class OutputRouter {
             }
             let opened = openURLHandler?(url) ?? workspace.open(url)
             return opened ? .injected : .failed(message: "workspace failed to open URL")
-        case .runShell, .writeToITermPane:
-            return .failed(message: "strategy not yet implemented")
+        case .runShell:
+            return .failed(message: "shell strategy not yet available")
+        case .writeToITermPane:
+            return .failed(message: "iterm strategy not yet available")
         }
     }
 

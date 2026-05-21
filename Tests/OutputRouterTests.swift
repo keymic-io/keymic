@@ -19,7 +19,40 @@ struct OutputRouterTestRunner {
         await testReplaceSelectionNoSelectionFallback()
         await testOpenURLHappyPath()
         await testOpenURLRejectsJavascript()
+        await testRunShellStubReturnsStrategyNotImplemented()
+        await testWriteToITermStubReturnsStrategyNotImplemented()
         print("✅ OutputRouterTests passed")
+    }
+
+    @MainActor
+    static func testRunShellStubReturnsStrategyNotImplemented() async {
+        let router = OutputRouter(
+            inject: { _ in expect(false, "must not paste") },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in })
+        let output = PersonaOutput(text: "ls",
+                                   strategy: .runShell(commandTemplate: "ls"),
+                                   originatingApp: nil, context: nil)
+        let result = await router.route(output)
+        if case .failed(let msg) = result {
+            expect(msg.contains("not yet available"), "got: \(msg)")
+        } else { expect(false, "expected .failed, got: \(result)") }
+    }
+
+    @MainActor
+    static func testWriteToITermStubReturnsStrategyNotImplemented() async {
+        let router = OutputRouter(
+            inject: { _ in },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in })
+        let output = PersonaOutput(text: "x",
+                                   strategy: .writeToITermPane(paneIndex: 0),
+                                   originatingApp: nil, context: nil)
+        let result = await router.route(output)
+        if case .failed = result { /* ok */ }
+        else { expect(false, "expected .failed, got: \(result)") }
     }
 
     @MainActor
