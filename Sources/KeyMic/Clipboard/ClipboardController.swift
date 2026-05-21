@@ -226,9 +226,7 @@ final class ClipboardController {
     }
 
     private func activateTargetAndSendCommandV() {
-        if let target = pasteTargetApplication, !target.isTerminated {
-            target.activate(options: [])
-        }
+        OutputRouter.shared.activateOriginatingAppSync(pasteTargetApplication)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Self.synthesizeCommandV()
         }

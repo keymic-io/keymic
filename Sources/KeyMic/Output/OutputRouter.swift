@@ -154,10 +154,17 @@ final class OutputRouter {
     }
 
     /// Restores focus to the originating app, yields one runloop tick to let it settle.
+    /// Used by async route() paths.
     func activateOriginatingApp(_ app: NSRunningApplication?) async {
+        activateOriginatingAppSync(app)
+        await Task.yield()
+    }
+
+    /// Sync version for callers (like ClipboardController) that already provide their own
+    /// post-activate delay before synthesizing Cmd+V. No yield — caller is responsible for timing.
+    func activateOriginatingAppSync(_ app: NSRunningApplication?) {
         guard let app, !app.isTerminated else { return }
         app.activate(options: [])
-        await Task.yield()
     }
 }
 
