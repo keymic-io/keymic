@@ -23,8 +23,47 @@ struct Persona: Codable, Identifiable, Equatable {
     var builtIn: Bool
     var createdAt: Date
     var updatedAt: Date
+    var injectionStrategy: InjectionStrategy
 
     static let temperatureRange: ClosedRange<Double> = 0.0 ... 2.0
+
+    init(id: String, name: String, icon: String, stylePrompt: String,
+         temperature: Double, hotkey: String?, contextMode: ContextMode,
+         builtIn: Bool, createdAt: Date, updatedAt: Date,
+         injectionStrategy: InjectionStrategy = .replaceFocusedText) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.stylePrompt = stylePrompt
+        self.temperature = temperature
+        self.hotkey = hotkey
+        self.contextMode = contextMode
+        self.builtIn = builtIn
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.injectionStrategy = injectionStrategy
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, icon, stylePrompt, temperature, hotkey
+        case contextMode, builtIn, createdAt, updatedAt, injectionStrategy
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.icon = try c.decode(String.self, forKey: .icon)
+        self.stylePrompt = try c.decode(String.self, forKey: .stylePrompt)
+        self.temperature = try c.decode(Double.self, forKey: .temperature)
+        self.hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey)
+        self.contextMode = try c.decode(ContextMode.self, forKey: .contextMode)
+        self.builtIn = try c.decode(Bool.self, forKey: .builtIn)
+        self.createdAt = try c.decode(Date.self, forKey: .createdAt)
+        self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        self.injectionStrategy = try c.decodeIfPresent(InjectionStrategy.self,
+                                                       forKey: .injectionStrategy) ?? .replaceFocusedText
+    }
 
     /// Built-in personas seeded on first launch. Order is stable.
     /// Built-ins: name + builtIn flag are immutable in UI; stylePrompt + icon + temperature + hotkey + contextMode editable.
