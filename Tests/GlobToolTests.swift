@@ -5,13 +5,20 @@ private final class GlobToolTests {
         try testFlatPatternFindsMatches()
         try testRecursivePatternFindsNestedMatches()
         try testQuestionMarkSingleChar()
+        try testCharacterClassMatchesOnlyMembers()
         try testFileTypeFilterDirectory()
         try testFileTypeFilterAny()
         try testCaseInsensitiveMatching()
+        try testHiddenEntriesAreSkipped()
         try testEmptyResultIsSuccess()
         try testMissingBasePathThrows()
         try testSandboxEscapeRejected()
+        try testBasePathFileThrowsNotADirectory()
         try testSubpathArgumentRespected()
+        try testSymlinkEscapeIsNotEmitted()
+        try testMatchesAreSorted()
+        try testTinyTruncationHonorsMaxOutputBytesAndUTF8()
+        try testCancellationDuringTraversalThrows()
         try testSchemaShape()
         print("GlobToolTests passed")
     }
@@ -40,7 +47,9 @@ private final class GlobToolTests {
         path: String? = nil,
         fileType: String? = nil,
         caseSensitive: Bool? = nil,
-        workingDirectory: String
+        workingDirectory: String,
+        maxOutputBytes: Int = 1_048_576,
+        isCancelled: @escaping @Sendable () -> Bool = { false }
     ) throws -> String {
         var payload: [String: Any] = ["pattern": pattern]
         if let path { payload["path"] = path }
@@ -48,8 +57,19 @@ private final class GlobToolTests {
         if let caseSensitive { payload["case_sensitive"] = caseSensitive }
         let data = try JSONSerialization.data(withJSONObject: payload)
         let tool = GlobTool()
-        let context = ToolContext(workingDirectory: workingDirectory)
+        let context = ToolContext(
+            workingDirectory: workingDirectory,
+            maxOutputBytes: maxOutputBytes,
+            isCancelled: isCancelled
+        )
         return try runAsyncThrowing { try await tool.call(argumentsJSON: data, context: context) }
+    }
+
+    static func matchLines(_ output: String) -> [String] {
+        let lines = output.components(separatedBy: "\n")
+        guard lines.count > 4 else { return [] }
+        let matches = Array(lines.dropFirst(4))
+        return matches == ["No matches found"] ? [] : matches
     }
 
     static func testFlatPatternFindsMatches() throws {
@@ -100,6 +120,20 @@ private final class GlobToolTests {
         }
     }
 
+    static func testCharacterClassMatchesOnlyMembers() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.swift")
+        try writeFile(dir + "/b.swift")
+        try writeFile(dir + "/c.swift")
+        try writeFile(dir + "/d.swift")
+
+        let out = try toolOutput(pattern: "[abc].swift", workingDirectory: dir)
+        let matches = matchLines(out)
+        guard matches == ["a.swift", "b.swift", "c.swift"] else {
+            fatalError("expected only character-class members, got: \(out)")
+        }
+    }
+
     static func testFileTypeFilterDirectory() throws {
         let dir = tmpDir()
         try makeDir(dir + "/src")
@@ -133,6 +167,22 @@ private final class GlobToolTests {
         let out = try toolOutput(pattern: "hello.swift", caseSensitive: false, workingDirectory: dir)
         guard out.contains("Hello.SWIFT") else {
             fatalError("expected case-insensitive match, got: \(out)")
+        }
+    }
+
+    static func testHiddenEntriesAreSkipped() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/visible.swift")
+        try writeFile(dir + "/.hidden.swift")
+        try makeDir(dir + "/.hiddenDir")
+        try writeFile(dir + "/.hiddenDir/inside.swift")
+
+        let out = try toolOutput(pattern: "**/*.swift", workingDirectory: dir)
+        guard out.contains("visible.swift") else {
+            fatalError("expected visible match, got: \(out)")
+        }
+        guard !out.contains(".hidden.swift") && !out.contains(".hiddenDir") else {
+            fatalError("hidden entries should be skipped, got: \(out)")
         }
     }
 
@@ -176,6 +226,22 @@ private final class GlobToolTests {
         }
     }
 
+    static func testBasePathFileThrowsNotADirectory() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/base.txt")
+        let tool = GlobTool()
+        let input = #"{"pattern":"*","path":"base.txt"}"#.data(using: .utf8)!
+        let context = ToolContext(workingDirectory: dir)
+        do {
+            _ = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: context) }
+            fatalError("expected notADirectory")
+        } catch FileSystemError.notADirectory {
+            // expected
+        } catch {
+            fatalError("expected notADirectory, got: \(error)")
+        }
+    }
+
     static func testSubpathArgumentRespected() throws {
         let dir = tmpDir()
         try makeDir(dir + "/inside/nested")
@@ -188,6 +254,67 @@ private final class GlobToolTests {
         }
         guard !out.contains("outside.swift") else {
             fatalError("path scoping leaked outside match: \(out)")
+        }
+    }
+
+    static func testSymlinkEscapeIsNotEmitted() throws {
+        let dir = tmpDir()
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymic-glob-outside-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        let secret = outside.appendingPathComponent("secret.txt")
+        try "secret".write(to: secret, atomically: true, encoding: .utf8)
+
+        do {
+            try FileManager.default.createSymbolicLink(
+                atPath: dir + "/linked-secret.txt",
+                withDestinationPath: secret.path
+            )
+        } catch {
+            print("Skipping symlink assertion; createSymbolicLink failed: \(error)")
+            return
+        }
+
+        let out = try toolOutput(pattern: "*", workingDirectory: dir)
+        guard !out.contains("linked-secret.txt") && out.contains("Found 0 match") else {
+            fatalError("symlink escape should not be emitted, got: \(out)")
+        }
+    }
+
+    static func testMatchesAreSorted() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/c.txt")
+        try writeFile(dir + "/a.txt")
+        try writeFile(dir + "/b.txt")
+
+        let out = try toolOutput(pattern: "*.txt", workingDirectory: dir)
+        guard matchLines(out) == ["a.txt", "b.txt", "c.txt"] else {
+            fatalError("expected sorted matches, got: \(out)")
+        }
+    }
+
+    static func testTinyTruncationHonorsMaxOutputBytesAndUTF8() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.swift", String(repeating: "界", count: 20))
+        let out = try toolOutput(pattern: "*.swift", workingDirectory: dir, maxOutputBytes: 5)
+        guard let data = out.data(using: .utf8), data.count <= 5 else {
+            fatalError("truncated output exceeds tiny byte limit: \(out)")
+        }
+        guard String(data: data, encoding: .utf8) != nil else {
+            fatalError("truncated output is not valid UTF-8")
+        }
+    }
+
+    static func testCancellationDuringTraversalThrows() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.swift")
+        do {
+            _ = try toolOutput(pattern: "**/*.swift", workingDirectory: dir, isCancelled: { true })
+            fatalError("expected CancellationError")
+        } catch is CancellationError {
+            // expected
+        } catch {
+            fatalError("expected CancellationError, got: \(error)")
         }
     }
 

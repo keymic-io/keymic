@@ -488,7 +488,13 @@ test-multi-edit-tool:
 
 test-glob-tool:
 	mkdir -p .build
-	swiftc Tests/GlobToolTests.swift Sources/KeyMic/Tools/Search/GlobTool.swift Sources/KeyMic/Tools/File/FileSystemActor.swift Sources/KeyMic/Tools/File/FileSystemError.swift Sources/KeyMic/Tools/Protocol/Tool.swift Sources/KeyMic/Tools/Protocol/ToolContext.swift -o .build/glob-tool-tests
+	swiftc Tests/GlobToolTests.swift \
+	       Sources/KeyMic/Tools/Search/GlobTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/glob-tool-tests
 	.build/glob-tool-tests
 
 test-shell-snapshot:

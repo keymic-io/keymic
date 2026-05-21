@@ -86,12 +86,17 @@ public struct GlobTool: Tool {
                 includingPropertiesForKeys: [.isDirectoryKey],
                 options: [.skipsHiddenFiles]
             )
+            let resolvedBasePath = URL(fileURLWithPath: basePath).resolvingSymlinksInPath().standardized.path
+            let baseWithSlash = resolvedBasePath.hasSuffix("/") ? resolvedBasePath : resolvedBasePath + "/"
 
             while let next = enumerator?.nextObject() as? URL {
                 if context.isCancelled() { throw CancellationError() }
-                let relativePath = next.path.replacingOccurrences(of: basePath + "/", with: "")
+                let absolutePath = next.path
+                let resolvedAbsolutePath = next.resolvingSymlinksInPath().standardized.path
+                guard resolvedAbsolutePath.hasPrefix(baseWithSlash) else { continue }
+                let relativePath = String(resolvedAbsolutePath.dropFirst(baseWithSlash.count))
                 if relativePath.isEmpty || containsHiddenComponent(relativePath) { continue }
-                guard await fs.isPathSafe(next.path) else { continue }
+                guard await fs.isPathSafe(absolutePath) else { continue }
                 if try shouldInclude(url: next, relativePath: relativePath, regex: regex, matchType: matchType) {
                     matches.append(relativePath)
                 }
@@ -241,12 +246,25 @@ public struct GlobTool: Tool {
             return output
         }
 
-        let keep = max(0, (maxBytes - 24) / 2)
-        let prefixBytes = utf8SafePrefix(data, length: keep)
-        let suffixBytes = utf8SafeSuffix(data, length: keep)
+        let marker = "\n[output truncated]\n"
+        let markerData = marker.data(using: .utf8)!
+        guard maxBytes > markerData.count else {
+            return String(data: utf8SafePrefix(markerData, length: maxBytes), encoding: .utf8) ?? ""
+        }
+
+        let remaining = maxBytes - markerData.count
+        let prefixLength = remaining / 2
+        let suffixLength = remaining - prefixLength
+        let prefixBytes = utf8SafePrefix(data, length: prefixLength)
+        let suffixBytes = utf8SafeSuffix(data, length: suffixLength)
         let prefix = String(data: prefixBytes, encoding: .utf8) ?? ""
         let suffix = String(data: suffixBytes, encoding: .utf8) ?? ""
-        return prefix + "\n[output truncated]\n" + suffix
+        let truncated = prefix + marker + suffix
+
+        guard let truncatedData = truncated.data(using: .utf8), truncatedData.count > maxBytes else {
+            return truncated
+        }
+        return String(data: utf8SafePrefix(truncatedData, length: maxBytes), encoding: .utf8) ?? ""
     }
 
     private static func utf8SafePrefix(_ data: Data, length: Int) -> Data {
