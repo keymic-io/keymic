@@ -5,8 +5,9 @@ import Foundation
 /// written after every edit validates and applies in memory.
 ///
 /// Edits are applied in order; an earlier edit may change the text a later
-/// edit matches against. If any edit's `old` is empty or identical to its
-/// `new`, the whole operation aborts before writing.
+/// edit matches against. If any edit's `old_string` is empty, identical to
+/// its `new_string`, or not found in the working content, the whole
+/// operation aborts before writing.
 public struct MultiEditTool: Tool {
     public let name = "MultiEdit"
 
@@ -17,8 +18,9 @@ public struct MultiEditTool: Tool {
     - You MUST use the Read tool first before using this tool
     - All edits succeed or none are applied (transactional). If any edit fails validation, the file is left unchanged
     - Edits are applied in order; earlier edits may change the text that later edits match against
-    - Provide edits as a JSON array of objects with "old" and "new" string keys
+    - Provide edits as a JSON array of objects with "old_string" and "new_string" string keys
     - Each edit performs an exact string replacement (same rules as Edit tool, but each edit may match multiple occurrences)
+    - If any edit's old_string is not found, the whole batch aborts and the file is unchanged
     - Use this tool instead of multiple sequential Edit calls when you need to make several changes to the same file
     - Maximum file size: 1MB, UTF-8 text files only
     """
@@ -32,14 +34,14 @@ public struct MultiEditTool: Tool {
             ],
             "edits": [
                 "type": "array",
-                "description": "Array of {old, new} edit objects, applied in order",
+                "description": "Array of {old_string, new_string} edit objects, applied in order",
                 "items": [
                     "type": "object",
                     "properties": [
-                        "old": ["type": "string", "description": "Exact text to find"],
-                        "new": ["type": "string", "description": "Replacement text"]
+                        "old_string": ["type": "string", "description": "Exact text to find"],
+                        "new_string": ["type": "string", "description": "Replacement text"]
                     ],
-                    "required": ["old", "new"]
+                    "required": ["old_string", "new_string"]
                 ]
             ]
         ],
@@ -49,8 +51,13 @@ public struct MultiEditTool: Tool {
     public init() {}
 
     private struct Edit: Decodable {
-        let old: String
-        let new: String
+        let oldString: String
+        let newString: String
+
+        enum CodingKeys: String, CodingKey {
+            case oldString = "old_string"
+            case newString = "new_string"
+        }
     }
 
     private struct Arguments: Decodable {
@@ -68,11 +75,11 @@ public struct MultiEditTool: Tool {
 
         // Pre-validate every edit before we touch the file at all.
         for (index, edit) in args.edits.enumerated() {
-            guard !edit.old.isEmpty else {
-                throw FileSystemError.operationFailed(reason: "Edit #\(index + 1): 'old' cannot be empty")
+            guard !edit.oldString.isEmpty else {
+                throw FileSystemError.operationFailed(reason: "Edit #\(index + 1): 'old_string' cannot be empty")
             }
-            guard edit.old != edit.new else {
-                throw FileSystemError.operationFailed(reason: "Edit #\(index + 1): 'old' and 'new' are identical")
+            guard edit.oldString != edit.newString else {
+                throw FileSystemError.operationFailed(reason: "Edit #\(index + 1): 'old_string' and 'new_string' are identical")
             }
         }
 
@@ -92,31 +99,35 @@ public struct MultiEditTool: Tool {
         let originalContent = try await fs.readFile(atPath: normalizedPath)
 
         // Apply edits in memory. Track per-edit replacement counts so we can
-        // surface a summary to the LLM.
+        // surface a summary to the LLM. A zero-match edit aborts the whole
+        // batch (Claude-Code semantic: if the caller specified old_string,
+        // they meant to find it).
         var workingContent = originalContent
         var summary: [String] = []
         var totalReplacements = 0
         for (index, edit) in args.edits.enumerated() {
-            let occurrences = workingContent.components(separatedBy: edit.old).count - 1
-            if occurrences > 0 {
-                workingContent = workingContent.replacingOccurrences(of: edit.old, with: edit.new)
-                summary.append("Edit #\(index + 1): replaced \(occurrences) occurrence\(occurrences == 1 ? "" : "s")")
-                totalReplacements += occurrences
-            } else {
-                summary.append("Edit #\(index + 1): no occurrences of 'old' found (skipped)")
+            let occurrences = workingContent.components(separatedBy: edit.oldString).count - 1
+            guard occurrences > 0 else {
+                throw FileSystemError.operationFailed(
+                    reason: "Edit #\(index + 1): 'old_string' not found in file (no edits have been applied — all-or-nothing)"
+                )
             }
+            workingContent = workingContent.replacingOccurrences(
+                of: edit.oldString, with: edit.newString
+            )
+            summary.append("Edit #\(index + 1): replaced \(occurrences) occurrence\(occurrences == 1 ? "" : "s")")
+            totalReplacements += occurrences
         }
 
-        // Only commit to disk if at least one edit changed something.
-        if totalReplacements > 0 {
-            try await fs.writeFile(content: workingContent, toPath: normalizedPath)
-        }
+        // Disk write — at this point every edit produced at least one match,
+        // so totalReplacements > 0 by construction. Keep the write
+        // unconditional (no special-case empty path).
+        try await fs.writeFile(content: workingContent, toPath: normalizedPath)
 
-        let status = totalReplacements > 0 ? "Success" : "No changes"
         return """
-        MultiEdit Operation [\(status)]
+        MultiEdit Operation [Success]
         Path: \(normalizedPath)
-        \(args.edits.count) edit\(args.edits.count == 1 ? "" : "s") attempted, \(totalReplacements) total replacement\(totalReplacements == 1 ? "" : "s")
+        \(args.edits.count) edit\(args.edits.count == 1 ? "" : "s") applied, \(totalReplacements) total replacement\(totalReplacements == 1 ? "" : "s")
 
         \(summary.joined(separator: "\n"))
         """

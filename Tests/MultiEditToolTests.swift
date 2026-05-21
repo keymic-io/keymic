@@ -6,6 +6,8 @@ private final class MultiEditToolTests {
         try testAllOrNothingOnError()
         try testInvalidEditsJSON()
         try testSandboxEscapeRejected()
+        try testEditsApplyInOrder()
+        try testZeroMatchAbortsAllOrNothing()
         print("MultiEditToolTests passed")
     }
 
@@ -27,7 +29,7 @@ private final class MultiEditToolTests {
         _ = writeFixture(dir, content: "alpha beta gamma")
         let tool = MultiEditTool()
         let input = #"""
-        {"file_path":"x.txt","edits":[{"old":"alpha","new":"AAA"},{"old":"gamma","new":"GGG"}]}
+        {"file_path":"x.txt","edits":[{"old_string":"alpha","new_string":"AAA"},{"old_string":"gamma","new_string":"GGG"}]}
         """#.data(using: .utf8)!
         let ctx = ToolContext(workingDirectory: dir)
         let out = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
@@ -44,7 +46,7 @@ private final class MultiEditToolTests {
         let tool = MultiEditTool()
         // Second edit has empty old → invalid, must abort + leave file unchanged.
         let input = #"""
-        {"file_path":"x.txt","edits":[{"old":"alpha","new":"AAA"},{"old":"","new":"GGG"}]}
+        {"file_path":"x.txt","edits":[{"old_string":"alpha","new_string":"AAA"},{"old_string":"","new_string":"GGG"}]}
         """#.data(using: .utf8)!
         let ctx = ToolContext(workingDirectory: dir)
         do {
@@ -80,7 +82,7 @@ private final class MultiEditToolTests {
         let dir = tmpDir()
         let tool = MultiEditTool()
         let input = #"""
-        {"file_path":"../escape.txt","edits":[{"old":"a","new":"b"}]}
+        {"file_path":"../escape.txt","edits":[{"old_string":"a","new_string":"b"}]}
         """#.data(using: .utf8)!
         let ctx = ToolContext(workingDirectory: dir)
         do {
@@ -90,6 +92,48 @@ private final class MultiEditToolTests {
             // expected
         } catch {
             fatalError("expected pathNotSafe, got: \(error)")
+        }
+    }
+
+    static func testEditsApplyInOrder() throws {
+        let dir = tmpDir()
+        _ = writeFixture(dir, content: "foo bar")
+        let tool = MultiEditTool()
+        // Edit #1 produces "baz" — Edit #2 must see and match THAT post-edit text.
+        // If edits applied against original content, edit #2 would 0-match and abort.
+        let input = #"""
+        {"file_path":"x.txt","edits":[{"old_string":"foo","new_string":"baz"},{"old_string":"baz","new_string":"qux"}]}
+        """#.data(using: .utf8)!
+        let ctx = ToolContext(workingDirectory: dir)
+        let out = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
+        guard out.contains("Success") else { fatalError("expected sequential apply, got: \(out)") }
+        let content = try String(contentsOfFile: dir + "/x.txt", encoding: .utf8)
+        guard content == "qux bar" else {
+            fatalError("expected 'qux bar' (edit #2 matched edit #1's output), got: '\(content)'")
+        }
+    }
+
+    static func testZeroMatchAbortsAllOrNothing() throws {
+        let dir = tmpDir()
+        _ = writeFixture(dir, content: "alpha beta")
+        let tool = MultiEditTool()
+        // Edit #1 valid; Edit #2 specifies a string that doesn't exist (typo or stale spec).
+        // Must abort the whole batch — file stays "alpha beta", no partial write.
+        let input = #"""
+        {"file_path":"x.txt","edits":[{"old_string":"alpha","new_string":"AAA"},{"old_string":"absent","new_string":"X"}]}
+        """#.data(using: .utf8)!
+        let ctx = ToolContext(workingDirectory: dir)
+        do {
+            _ = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
+            fatalError("expected operationFailed on zero-match edit #2")
+        } catch FileSystemError.operationFailed {
+            // expected
+        } catch {
+            fatalError("expected operationFailed, got: \(error)")
+        }
+        let content = try String(contentsOfFile: dir + "/x.txt", encoding: .utf8)
+        guard content == "alpha beta" else {
+            fatalError("file must be unchanged after zero-match abort, got: '\(content)'")
         }
     }
 
