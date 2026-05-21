@@ -37,6 +37,7 @@ struct MCPToolAdapterTests {
         try await testFactorySchemaExtraction()
         try await testHappyPathCallsRemoteBareNameAndReturnsText()
         try await testErrorResultThrowsToolCallFailed()
+        try await testErrorResultTruncatesReason()
         try await testJSONArgumentsConvertToMCPValues()
         try await testEmptyArgumentsBecomeNil()
         try await testNullArgumentsBecomeNil()
@@ -126,6 +127,23 @@ struct MCPToolAdapterTests {
         }
     }
 
+    static func testErrorResultTruncatesReason() async throws {
+        let client = FakeMCPClient()
+        client.nextIsError = true
+        client.nextContent = [.text(text: String(repeating: "错误payload", count: 30), annotations: nil, _meta: nil)]
+        let adapter = makeAdapter(client: client)
+        let context = ToolContext(maxOutputBytes: 70)
+
+        do {
+            _ = try await adapter.call(argumentsJSON: Data("{}".utf8), context: context)
+            fail("Expected toolCallFailed")
+        } catch MCPClientError.toolCallFailed(_, _, let reason) {
+            assertTrue(reason.contains("[output truncated]"), "Expected truncation marker in error reason")
+            assertTrue(reason.data(using: .utf8) != nil, "Expected valid UTF-8 error reason")
+            assertTrue(reason.utf8.count <= 70, "Expected error reason to fit maxOutputBytes")
+        }
+    }
+
     static func testJSONArgumentsConvertToMCPValues() async throws {
         let client = FakeMCPClient()
         client.nextContent = [.text(text: "ok", annotations: nil, _meta: nil)]
@@ -135,6 +153,8 @@ struct MCPToolAdapterTests {
           "string": "value",
           "int": 42,
           "double": 3.5,
+          "doubleWhole": 1.0,
+          "doubleExponent": 1e3,
           "bool": true,
           "null": null,
           "object": { "nested": false },
@@ -148,6 +168,8 @@ struct MCPToolAdapterTests {
         assertEqual(args["string"], .string("value"))
         assertEqual(args["int"], .int(42))
         assertEqual(args["double"], .double(3.5))
+        assertEqual(args["doubleWhole"], .double(1.0))
+        assertEqual(args["doubleExponent"], .double(1000.0))
         assertEqual(args["bool"], .bool(true))
         assertEqual(args["null"], .null)
         assertEqual(args["object"], .object(["nested": .bool(false)]))
@@ -207,7 +229,14 @@ struct MCPToolAdapterTests {
             .image(data: "abc", mimeType: "image/png", annotations: nil, _meta: nil),
             .audio(data: "def", mimeType: "audio/wav", annotations: nil, _meta: nil),
             .resource(resource: Resource.Content.text("body", uri: "file:///tmp/note.txt", mimeType: "text/plain")),
-            .resourceLink(uri: "https://example.com", name: "Example", title: "Example Title", mimeType: "text/html")
+            .resource(resource: Resource.Content.binary(Data([1, 2, 3, 4]), uri: "file:///tmp/data.bin", mimeType: "application/octet-stream")),
+            .resourceLink(
+                uri: "https://example.com",
+                name: "Example",
+                title: "Example Title",
+                description: "Example Description",
+                mimeType: "text/html"
+            )
         ]
         let adapter = makeAdapter(client: client)
 
@@ -215,8 +244,10 @@ struct MCPToolAdapterTests {
 
         assertTrue(output.contains("[image: image/png]"), "Expected image placeholder")
         assertTrue(output.contains("[audio: audio/wav]"), "Expected audio placeholder")
-        assertTrue(output.contains("[resource: file:///tmp/note.txt text/plain]"), "Expected resource placeholder")
+        assertTrue(output.contains("[resource: file:///tmp/note.txt text/plain]\nbody"), "Expected text resource body")
+        assertTrue(output.contains("[resource: file:///tmp/data.bin application/octet-stream] [blob:"), "Expected blob resource placeholder")
         assertTrue(output.contains("[resourceLink: Example https://example.com"), "Expected resourceLink placeholder")
+        assertTrue(output.contains("description=Example Description"), "Expected resourceLink description")
     }
 
     static func testCancellationBeforeRemoteCall() async throws {

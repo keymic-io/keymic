@@ -53,16 +53,17 @@ public struct MCPToolAdapter: Tool {
         if context.isCancelled() { throw CancellationError() }
 
         let flattened = flatten(result.content)
+        let output = flattened.isEmpty ? "(no output)" : flattened
+        let truncatedOutput = truncate(output, maxBytes: context.maxOutputBytes)
         if result.isError {
             throw MCPClientError.toolCallFailed(
                 server: serverName,
                 tool: remoteName,
-                reason: flattened.isEmpty ? "(no output)" : flattened
+                reason: truncatedOutput
             )
         }
 
-        let output = flattened.isEmpty ? "(no output)" : flattened
-        return truncate(output, maxBytes: context.maxOutputBytes)
+        return truncatedOutput
     }
 
     private func decodeArguments(_ argumentsJSON: Data) throws -> [String: Value]? {
@@ -103,23 +104,22 @@ public struct MCPToolAdapter: Tool {
             return .null
         }
 
-        if let bool = json as? Bool {
-            return .bool(bool)
-        }
-
         if let number = json as? NSNumber {
             if CFGetTypeID(number) == CFBooleanGetTypeID() {
                 return .bool(number.boolValue)
             }
 
-            let doubleValue = number.doubleValue
-            if doubleValue.isFinite,
-               floor(doubleValue) == doubleValue,
-               doubleValue >= Double(Int.min),
-               doubleValue <= Double(Int.max) {
+            let objCType = String(cString: number.objCType)
+            switch objCType {
+            case "f", "d":
+                return .double(number.doubleValue)
+            default:
                 return .int(number.intValue)
             }
-            return .double(doubleValue)
+        }
+
+        if let bool = json as? Bool {
+            return .bool(bool)
         }
 
         if let string = json as? String {
@@ -187,14 +187,25 @@ public struct MCPToolAdapter: Tool {
             case .audio(_, let mimeType, _, _):
                 return "[audio: \(mimeType)]"
             case .resource(let resource, _, _):
+                var parts = ["resource: \(resource.uri)"]
                 if let mimeType = resource.mimeType, !mimeType.isEmpty {
-                    return "[resource: \(resource.uri) \(mimeType)]"
+                    parts.append(mimeType)
                 }
-                return "[resource: \(resource.uri)]"
-            case .resourceLink(let uri, let name, let title, _, let mimeType, _):
+                let header = "[\(parts.joined(separator: " "))]"
+                if let text = resource.text {
+                    return "\(header)\n\(text)"
+                }
+                if let blob = resource.blob {
+                    return "\(header) [blob: \(blob.utf8.count) base64 bytes]"
+                }
+                return header
+            case .resourceLink(let uri, let name, let title, let description, let mimeType, _):
                 var parts = ["resourceLink: \(name)", uri]
                 if let title, !title.isEmpty {
                     parts.append("title=\(title)")
+                }
+                if let description, !description.isEmpty {
+                    parts.append("description=\(description)")
                 }
                 if let mimeType, !mimeType.isEmpty {
                     parts.append("mimeType=\(mimeType)")
