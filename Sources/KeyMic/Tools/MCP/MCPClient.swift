@@ -16,6 +16,7 @@ public actor MCPClient: MCPClientProtocol {
     private var stdioProcess: Process?
     private var stderrDrainTask: Task<Void, Never>?
     private var connected = false
+    private var connectTask: Task<Void, Error>?
 
     public private(set) var instructions: String?
 
@@ -36,24 +37,21 @@ public actor MCPClient: MCPClientProtocol {
     public func connect() async throws {
         guard !connected else { return }
 
+        if let connectTask {
+            return try await connectTask.value
+        }
+
+        let connectTask = Task {
+            try await self.runConnectFlow()
+        }
+        self.connectTask = connectTask
+
         do {
-            let result = try await withTimeout(seconds: config.timeout.connectSeconds) {
-                try await self.connectImpl()
-            }
-            instructions = result.instructions
-            connected = true
-        } catch is TimeoutError {
-            await disconnectResources()
-            throw MCPClientError.connectionTimeout(server: config.name)
-        } catch is CancellationError {
-            await disconnectResources()
-            throw CancellationError()
-        } catch let error as MCPClientError {
-            await disconnectResources()
-            throw error
+            try await connectTask.value
+            self.connectTask = nil
         } catch {
-            await disconnectResources()
-            throw MCPClientError.connectionFailed(server: config.name, reason: error.localizedDescription)
+            self.connectTask = nil
+            throw error
         }
     }
 
@@ -86,6 +84,8 @@ public actor MCPClient: MCPClientProtocol {
         let context: RequestContext<CallTool.Result>
         do {
             context = try await client.callTool(name: name, arguments: arguments, meta: nil)
+        } catch is CancellationError {
+            throw CancellationError()
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
         }
@@ -105,6 +105,28 @@ public actor MCPClient: MCPClientProtocol {
             throw CancellationError()
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
+        }
+    }
+
+    private func runConnectFlow() async throws {
+        do {
+            let result = try await withTimeout(seconds: config.timeout.connectSeconds) {
+                try await self.connectImpl()
+            }
+            instructions = result.instructions
+            connected = true
+        } catch is TimeoutError {
+            await disconnectResources()
+            throw MCPClientError.connectionTimeout(server: config.name)
+        } catch is CancellationError {
+            await disconnectResources()
+            throw CancellationError()
+        } catch let error as MCPClientError {
+            await disconnectResources()
+            throw error
+        } catch {
+            await disconnectResources()
+            throw MCPClientError.connectionFailed(server: config.name, reason: error.localizedDescription)
         }
     }
 
