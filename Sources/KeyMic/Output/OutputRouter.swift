@@ -116,9 +116,18 @@ final class OutputRouter {
             await activateOriginatingApp(output.originatingApp)
             inject(output.text)
             return .injected
-        case .replaceSelection, .clipboard, .openURL, .runShell, .writeToITermPane:
+        case .clipboard:
+            writeClipboard(output.text)
+            return .injected
+        case .replaceSelection, .openURL, .runShell, .writeToITermPane:
             return .failed(message: "strategy not yet implemented")
         }
+    }
+
+    private func writeClipboard(_ text: String) {
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        onMarkIgnored(text)
     }
 
     /// Restores focus to the originating app, yields one runloop tick to let it settle.

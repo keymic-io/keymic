@@ -13,7 +13,28 @@ struct OutputRouterTestRunner {
         testURLTemplateSchemeValidationAcceptsHTTPS()
         testURLTemplateSchemeValidationAcceptsMailto()
         await testReplaceFocusedTextCallsInject()
+        await testClipboardStrategyWritesAndMarksIgnored()
         print("✅ OutputRouterTests passed")
+    }
+
+    @MainActor
+    static func testClipboardStrategyWritesAndMarksIgnored() async {
+        let pb = NSPasteboard(name: NSPasteboard.Name("OutputRouterTest.clipboard"))
+        var injected: [String] = []
+        var ignored: [String] = []
+        let router = OutputRouter(
+            inject: { injected.append($0) },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            pasteboard: pb,
+            onMarkIgnored: { ignored.append($0) })
+        let output = PersonaOutput(text: "routed", strategy: .clipboard,
+                                   originatingApp: nil, context: nil)
+        let result = await router.route(output)
+        expect(result == .injected, "got: \(result)")
+        expect(injected.isEmpty, "clipboard strategy must not paste")
+        expect(pb.string(forType: .string) == "routed", "clipboard not written")
+        expect(ignored == ["routed"], "expected onMarkIgnored to receive 'routed', got: \(ignored)")
     }
 
     @MainActor
