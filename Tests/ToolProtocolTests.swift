@@ -7,6 +7,7 @@ private final class ToolProtocolTests {
         try testRegistryRegisterAndLookup()
         try testRegistryDuplicateNameThrows()
         try testRegistryReplaceExistingSucceeds()
+        try testRegistryConditionalUnregister()
         try testRegistrySortOrder()
         print("ToolProtocolTests passed")
     }
@@ -15,7 +16,7 @@ private final class ToolProtocolTests {
     struct EchoTool: Tool {
         let name = "echo"
         let description = "Echoes back the input text."
-        let parametersJSONSchema: [String: Any] = [
+        nonisolated(unsafe) let parametersJSONSchema: [String: Any] = [
             "type": "object",
             "properties": [
                 "text": ["type": "string", "description": "Text to echo"]
@@ -34,7 +35,7 @@ private final class ToolProtocolTests {
     struct UpperEchoTool: Tool {
         let name = "UpperEcho"
         let description = "Echoes input uppercased."
-        let parametersJSONSchema: [String: Any] = [
+        nonisolated(unsafe) let parametersJSONSchema: [String: Any] = [
             "type": "object",
             "properties": [
                 "text": ["type": "string"]
@@ -106,6 +107,33 @@ private final class ToolProtocolTests {
             let all = await registry.allNames()
             guard all == ["echo"] else {
                 throw TestFailure("expected single 'echo', got: \(all)")
+            }
+        }
+    }
+
+    static func testRegistryConditionalUnregister() throws {
+        let registry = ToolRegistry()
+        try runAsync {
+            try await registry.register(EchoTool())
+
+            let didNotRemove = await registry.unregister(name: "echo") { tool in
+                tool.name == "other"
+            }
+            guard didNotRemove == false else {
+                throw TestFailure("conditional unregister should return false when predicate fails")
+            }
+            guard await registry.tool(named: "echo") != nil else {
+                throw TestFailure("conditional unregister removed tool despite false predicate")
+            }
+
+            let didRemove = await registry.unregister(name: "echo") { tool in
+                tool.name == "echo"
+            }
+            guard didRemove == true else {
+                throw TestFailure("conditional unregister should return true when predicate matches")
+            }
+            guard await registry.tool(named: "echo") == nil else {
+                throw TestFailure("conditional unregister did not remove matching tool")
             }
         }
     }

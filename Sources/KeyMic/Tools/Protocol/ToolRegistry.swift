@@ -41,6 +41,14 @@ public actor ToolRegistry {
         tools.removeValue(forKey: name)
     }
 
+    public func unregister(name: String, where shouldUnregister: @Sendable (any Tool) -> Bool) -> Bool {
+        guard let tool = tools[name], shouldUnregister(tool) else {
+            return false
+        }
+        tools.removeValue(forKey: name)
+        return true
+    }
+
     public func tool(named name: String) -> (any Tool)? {
         tools[name]
     }

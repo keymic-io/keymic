@@ -37,6 +37,7 @@ struct MCPClientManagerTests {
         try await testManagerRegistersAdapterWithoutShadowingBuiltinToolName()
         try await testDisconnectUsesExplicitServerOwnershipForDottedNames()
         try await testOverlappingRemoteToolNamesStayNamespaced()
+        try await testStaleIdentityCleanupDoesNotRemoveReplacementAdapter()
         print("MCPClientManagerTests passed")
     }
 
@@ -79,6 +80,35 @@ struct MCPClientManagerTests {
 
         let names = await registry.allNames()
         assertEqual(names, ["alpha.Search", "beta.Search"])
+    }
+
+    static func testStaleIdentityCleanupDoesNotRemoveReplacementAdapter() async throws {
+        let registry = ToolRegistry()
+        let manager = MCPClientManager()
+        let oldAdapter = makeAdapter(serverName: "server", remoteName: "Tool")
+        let newAdapter = makeAdapter(serverName: "server", remoteName: "Tool")
+
+        try await manager.registerAdapter(oldAdapter, forServer: "server", registry: registry)
+        try await manager.registerAdapter(newAdapter, forServer: "server", registry: registry)
+
+        let removedOld = await manager.unregisterAdapter(
+            name: oldAdapter.name,
+            registrationID: oldAdapter.registrationID,
+            registry: registry
+        )
+        assertEqual(removedOld, false)
+
+        let current = await registry.tool(named: "server.Tool") as? MCPToolAdapter
+        assertEqual(current?.registrationID, newAdapter.registrationID)
+        assertEqual(await registry.allNames(), ["server.Tool"])
+
+        let removedNew = await manager.unregisterAdapter(
+            name: newAdapter.name,
+            registrationID: newAdapter.registrationID,
+            registry: registry
+        )
+        assertEqual(removedNew, true)
+        assertEqual(await registry.allNames(), [])
     }
 
     static func makeAdapter(serverName: String, remoteName: String) -> MCPToolAdapter {

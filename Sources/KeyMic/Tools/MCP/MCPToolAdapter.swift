@@ -6,6 +6,7 @@ public struct MCPToolAdapter: Tool {
     public let remoteName: String
     public let description: String
     public nonisolated(unsafe) let parametersJSONSchema: [String: Any]
+    let registrationID = UUID()
 
     private let client: MCPClientProtocol
 
