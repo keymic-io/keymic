@@ -11,6 +11,15 @@ public struct SkillLoader: Sendable {
     }
 
     public func loadDirectory(_ directory: URL) -> [Skill] {
+        do {
+            return try loadDirectoryStrict(directory)
+        } catch {
+            Self.logger.error("loadDirectory(\(directory.path, privacy: .public)) failed: \(String(describing: error), privacy: .public)")
+            return []
+        }
+    }
+
+    public func loadDirectoryStrict(_ directory: URL) throws -> [Skill] {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory),
               isDirectory.boolValue
@@ -26,8 +35,7 @@ public struct SkillLoader: Sendable {
                 options: [.skipsHiddenFiles]
             )
         } catch {
-            Self.logger.error("contentsOfDirectory(\(directory.path, privacy: .public)) failed: \(String(describing: error), privacy: .public)")
-            return []
+            throw SkillError.skillFileUnreadable(path: directory.path, underlying: error.localizedDescription)
         }
 
         let markdownFiles = contents
@@ -111,7 +119,11 @@ public struct SkillLoader: Sendable {
             throw SkillError.frontmatterMalformed(path: url.path, reason: "no closing --- found")
         }
 
-        guard let name = parsed.fields["name"], !name.isEmpty else {
+        guard let rawName = parsed.fields["name"] else {
+            throw SkillError.requiredFieldMissing(path: url.path, field: "name")
+        }
+        let name = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else {
             throw SkillError.requiredFieldMissing(path: url.path, field: "name")
         }
 
@@ -119,17 +131,24 @@ public struct SkillLoader: Sendable {
             throw SkillError.invalidName(name: name, path: url.path)
         }
 
-        guard let description = parsed.fields["description"], !description.isEmpty else {
+        guard let rawDescription = parsed.fields["description"] else {
+            throw SkillError.requiredFieldMissing(path: url.path, field: "description")
+        }
+        let description = rawDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !description.isEmpty else {
             throw SkillError.requiredFieldMissing(path: url.path, field: "description")
         }
 
         let rawAllowedTools = parsed.fields["allowed_tools"] ?? parsed.fields["allowed-tools"]
-        let allowedTools = rawAllowedTools?.isEmpty == true ? nil : rawAllowedTools
+        let trimmedAllowedTools = rawAllowedTools?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowedTools = trimmedAllowedTools?.isEmpty == true ? nil : trimmedAllowedTools
 
         let rawDisableModelInvocation = parsed.fields["disable_model_invocation"]
             ?? parsed.fields["disable-model-invocation"]
             ?? "false"
-        let disableModelInvocation = rawDisableModelInvocation == "true"
+        let disableModelInvocation = rawDisableModelInvocation
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased() == "true"
 
         let metadata = SkillMetadata(
             name: name,

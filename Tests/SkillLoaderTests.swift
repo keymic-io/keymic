@@ -35,17 +35,28 @@ struct SkillLoaderTests {
 
     static func main() throws {
         try testMissingDirectoryReturnsEmpty()
+        try testNonDirectoryReturnsEmpty()
+        try testStrictMissingAndNonDirectoryReturnEmpty()
         try testLoadsTwoSkillsSortedByName()
+        try testScanIsNonRecursive()
         try testMetadataOnlyDoesNotIncludeBody()
         try testFullLoadIncludesBodyAndPreservesWhitespace()
+        try testRejectsMissingFile()
         try testRejectsMissingFrontmatter()
+        try testRejectsMalformedMissingClosingMarker()
+        try testRejectsEmptyName()
         try testRejectsInvalidName()
+        try testTrimsNameBeforeValidation()
         try testRejectsMissingDescription()
+        try testRejectsWhitespaceOnlyDescription()
+        try testTrimsDescriptionForMetadata()
         try testSkipsBadFileContinuesScan()
         try testDuplicateInSingleDirFirstAlphabeticalWins()
         try testEarlierDirectoryShadowsLaterDirectory()
         try testUpgradeMetadataOnlySkill()
         try testAllowedToolsAndDisableModelInvocationParsed()
+        try testDisableModelInvocationIsCaseInsensitiveAndWhitespaceNormalized()
+        try testDisableModelInvocationFalseRemainsFalse()
         try testHyphenAliasesParsed()
         try testMarkdownExtensionAndHiddenFiles()
         try testAlreadyFullSkillReturnsUnchanged()
@@ -101,6 +112,29 @@ struct SkillLoaderTests {
         assertEqual(loader.loadDirectory(directory), [], "missing directory returns empty")
     }
 
+    static func testNonDirectoryReturnsEmpty() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("not-a-directory.md")
+            try write(skillFile(name: "not-dir"), to: file)
+
+            assertEqual(loader.loadDirectory(file), [], "non-directory path returns empty")
+        }
+    }
+
+    static func testStrictMissingAndNonDirectoryReturnEmpty() throws {
+        try withTemporaryDirectory { directory in
+            let missing = directory.appendingPathComponent("missing", isDirectory: true)
+            let file = directory.appendingPathComponent("not-a-directory.md")
+            try write(skillFile(name: "not-dir"), to: file)
+
+            let missingSkills: [Skill] = try loader.loadDirectoryStrict(missing)
+            let fileSkills: [Skill] = try loader.loadDirectoryStrict(file)
+
+            assertEqual(missingSkills, [], "strict missing directory returns empty")
+            assertEqual(fileSkills, [], "strict non-directory path returns empty")
+        }
+    }
+
     static func testLoadsTwoSkillsSortedByName() throws {
         try withTemporaryDirectory { directory in
             try write(skillFile(name: "zeta", description: "Z"), to: directory.appendingPathComponent("a.md"))
@@ -109,6 +143,19 @@ struct SkillLoaderTests {
             let skills = loader.loadDirectory(directory)
 
             assertEqual(skills.map(\.metadata.name), ["alpha", "zeta"], "loads skills sorted by name")
+        }
+    }
+
+    static func testScanIsNonRecursive() throws {
+        try withTemporaryDirectory { directory in
+            let child = directory.appendingPathComponent("child", isDirectory: true)
+            try fileManager.createDirectory(at: child, withIntermediateDirectories: true)
+            try write(skillFile(name: "top"), to: directory.appendingPathComponent("top.md"))
+            try write(skillFile(name: "nested"), to: child.appendingPathComponent("nested.md"))
+
+            let skills = loader.loadDirectory(directory)
+
+            assertEqual(skills.map(\.metadata.name), ["top"], "directory scan is non-recursive")
         }
     }
 
@@ -137,12 +184,44 @@ struct SkillLoaderTests {
         }
     }
 
+    static func testRejectsMissingFile() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("missing.md")
+
+            assertThrows({ if case .skillFileNotFound = $0 { return true }; return false }, "missing file rejected") {
+                try loader.loadMetadata(from: file)
+            }
+        }
+    }
+
     static func testRejectsMissingFrontmatter() throws {
         try withTemporaryDirectory { directory in
             let file = directory.appendingPathComponent("skill.md")
             try write("# No frontmatter\nBody", to: file)
 
             assertThrows({ if case .frontmatterMissing = $0 { return true }; return false }, "missing frontmatter rejected") {
+                try loader.loadMetadata(from: file)
+            }
+        }
+    }
+
+    static func testRejectsMalformedMissingClosingMarker() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("skill.md")
+            try write("---\nname: malformed\ndescription: Missing close\nBody", to: file)
+
+            assertThrows({ if case .frontmatterMalformed = $0 { return true }; return false }, "missing closing marker rejected as malformed") {
+                try loader.loadMetadata(from: file)
+            }
+        }
+    }
+
+    static func testRejectsEmptyName() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("skill.md")
+            try write("---\nname: \ndescription: Description\n---\nBody", to: file)
+
+            assertThrows({ if case .requiredFieldMissing(_, let field) = $0 { return field == "name" }; return false }, "empty name rejected") {
                 try loader.loadMetadata(from: file)
             }
         }
@@ -159,6 +238,17 @@ struct SkillLoaderTests {
         }
     }
 
+    static func testTrimsNameBeforeValidation() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("skill.md")
+            try write("---\nname: \" trimmed-name \"\ndescription: Description\n---\nBody", to: file)
+
+            let skill = try loader.loadMetadata(from: file)
+
+            assertEqual(skill.metadata.name, "trimmed-name", "name is trimmed before validation and storage")
+        }
+    }
+
     static func testRejectsMissingDescription() throws {
         try withTemporaryDirectory { directory in
             let file = directory.appendingPathComponent("skill.md")
@@ -167,6 +257,28 @@ struct SkillLoaderTests {
             assertThrows({ if case .requiredFieldMissing(_, let field) = $0 { return field == "description" }; return false }, "missing description rejected") {
                 try loader.loadMetadata(from: file)
             }
+        }
+    }
+
+    static func testRejectsWhitespaceOnlyDescription() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("skill.md")
+            try write("---\nname: whitespace-description\ndescription: \"   \"\n---\nBody", to: file)
+
+            assertThrows({ if case .requiredFieldMissing(_, let field) = $0 { return field == "description" }; return false }, "whitespace-only description rejected") {
+                try loader.loadMetadata(from: file)
+            }
+        }
+    }
+
+    static func testTrimsDescriptionForMetadata() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("skill.md")
+            try write("---\nname: trimmed-description\ndescription: \"  Useful description  \"\n---\nBody", to: file)
+
+            let skill = try loader.loadMetadata(from: file)
+
+            assertEqual(skill.metadata.description, "Useful description", "description is trimmed for metadata")
         }
     }
 
@@ -232,6 +344,28 @@ struct SkillLoaderTests {
 
             assertEqual(skill.metadata.allowedTools, "Bash(git:*) Read", "allowed_tools parsed")
             assertTrue(skill.metadata.disableModelInvocation, "disable_model_invocation true parsed")
+        }
+    }
+
+    static func testDisableModelInvocationIsCaseInsensitiveAndWhitespaceNormalized() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("skill.md")
+            try write(skillFile(name: "case-normalized", extra: "disable_model_invocation: \" TRUE \"\n"), to: file)
+
+            let skill = try loader.loadMetadata(from: file)
+
+            assertTrue(skill.metadata.disableModelInvocation, "disable_model_invocation is case-insensitive and whitespace-normalized")
+        }
+    }
+
+    static func testDisableModelInvocationFalseRemainsFalse() throws {
+        try withTemporaryDirectory { directory in
+            let file = directory.appendingPathComponent("skill.md")
+            try write(skillFile(name: "not-disabled", extra: "disable_model_invocation: false\n"), to: file)
+
+            let skill = try loader.loadMetadata(from: file)
+
+            assertFalse(skill.metadata.disableModelInvocation, "disable_model_invocation false remains false")
         }
     }
 
