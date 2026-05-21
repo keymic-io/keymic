@@ -28,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenshotController: ScreenshotController?
 
     private var voice = VoiceStateMachine()
+    /// Frontmost app captured at `triggerDown()`. Used by OutputRouter to restore focus
+    /// before injecting — necessary because the overlay panel and speech engine setup
+    /// may briefly steal focus by the time `finishTranscription` runs.
+    private var voiceOriginatingApp: NSRunningApplication?
     private var graceTimer: Timer?
     private var recordingTimeoutTimer: Timer?
     private static let recordingMaxDuration: TimeInterval = 6 * 60
@@ -240,6 +244,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func triggerDown() {
         guard isVoiceEnabled else { return }
         guard !voice.state.isListening else { return }
+        voiceOriginatingApp = NSWorkspace.shared.frontmostApplication
         LLMRefiner.shared.cancel()
         do {
             let session = try speechEngine.startSession()
@@ -260,6 +265,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func cancelRecording() {
         guard voice.state.isActive else { return }
+        voiceOriginatingApp = nil
         apply(voice.handle(.extraneousKey))
     }
 
