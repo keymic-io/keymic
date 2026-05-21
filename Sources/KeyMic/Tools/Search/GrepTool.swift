@@ -439,16 +439,29 @@ public struct GrepTool: Tool {
     }
 
     private func lineInfos(for content: String) -> [LineInfo] {
-        let lines = content.components(separatedBy: .newlines)
-        var utf16Offset = 0
-        return lines.enumerated().map { offset, line in
-            defer { utf16Offset += line.utf16.count + 1 }
-            return LineInfo(
-                number: offset + 1,
-                text: line,
-                range: NSRange(location: utf16Offset, length: max(1, line.utf16.count))
-            )
+        let nsString = content as NSString
+        var infos: [LineInfo] = []
+        var location = 0
+        var lineNumber = 1
+
+        while location < nsString.length {
+            var lineStart = 0
+            var lineEnd = 0
+            var contentsEnd = 0
+            nsString.getLineStart(&lineStart, end: &lineEnd, contentsEnd: &contentsEnd, for: NSRange(location: location, length: 0))
+
+            let contentRange = NSRange(location: lineStart, length: contentsEnd - lineStart)
+            infos.append(LineInfo(
+                number: lineNumber,
+                text: nsString.substring(with: contentRange),
+                range: contentRange
+            ))
+
+            location = lineEnd
+            lineNumber += 1
         }
+
+        return infos
     }
 
     private func paginate(_ entries: [String], offset: Int, limit: Int) -> [String] {

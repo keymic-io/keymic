@@ -10,6 +10,7 @@ private final class GrepToolTests {
         try testCaseInsensitive()
         try testMultilineMode()
         try testMultilineModeIncludesContext()
+        try testMultilineModeIncludesContextWithCRLF()
         try testBeforeAfterContext()
         try testHeadLimitAndOffset()
         try testEmptyResultIsSuccess()
@@ -200,6 +201,32 @@ private final class GrepToolTests {
         }
         guard !out.contains("5: outro") else {
             fatalError("unexpected line outside requested multiline context, got: \(out)")
+        }
+    }
+
+    static func testMultilineModeIncludesContextWithCRLF() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.swift", "intro\r\nstruct Foo {\r\n    func bar() {}\r\n}\r\noutro\r\n")
+
+        let out = try toolOutput(
+            pattern: "struct[\\s\\S]*?bar",
+            outputMode: "content",
+            multiline: true,
+            beforeContext: 1,
+            afterContext: 1,
+            workingDirectory: dir
+        )
+        guard out.contains("1: intro") else {
+            fatalError("expected CRLF multiline before-context line, got: \(out)")
+        }
+        guard out.contains("2→struct Foo {") && out.contains("3→    func bar() {}") else {
+            fatalError("expected CRLF multiline match lines to be marked, got: \(out)")
+        }
+        guard out.contains("4: }") else {
+            fatalError("expected CRLF multiline after-context line, got: \(out)")
+        }
+        guard !out.contains("2: \n") && !out.contains("4→") && !out.contains("5: outro") else {
+            fatalError("unexpected CRLF separator drift or extra context, got: \(out)")
         }
     }
 
