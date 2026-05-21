@@ -38,7 +38,7 @@ public actor MCPClient: MCPClientProtocol {
         guard !connected else { return }
 
         if let connectTask {
-            return try await connectTask.value
+            return try await awaitConnectTask(connectTask)
         }
 
         let connectTask = Task {
@@ -47,7 +47,7 @@ public actor MCPClient: MCPClientProtocol {
         self.connectTask = connectTask
 
         do {
-            try await connectTask.value
+            try await awaitConnectTask(connectTask)
             self.connectTask = nil
         } catch {
             self.connectTask = nil
@@ -105,6 +105,14 @@ public actor MCPClient: MCPClientProtocol {
             throw CancellationError()
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
+        }
+    }
+
+    private func awaitConnectTask(_ task: Task<Void, Error>) async throws {
+        try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 
@@ -221,6 +229,10 @@ public actor MCPClient: MCPClientProtocol {
     }
 
     private func disconnectResources() async {
+        let connectTask = self.connectTask
+        self.connectTask = nil
+        connectTask?.cancel()
+
         await client.disconnect()
         transport = nil
         connected = false
@@ -253,19 +265,218 @@ public actor MCPClient: MCPClientProtocol {
 
 private struct TimeoutError: Error {}
 
-private func withTimeout<T: Sendable>(seconds: Int, operation: @escaping @Sendable () async throws -> T) async throws -> T {
-    try await withThrowingTaskGroup(of: T.self) { group in
-        group.addTask {
-            try await operation()
+private final class AsyncCompletion<T: Sendable>: @unchecked Sendable {
+    private enum Completion {
+        case success(T)
+        case failure(Error)
+    }
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<T, Error>?
+    private var completion: Completion?
+    private var operationTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+
+    func setContinuation(_ continuation: CheckedContinuation<T, Error>) {
+        let completion: Completion?
+
+        lock.lock()
+        if let existingCompletion = self.completion {
+            completion = existingCompletion
+        } else {
+            self.continuation = continuation
+            completion = nil
         }
-        group.addTask {
-            try await Task.sleep(for: .seconds(seconds))
-            throw TimeoutError()
+        lock.unlock()
+
+        if let completion {
+            resume(continuation, with: completion)
+        }
+    }
+
+    func setOperationTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        let shouldCancel = completion != nil
+        if !shouldCancel {
+            operationTask = task
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func setTimeoutTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        let shouldCancel = completion != nil
+        if !shouldCancel {
+            timeoutTask = task
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func succeed(_ value: T) {
+        finish(.success(value))
+    }
+
+    func fail(_ error: Error) {
+        finish(.failure(error))
+    }
+
+    func cancel() {
+        finish(.failure(CancellationError()))
+    }
+
+    private func finish(_ completion: Completion) {
+        let continuation: CheckedContinuation<T, Error>?
+        let operationTask: Task<Void, Never>?
+        let timeoutTask: Task<Void, Never>?
+
+        lock.lock()
+        guard self.completion == nil else {
+            lock.unlock()
+            return
         }
 
-        let result = try await group.next()!
-        group.cancelAll()
-        return result
+        self.completion = completion
+        continuation = self.continuation
+        self.continuation = nil
+        operationTask = self.operationTask
+        self.operationTask = nil
+        timeoutTask = self.timeoutTask
+        self.timeoutTask = nil
+        lock.unlock()
+
+        operationTask?.cancel()
+        timeoutTask?.cancel()
+
+        if let continuation {
+            resume(continuation, with: completion)
+        }
+    }
+
+    private func resume(_ continuation: CheckedContinuation<T, Error>, with completion: Completion) {
+        switch completion {
+        case .success(let value):
+            continuation.resume(returning: value)
+        case .failure(let error):
+            continuation.resume(throwing: error)
+        }
+    }
+}
+
+private final class ProcessExitCompletion: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Bool, Never>?
+    private var result: Bool?
+    private var waitTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+
+    func setContinuation(_ continuation: CheckedContinuation<Bool, Never>) {
+        let result: Bool?
+
+        lock.lock()
+        if let existingResult = self.result {
+            result = existingResult
+        } else {
+            self.continuation = continuation
+            result = nil
+        }
+        lock.unlock()
+
+        if let result {
+            continuation.resume(returning: result)
+        }
+    }
+
+    func setWaitTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        let shouldCancel = result != nil
+        if !shouldCancel {
+            waitTask = task
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func setTimeoutTask(_ task: Task<Void, Never>) {
+        lock.lock()
+        let shouldCancel = result != nil
+        if !shouldCancel {
+            timeoutTask = task
+        }
+        lock.unlock()
+
+        if shouldCancel {
+            task.cancel()
+        }
+    }
+
+    func finish(_ result: Bool) {
+        let continuation: CheckedContinuation<Bool, Never>?
+        let waitTask: Task<Void, Never>?
+        let timeoutTask: Task<Void, Never>?
+
+        lock.lock()
+        guard self.result == nil else {
+            lock.unlock()
+            return
+        }
+
+        self.result = result
+        continuation = self.continuation
+        self.continuation = nil
+        waitTask = self.waitTask
+        self.waitTask = nil
+        timeoutTask = self.timeoutTask
+        self.timeoutTask = nil
+        lock.unlock()
+
+        waitTask?.cancel()
+        timeoutTask?.cancel()
+        continuation?.resume(returning: result)
+    }
+}
+
+private func withTimeout<T: Sendable>(seconds: Int, operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    let completion = AsyncCompletion<T>()
+
+    return try await withTaskCancellationHandler {
+        try await withCheckedThrowingContinuation { continuation in
+            completion.setContinuation(continuation)
+
+            let operationTask = Task {
+                do {
+                    try Task.checkCancellation()
+                    let result = try await operation()
+                    completion.succeed(result)
+                } catch {
+                    completion.fail(error)
+                }
+            }
+            completion.setOperationTask(operationTask)
+
+            let timeoutTask = Task {
+                do {
+                    try await Task.sleep(for: .seconds(seconds))
+                    completion.fail(TimeoutError())
+                } catch is CancellationError {
+                } catch {
+                    completion.fail(error)
+                }
+            }
+            completion.setTimeoutTask(timeoutTask)
+        }
+    } onCancel: {
+        completion.cancel()
     }
 }
 
@@ -274,23 +485,24 @@ private func waitForProcessExit(_ process: Process, timeoutSeconds: TimeInterval
         return true
     }
 
-    return await withTaskGroup(of: Bool.self) { group in
-        group.addTask {
-            await withCheckedContinuation { continuation in
-                Task.detached {
-                    process.waitUntilExit()
-                    continuation.resume(returning: ())
-                }
-            }
-            return true
-        }
-        group.addTask {
-            try? await Task.sleep(for: .seconds(timeoutSeconds))
-            return false
-        }
+    let completion = ProcessExitCompletion()
 
-        let result = await group.next() ?? false
-        group.cancelAll()
-        return result
+    return await withCheckedContinuation { continuation in
+        completion.setContinuation(continuation)
+
+        let waitTask = Task.detached {
+            process.waitUntilExit()
+            completion.finish(true)
+        }
+        completion.setWaitTask(waitTask)
+
+        let timeoutTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(timeoutSeconds))
+                completion.finish(false)
+            } catch {
+            }
+        }
+        completion.setTimeoutTask(timeoutTask)
     }
 }
