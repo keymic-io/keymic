@@ -98,7 +98,8 @@ public actor MCPClient: MCPClientProtocol {
         } catch let error as MCPClientError {
             throw error
         } catch is CancellationError {
-            throw MCPClientError.toolCallTimeout(server: config.name, tool: name)
+            try? await client.cancelRequest(context.requestID, reason: "Cancelled calling tool \(name) on server \(config.name)")
+            throw CancellationError()
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
         }
