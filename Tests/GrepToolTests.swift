@@ -12,6 +12,9 @@ private final class GrepToolTests {
         try testMultilineModeIncludesContext()
         try testMultilineModeIncludesContextWithCRLF()
         try testBeforeAfterContext()
+        try testZeroBeforeContextOverridesSharedContext()
+        try testZeroAfterContextOverridesSharedContext()
+        try testNegativeExplicitContextClampsToZero()
         try testHeadLimitAndOffset()
         try testEmptyResultIsSuccess()
         try testSandboxEscapeRejected()
@@ -246,6 +249,64 @@ private final class GrepToolTests {
         }
         guard !out.contains("1: alpha") && !out.contains("5: epsilon") else {
             fatalError("unexpected extra context lines, got: \(out)")
+        }
+    }
+
+    static func testZeroBeforeContextOverridesSharedContext() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.txt", "alpha\nbeta\nTARGET\ndelta\nepsilon\n")
+
+        let out = try toolOutput(
+            pattern: "TARGET",
+            outputMode: "content",
+            beforeContext: 0,
+            contextValue: 2,
+            workingDirectory: dir
+        )
+        guard out.contains("3→TARGET") && out.contains("4: delta") && out.contains("5: epsilon") else {
+            fatalError("expected target with shared after-context, got: \(out)")
+        }
+        guard !out.contains("1: alpha") && !out.contains("2: beta") else {
+            fatalError("explicit zero before_context should suppress shared before-context, got: \(out)")
+        }
+    }
+
+    static func testZeroAfterContextOverridesSharedContext() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.txt", "alpha\nbeta\nTARGET\ndelta\nepsilon\n")
+
+        let out = try toolOutput(
+            pattern: "TARGET",
+            outputMode: "content",
+            afterContext: 0,
+            contextValue: 2,
+            workingDirectory: dir
+        )
+        guard out.contains("1: alpha") && out.contains("2: beta") && out.contains("3→TARGET") else {
+            fatalError("expected target with shared before-context, got: \(out)")
+        }
+        guard !out.contains("4: delta") && !out.contains("5: epsilon") else {
+            fatalError("explicit zero after_context should suppress shared after-context, got: \(out)")
+        }
+    }
+
+    static func testNegativeExplicitContextClampsToZero() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.txt", "alpha\nbeta\nTARGET\ndelta\nepsilon\n")
+
+        let out = try toolOutput(
+            pattern: "TARGET",
+            outputMode: "content",
+            beforeContext: -2,
+            afterContext: -3,
+            contextValue: 2,
+            workingDirectory: dir
+        )
+        guard out.contains("3→TARGET") else {
+            fatalError("expected target line to remain present, got: \(out)")
+        }
+        guard !out.contains("1: alpha") && !out.contains("2: beta") && !out.contains("4: delta") && !out.contains("5: epsilon") else {
+            fatalError("negative explicit context should clamp to zero, got: \(out)")
         }
     }
 

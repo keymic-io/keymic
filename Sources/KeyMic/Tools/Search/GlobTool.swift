@@ -76,7 +76,7 @@ public struct GlobTool: Tool {
 
         let matchType = try parseMatchType(args.fileType)
         let regex = try Self.makeRegex(pattern: args.pattern, caseSensitive: args.caseSensitive ?? true)
-        let recursive = args.pattern.contains("**")
+        let recursive = args.pattern.contains("**") || args.pattern.contains("/")
         let baseURL = URL(fileURLWithPath: basePath)
 
         var matches: [String] = []

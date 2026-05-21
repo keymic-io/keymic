@@ -6,6 +6,9 @@ private final class GlobToolTests {
         try testRecursivePatternFindsNestedMatches()
         try testQuestionMarkSingleChar()
         try testCharacterClassMatchesOnlyMembers()
+        try testSlashPatternMatchesNestedFiles()
+        try testSlashQuestionAndCharacterClassPatterns()
+        try testSlashWildcardDoesNotCrossDirectoryBoundary()
         try testFileTypeFilterDirectory()
         try testFileTypeFilterAny()
         try testCaseInsensitiveMatching()
@@ -131,6 +134,54 @@ private final class GlobToolTests {
         let matches = matchLines(out)
         guard matches == ["a.swift", "b.swift", "c.swift"] else {
             fatalError("expected only character-class members, got: \(out)")
+        }
+    }
+
+    static func testSlashPatternMatchesNestedFiles() throws {
+        let dir = tmpDir()
+        try makeDir(dir + "/src")
+        try makeDir(dir + "/other")
+        try writeFile(dir + "/src/a.swift")
+        try writeFile(dir + "/src/b.txt")
+        try writeFile(dir + "/other/a.swift")
+
+        let out = try toolOutput(pattern: "src/*.swift", workingDirectory: dir)
+        let matches = matchLines(out)
+        guard matches == ["src/a.swift"] else {
+            fatalError("expected only nested slash-pattern swift match, got: \(out)")
+        }
+    }
+
+    static func testSlashQuestionAndCharacterClassPatterns() throws {
+        let dir = tmpDir()
+        try makeDir(dir + "/src")
+        try writeFile(dir + "/src/a.swift")
+        try writeFile(dir + "/src/b.swift")
+        try writeFile(dir + "/src/ab.swift")
+        try writeFile(dir + "/src/c.swift")
+
+        let questionOut = try toolOutput(pattern: "src/?.swift", workingDirectory: dir)
+        guard matchLines(questionOut) == ["src/a.swift", "src/b.swift", "src/c.swift"] else {
+            fatalError("expected single-character slash matches, got: \(questionOut)")
+        }
+
+        let classOut = try toolOutput(pattern: "src/[ab].swift", workingDirectory: dir)
+        guard matchLines(classOut) == ["src/a.swift", "src/b.swift"] else {
+            fatalError("expected slash character-class matches, got: \(classOut)")
+        }
+    }
+
+    static func testSlashWildcardDoesNotCrossDirectoryBoundary() throws {
+        let dir = tmpDir()
+        try makeDir(dir + "/src/one")
+        try makeDir(dir + "/src/one/two")
+        try writeFile(dir + "/src/one/a.swift")
+        try writeFile(dir + "/src/one/two/deep.swift")
+
+        let out = try toolOutput(pattern: "src/*/*.swift", workingDirectory: dir)
+        let matches = matchLines(out)
+        guard matches == ["src/one/a.swift"] else {
+            fatalError("expected slash wildcard to stop at one path component, got: \(out)")
         }
     }
 

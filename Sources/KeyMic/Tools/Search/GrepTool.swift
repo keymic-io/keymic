@@ -129,8 +129,8 @@ public struct GrepTool: Tool {
         let outputMode = try parseOutputMode(args.outputMode)
         let showLineNumbers = args.showLineNumbers ?? true
         let sharedContext = max(0, args.context ?? 0)
-        let beforeContext = (args.beforeContext ?? 0) > 0 ? max(0, args.beforeContext ?? 0) : sharedContext
-        let afterContext = (args.afterContext ?? 0) > 0 ? max(0, args.afterContext ?? 0) : sharedContext
+        let beforeContext = args.beforeContext.map { max(0, $0) } ?? sharedContext
+        let afterContext = args.afterContext.map { max(0, $0) } ?? sharedContext
         let limit = max(0, args.headLimit ?? 0)
         let offset = max(0, args.offset ?? 0)
 
