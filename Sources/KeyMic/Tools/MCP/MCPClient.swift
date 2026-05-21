@@ -80,15 +80,25 @@ public actor MCPClient: MCPClientProtocol {
             throw MCPClientError.notConnected(server: config.name)
         }
 
+        let context: RequestContext<CallTool.Result>
+        do {
+            context = try await client.callTool(name: name, arguments: arguments, meta: nil)
+        } catch {
+            throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
+        }
+
         do {
             let result = try await withTimeout(seconds: config.timeout.toolCallSeconds) {
-                try await self.client.callTool(name: name, arguments: arguments, meta: nil)
+                try await context.value
             }
             return (content: result.content, isError: result.isError ?? false)
         } catch is TimeoutError {
+            try? await client.cancelRequest(context.requestID, reason: "Timed out calling tool \(name) on server \(config.name)")
             throw MCPClientError.toolCallTimeout(server: config.name, tool: name)
         } catch let error as MCPClientError {
             throw error
+        } catch is CancellationError {
+            throw MCPClientError.toolCallTimeout(server: config.name, tool: name)
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
         }
@@ -190,15 +200,28 @@ public actor MCPClient: MCPClientProtocol {
         connected = false
         instructions = nil
 
+        let stderrDrainTask = self.stderrDrainTask
+        self.stderrDrainTask = nil
         stderrDrainTask?.cancel()
-        stderrDrainTask = nil
 
-        if let process = stdioProcess {
-            if process.isRunning {
-                process.terminate()
-            }
-            stdioProcess = nil
+        let process = stdioProcess
+        stdioProcess = nil
+
+        if let process {
+            await reapProcess(process)
         }
+    }
+
+    private func reapProcess(_ process: Process) async {
+        guard process.isRunning else { return }
+
+        process.terminate()
+
+        let terminatedAfterTerm = await waitForProcessExit(process, timeoutSeconds: 1)
+        guard !terminatedAfterTerm else { return }
+
+        kill(process.processIdentifier, SIGKILL)
+        _ = await waitForProcessExit(process, timeoutSeconds: 1)
     }
 }
 
@@ -215,6 +238,32 @@ private func withTimeout<T: Sendable>(seconds: Int, operation: @escaping @Sendab
         }
 
         let result = try await group.next()!
+        group.cancelAll()
+        return result
+    }
+}
+
+private func waitForProcessExit(_ process: Process, timeoutSeconds: TimeInterval) async -> Bool {
+    if !process.isRunning {
+        return true
+    }
+
+    return await withTaskGroup(of: Bool.self) { group in
+        group.addTask {
+            await withCheckedContinuation { continuation in
+                Task.detached {
+                    process.waitUntilExit()
+                    continuation.resume(returning: ())
+                }
+            }
+            return true
+        }
+        group.addTask {
+            try? await Task.sleep(for: .seconds(timeoutSeconds))
+            return false
+        }
+
+        let result = await group.next() ?? false
         group.cancelAll()
         return result
     }
