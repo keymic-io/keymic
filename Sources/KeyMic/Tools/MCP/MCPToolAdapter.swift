@@ -70,7 +70,7 @@ public struct MCPToolAdapter: Tool {
 
         let json: Any
         do {
-            json = try JSONSerialization.jsonObject(with: argumentsJSON, options: [])
+            json = try JSONSerialization.jsonObject(with: argumentsJSON, options: [.fragmentsAllowed])
         } catch {
             throw MCPClientError.toolCallFailed(
                 server: serverName,

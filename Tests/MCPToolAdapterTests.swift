@@ -39,6 +39,7 @@ struct MCPToolAdapterTests {
         try await testErrorResultThrowsToolCallFailed()
         try await testJSONArgumentsConvertToMCPValues()
         try await testEmptyArgumentsBecomeNil()
+        try await testNullArgumentsBecomeNil()
         try await testNonObjectArgumentsThrow()
         try await testTextContentFlatteningJoinsLines()
         try await testNonTextPlaceholders()
@@ -161,6 +162,16 @@ struct MCPToolAdapterTests {
         _ = try await adapter.call(argumentsJSON: Data(), context: ToolContext())
 
         assertTrue(client.lastArguments == nil, "Expected nil arguments for empty Data")
+    }
+
+    static func testNullArgumentsBecomeNil() async throws {
+        let client = FakeMCPClient()
+        client.nextContent = [.text(text: "ok", annotations: nil, _meta: nil)]
+        let adapter = makeAdapter(client: client)
+
+        _ = try await adapter.call(argumentsJSON: Data("null".utf8), context: ToolContext())
+
+        assertTrue(client.lastArguments == nil, "Expected nil arguments for top-level JSON null")
     }
 
     static func testNonObjectArgumentsThrow() async throws {
