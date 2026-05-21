@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-tool-protocol test-bash-tool test-filesystem-actor
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool
 
 
 build:
@@ -442,6 +442,17 @@ test-filesystem-actor:
 	       -o .build/filesystem-actor-tests
 	.build/filesystem-actor-tests
 
+test-read-tool:
+	mkdir -p .build
+	swiftc Tests/ReadToolTests.swift \
+	       Sources/KeyMic/Tools/File/ReadTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/read-tool-tests
+	.build/read-tool-tests
+
 test-shell-snapshot:
 	mkdir -p .build
 	swiftc Tests/ShellSnapshotTests.swift \
@@ -459,7 +470,7 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-tool-protocol test-bash-tool test-filesystem-actor test-voice-session test-voice-state-machine
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-voice-session test-voice-state-machine
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
