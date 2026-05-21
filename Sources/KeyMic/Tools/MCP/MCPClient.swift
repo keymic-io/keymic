@@ -45,6 +45,9 @@ public actor MCPClient: MCPClientProtocol {
         } catch is TimeoutError {
             await disconnectResources()
             throw MCPClientError.connectionTimeout(server: config.name)
+        } catch is CancellationError {
+            await disconnectResources()
+            throw CancellationError()
         } catch let error as MCPClientError {
             await disconnectResources()
             throw error
