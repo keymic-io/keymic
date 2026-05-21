@@ -54,6 +54,22 @@ struct SkillFrontmatterParserTests {
         assertEqual(minimal.fields["description"], "Test skill", "parses description field")
         assertEqual(minimal.body, "Use this skill.", "parses body after closing marker")
 
+        let bom = assertNotNil(
+            parser.parse("\u{FEFF}---\nname: bom\n---\nBody"),
+            "parse tolerates UTF-8 BOM"
+        )
+        assertEqual(bom.fields["name"], "bom", "parses fields after UTF-8 BOM")
+        assertEqual(bom.body, "Body", "parses body after UTF-8 BOM")
+
+        let crlf = assertNotNil(
+            parser.parse("---\r\nname: crlf\r\ndescription: CRLF skill\r\n---\r\nBody\r\nNext"),
+            "parse tolerates CRLF line endings"
+        )
+        assertEqual(crlf.fields["name"], "crlf", "parses CRLF fields")
+        assertEqual(crlf.body, "Body\nNext", "normalizes CRLF body line endings")
+
+        assertNil(parser.parse("name: absent\n---\nBody"), "returns nil when opening marker is absent")
+
         let quoted = assertNotNil(
             parser.parse("---\n'name': \"quoted-skill\"\n\"description\": 'Quoted description'\n---\nBody"),
             "parses quoted keys and values"
@@ -68,10 +84,27 @@ struct SkillFrontmatterParserTests {
         assertEqual(commentsAndBlanks.fields.count, 2, "ignores comments, blank lines, and malformed lines")
         assertEqual(commentsAndBlanks.fields["allowed-tools"], "Bash, Read", "keeps values containing punctuation")
 
+        let emptyKey = assertNotNil(
+            parser.parse("---\n: ignored\nname: empty-key\n---\nBody"),
+            "parses frontmatter with empty key"
+        )
+        assertEqual(emptyKey.fields.count, 1, "ignores empty keys")
+        assertEqual(emptyKey.fields["name"], "empty-key", "keeps non-empty keys when empty key is present")
+
         assertNil(parser.parse("---\nname: missing-close\nBody"), "returns nil for missing closing marker")
 
         let emptyBody = assertNotNil(parser.parse("---\nname: empty-body\n---"), "parses empty body")
         assertEqual(emptyBody.body, "", "empty body is empty string")
+
+        let preservedBody = assertNotNil(
+            parser.parse("---\nname: preserve\n---\n    let value = 1\n  trailing spaces  \n"),
+            "parses body with leading indentation and trailing whitespace"
+        )
+        assertEqual(
+            preservedBody.body,
+            "    let value = 1\n  trailing spaces  \n",
+            "preserves body leading indentation, trailing spaces, and trailing newline"
+        )
 
         let repeated = assertNotNil(
             parser.parse("---\nname: first\nname: second\n---\nBody"),

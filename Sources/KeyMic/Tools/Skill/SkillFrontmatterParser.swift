@@ -60,7 +60,6 @@ public struct SkillFrontmatterParser: Sendable {
         let bodyStart = lines.index(after: closingIndex)
         let body = lines[bodyStart...]
             .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
 
         return ParsedFrontmatter(fields: fields, body: body)
     }
