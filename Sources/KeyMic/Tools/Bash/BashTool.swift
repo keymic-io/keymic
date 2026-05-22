@@ -62,7 +62,14 @@ struct BashTool: Tool {
 
     func call(argumentsJSON: Data, context: ToolContext) async throws -> String {
         let args = try JSONDecoder().decode(Arguments.self, from: argumentsJSON)
-        let (exit, stdout, stderr) = await runner.runAndCapture(args.command)
+        try Task.checkCancellation()
+        if context.isCancelled() { throw CancellationError() }
+        let (exit, stdout, stderr) = await runner.runAndCapture(
+            args.command,
+            cwd: context.workingDirectory,
+            isCancelled: context.isCancelled
+        )
+        try Task.checkCancellation()
 
         // Compose LLM-facing output. Empty pieces are omitted; sections separated
         // by single newlines.

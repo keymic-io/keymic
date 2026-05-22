@@ -7,6 +7,7 @@ private final class BashToolTests {
         try testSchemaHasCommandRequired()
         try testTruncationWithCJK()
         try testNoOutputSentinel()
+        try testWorkingDirectoryHonored()
         print("BashToolTests passed")
     }
 
@@ -97,6 +98,25 @@ private final class BashToolTests {
         }
         guard output == "(no output)" else {
             fatalError("expected literal '(no output)', got: '\(output)'")
+        }
+    }
+
+    static func testWorkingDirectoryHonored() throws {
+        let tool = makeTool()
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymic-bashtool-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        // macOS resolves /var to /private/var; use the resolved path for compare.
+        let expected = tmp.resolvingSymlinksInPath().path
+
+        let input = #"{"command":"pwd"}"#.data(using: .utf8)!
+        let context = ToolContext(workingDirectory: tmp.path)
+        let output = try runAsync {
+            try await tool.call(argumentsJSON: input, context: context)
+        }
+        guard output.contains(expected) else {
+            fatalError("expected pwd to be \(expected), got: \(output)")
         }
     }
 
