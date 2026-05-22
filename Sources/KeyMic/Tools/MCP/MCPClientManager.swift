@@ -219,7 +219,9 @@ public actor MCPClientManager {
         let client = clients.removeValue(forKey: serverName)
         let registeredTools = registeredToolsByServer.removeValue(forKey: serverName) ?? []
 
-        await client?.disconnect()
+        if let client {
+            await disconnectClientWithTimeout(client)
+        }
 
         for registeredTool in registeredTools {
             await unregisterAdapter(name: registeredTool.name, registrationID: registeredTool.registrationID, registry: registry)
@@ -242,7 +244,7 @@ public actor MCPClientManager {
         statuses.removeAll()
 
         for client in clientsToDisconnect {
-            await client.disconnect()
+            await disconnectClientWithTimeout(client)
         }
 
         for registeredTool in toolsToUnregister {
@@ -251,10 +253,25 @@ public actor MCPClientManager {
     }
 
     private func cleanupStale(client: MCPClient, registeredTools: Set<RegisteredTool>, registry: ToolRegistry) async {
-        await client.disconnect()
+        await disconnectClientWithTimeout(client)
 
         for registeredTool in registeredTools {
             await unregisterAdapter(name: registeredTool.name, registrationID: registeredTool.registrationID, registry: registry)
+        }
+    }
+
+    /// Race `client.disconnect()` against a 2-second timer. `disconnect()` is
+    /// supposed to finish quickly now that MCPClient SIGTERMs the stdio child
+    /// before awaiting the SDK loop, but we still bound it so a wedged server
+    /// can't freeze the manager actor.
+    private func disconnectClientWithTimeout(_ client: MCPClient) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await client.disconnect() }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(2))
+            }
+            _ = await group.next()
+            group.cancelAll()
         }
     }
 }

@@ -96,15 +96,26 @@ public actor MCPClient: MCPClientProtocol {
             }
             return (content: result.content, isError: result.isError ?? false)
         } catch is TimeoutError {
-            try? await client.cancelRequest(context.requestID, reason: "Timed out calling tool \(name) on server \(config.name)")
+            sendCancelRequest(context.requestID, reason: "Timed out calling tool \(name) on server \(config.name)")
             throw MCPClientError.toolCallTimeout(server: config.name, tool: name)
         } catch let error as MCPClientError {
             throw error
         } catch is CancellationError {
-            try? await client.cancelRequest(context.requestID, reason: "Cancelled calling tool \(name) on server \(config.name)")
+            sendCancelRequest(context.requestID, reason: "Cancelled calling tool \(name) on server \(config.name)")
             throw CancellationError()
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
+        }
+    }
+
+    /// Fire-and-forget cancel notification. Runs on a detached task so the
+    /// outbound `notifications/cancelled` message is delivered to the server
+    /// even when the caller's task is being torn down (cooperative
+    /// cancellation would otherwise short-circuit the `await` here).
+    private nonisolated func sendCancelRequest(_ requestID: ID, reason: String) {
+        let client = self.client
+        Task.detached { [client] in
+            try? await client.cancelRequest(requestID, reason: reason)
         }
     }
 
@@ -233,6 +244,17 @@ public actor MCPClient: MCPClientProtocol {
         self.connectTask = nil
         connectTask?.cancel()
 
+        // Tear down the stdio child *before* awaiting SDK disconnect. The
+        // SDK's disconnect awaits its internal message-loop task, which is
+        // blocked reading stdout — if the child never exits we deadlock here.
+        // SIGTERM forces the child to close stdout (or be killed), giving
+        // the SDK loop the EOF it needs to return promptly.
+        let process = stdioProcess
+        stdioProcess = nil
+        if let process, process.isRunning {
+            process.terminate()
+        }
+
         await client.disconnect()
         transport = nil
         connected = false
@@ -242,9 +264,6 @@ public actor MCPClient: MCPClientProtocol {
         self.stderrDrainTask = nil
         stderrDrainTask?.cancel()
 
-        let process = stdioProcess
-        stdioProcess = nil
-
         if let process {
             await reapProcess(process)
         }
@@ -253,8 +272,8 @@ public actor MCPClient: MCPClientProtocol {
     private func reapProcess(_ process: Process) async {
         guard process.isRunning else { return }
 
-        process.terminate()
-
+        // Caller of disconnectResources already SIGTERMed the child once.
+        // Give it a moment to exit cleanly; otherwise SIGKILL.
         let terminatedAfterTerm = await waitForProcessExit(process, timeoutSeconds: 1)
         guard !terminatedAfterTerm else { return }
 
