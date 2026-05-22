@@ -246,7 +246,9 @@ private struct GeneralSettingsView: View {
     @AppStorage("automaticallyUpdates") private var automaticallyUpdates: Bool = true
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
+    @State private var selectedTextEditorHotkeyResetError: String?
     private var settingsHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .settingsWindow) }
+    private var selectedTextEditorHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .selectedTextEditor) }
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var launchAtLoginError: String?
     @State private var accessibilityGranted: Bool = AXIsProcessTrusted()
@@ -331,6 +333,28 @@ private struct GeneralSettingsView: View {
                 Text("Hotkey")
             } footer: {
                 Text("Global shortcut to open this Settings window from anywhere.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section {
+                LabeledContent("Selected Text Editor:") {
+                    HotkeyRecorderWithClear(
+                        encoded: selectedTextEditorHotkey,
+                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.selectedTextEditor.rawValue]!,
+                        mode: .combo,
+                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.selectedTextEditor)) },
+                        recorderWidth: 200,
+                        resetAction: { selectedTextEditorHotkeyResetError = resetHotkey(hotkeyStore, for: .selectedTextEditor) }
+                    )
+                }
+                if let selectedTextEditorHotkeyResetError {
+                    Text(selectedTextEditorHotkeyResetError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                }
+            } footer: {
+                Text("Select text in any app, then press this hotkey to open an inline AI editor.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }

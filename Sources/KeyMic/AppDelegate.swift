@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
+    private var selectedTextEditorController: SelectedTextEditorController!
 
     private var voice = VoiceStateMachine()
     /// Frontmost app captured at `triggerDown()`. Used by OutputRouter to restore focus
@@ -164,6 +165,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
+        selectedTextEditorController = SelectedTextEditorController(
+            speechEngine: speechEngine,
+            overlayPanel: overlayPanel
+        )
+        keyMonitor.onSelectedTextEditorHotkey = { [weak self] in
+            self?.selectedTextEditorController.open()
+        }
         secureInputMonitor.onEnter = { [weak self] in self?.keyMonitor.onSecureInputEnter() }
         secureInputMonitor.onExit = { [weak self] in self?.keyMonitor.onSecureInputExit() }
         secureInputMonitor.start()
@@ -181,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (.vaultPanel, .vaultPanel, "Vault panel"),
             (.settingsWindow, .settingsWindow, "Settings window"),
             (.screenshot, .screenshot, "Screenshot"),
+            (.selectedTextEditor, .selectedTextEditor, "Selected text editor"),
         ]
         for (feature, owner, purpose) in builtIns {
             if let cfg = hotkeys.hotkey(for: feature) {
