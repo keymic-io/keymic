@@ -12,6 +12,7 @@ final class HotkeyActionRunner {
     private let keyPress: KeyPressFn
     private let shell: ShellFn
     private let skillBridge: SkillHotkeyBridge?
+    private let agentRunner: AgentRunner?
     private let queue = DispatchQueue(label: "io.keymic.app.hotkey-action-runner", qos: .userInitiated)
     private static let logger = Logger(subsystem: "io.keymic.app", category: "HotkeyActionRunner")
 
@@ -22,12 +23,14 @@ final class HotkeyActionRunner {
         typeText: @escaping TypeTextFn,
         keyPress: @escaping KeyPressFn = HotkeyActionRunner.defaultKeyPress,
         shell:    @escaping ShellFn    = { ShellRunner.shared.run($0) },
-        skillBridge: SkillHotkeyBridge? = nil
+        skillBridge: SkillHotkeyBridge? = nil,
+        agentRunner: AgentRunner? = nil
     ) {
         self.typeText = typeText
         self.keyPress = keyPress
         self.shell = shell
         self.skillBridge = skillBridge
+        self.agentRunner = agentRunner
     }
 
     func run(_ actions: [HotkeyAction]) {
@@ -57,6 +60,14 @@ final class HotkeyActionRunner {
                 return
             }
             bridge.fire(name: name)
+        case .runAgent(let prompt):
+            guard let runner = agentRunner else {
+                Self.logger.warning("runAgent fired but no AgentRunner wired; ignoring")
+                return
+            }
+            Task { @MainActor in
+                _ = runner.runForHotkey(prompt: prompt, sink: ConsoleSink.shared)
+            }
         }
     }
 

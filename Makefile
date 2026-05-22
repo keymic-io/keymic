@@ -237,6 +237,22 @@ test-hotkey-action-runner:
 	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
 	       Sources/KeyMic/Tools/Skill/Skill.swift \
 	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       Sources/KeyMic/Agent/AgentRunner.swift \
+	       Sources/KeyMic/Agent/AgentSession.swift \
+	       Sources/KeyMic/Agent/AgentEvent.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Agent/AgentSessionError.swift \
+	       Sources/KeyMic/Agent/AgentConfig.swift \
+	       Sources/KeyMic/Agent/AgentRunOptions.swift \
+	       Sources/KeyMic/Agent/AgentEventSink.swift \
+	       Sources/KeyMic/Agent/OpenAIChatTransport.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/ToolSchemaBuilder.swift \
+	       Sources/KeyMic/Agent/WithTimeout.swift \
 	       Tests/HotkeyActionRunnerTests.swift \
 	       -o .build/hotkey-action-runner-tests
 	.build/hotkey-action-runner-tests

@@ -1209,6 +1209,9 @@ enum HotkeyActionFormatter {
             return "run \"\(trimmed)\""
         case .runSkill(let name):
             return "skill \"\(name)\""
+        case .runAgent(let prompt):
+            let trimmed = prompt.count > 24 ? String(prompt.prefix(24)) + "…" : prompt
+            return "agent \"\(trimmed)\""
         }
     }
 }
@@ -1349,7 +1352,7 @@ private struct BindingEditorSheet: View {
 
 private struct ActionDraft: Identifiable, Equatable {
     enum Kind: String, CaseIterable, Identifiable {
-        case typeText, keyPress, wait, shell, runSkill
+        case typeText, keyPress, wait, shell, runSkill, runAgent
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -1358,6 +1361,7 @@ private struct ActionDraft: Identifiable, Equatable {
             case .wait: String(localized: "Wait")
             case .shell: String(localized: "Shell")
             case .runSkill: String(localized: "Skill")
+            case .runAgent: String(localized: "Agent")
             }
         }
     }
@@ -1385,6 +1389,9 @@ private struct ActionDraft: Identifiable, Equatable {
         case .runSkill(let name):
             kind = .runSkill
             text = name
+        case .runAgent(let prompt):
+            kind = .runAgent
+            text = prompt
         }
     }
 
@@ -1397,6 +1404,7 @@ private struct ActionDraft: Identifiable, Equatable {
         case .wait: return Int(text) != nil
         case .shell: return !text.isEmpty
         case .runSkill: return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .runAgent: return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -1411,6 +1419,7 @@ private struct ActionDraft: Identifiable, Equatable {
         case .wait: return .wait(ms: max(0, Int(text) ?? 100))
         case .shell: return .shell(text)
         case .runSkill: return .runSkill(name: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .runAgent: return .runAgent(prompt: text)
         }
     }
 }
@@ -1450,6 +1459,7 @@ private struct ActionDraftRow: View {
         case .wait: String(localized: "Milliseconds")
         case .shell: String(localized: "Shell command")
         case .runSkill: String(localized: "Skill name")
+        case .runAgent: String(localized: "Agent prompt")
         }
     }
 }
