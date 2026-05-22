@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 // MARK: - Window host
 
 final class SwiftUISettingsWindow: NSPanel {
-    init() {
+    init(agentRunner: AgentRunner? = nil, toolRegistry: ToolRegistry? = nil) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 540),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -20,7 +20,7 @@ final class SwiftUISettingsWindow: NSPanel {
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
-        let host = NSHostingController(rootView: SettingsRootView())
+        let host = NSHostingController(rootView: SettingsRootView(agentRunner: agentRunner, toolRegistry: toolRegistry))
         host.view.translatesAutoresizingMaskIntoConstraints = false
         contentViewController = host
         center()
@@ -43,7 +43,7 @@ final class SwiftUISettingsWindow: NSPanel {
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot
+    case general, voice, llm, agent, personas, keyMapping, shortcuts, clipboard, screenshot
 
     var id: String { rawValue }
 
@@ -52,6 +52,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general: String(localized: "General")
         case .voice: String(localized: "Voice")
         case .llm: "LLM"
+        case .agent: String(localized: "Agent")
         case .personas: String(localized: "Personas")
         case .keyMapping: String(localized: "Key Mapping")
         case .shortcuts: String(localized: "Shortcuts")
@@ -65,6 +66,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general: "gearshape"
         case .voice: "mic"
         case .llm: "sparkles"
+        case .agent: "brain"
         case .personas: "person.crop.circle.badge.checkmark"
         case .keyMapping: "keyboard"
         case .shortcuts: "command.square"
@@ -132,6 +134,13 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
 
 struct SettingsRootView: View {
     @State private var selection: SettingsSection = .general
+    let agentRunner: AgentRunner?
+    let toolRegistry: ToolRegistry?
+
+    init(agentRunner: AgentRunner? = nil, toolRegistry: ToolRegistry? = nil) {
+        self.agentRunner = agentRunner
+        self.toolRegistry = toolRegistry
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -154,6 +163,14 @@ struct SettingsRootView: View {
         case .general: GeneralSettingsView()
         case .voice: VoiceSettingsView()
         case .llm: LLMSettingsView()
+        case .agent:
+            if let agentRunner, let toolRegistry {
+                AgentSettingsTab(agentRunner: agentRunner, toolRegistry: toolRegistry)
+            } else {
+                Text("Agent runtime not available.")
+                    .foregroundColor(.secondary)
+                    .padding()
+            }
         case .personas: PersonasView()
         case .clipboard: ClipboardSettingsView()
         case .keyMapping: KeyMappingSettingsSection()
