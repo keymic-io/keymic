@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session test-agent-runner
 
 
 build:
@@ -737,7 +737,32 @@ test-agent-session:
 	       -o .build/agent-session-tests
 	.build/agent-session-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-voice-session test-voice-state-machine test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session
+test-agent-runner:
+	mkdir -p .build
+	swiftc -parse-as-library Tests/AgentRunnerTests.swift \
+	       Sources/KeyMic/Agent/AgentRunner.swift \
+	       Sources/KeyMic/Agent/AgentSession.swift \
+	       Sources/KeyMic/Agent/AgentEvent.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Agent/AgentSessionError.swift \
+	       Sources/KeyMic/Agent/AgentConfig.swift \
+	       Sources/KeyMic/Agent/AgentRunOptions.swift \
+	       Sources/KeyMic/Agent/AgentEventSink.swift \
+	       Sources/KeyMic/Agent/OpenAIChatTransport.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/ToolSchemaBuilder.swift \
+	       Sources/KeyMic/Agent/WithTimeout.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       -o .build/agent-runner-tests
+	.build/agent-runner-tests
+
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-voice-session test-voice-state-machine test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session test-agent-runner
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
