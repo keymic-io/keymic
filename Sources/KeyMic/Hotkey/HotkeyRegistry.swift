@@ -13,6 +13,7 @@ final class HotkeyRegistry {
         case vaultPanel
         case settingsWindow
         case screenshot
+        case selectedTextEditor
         case keyMapping(id: String)
         case hotkeyBinding(id: UUID)
         case persona(id: String)

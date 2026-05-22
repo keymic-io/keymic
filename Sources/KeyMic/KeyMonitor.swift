@@ -24,6 +24,7 @@ final class KeyMonitor {
     var isClipboardPanelVisible: (() -> Bool)?
     var onSettingsHotkey: (() -> Void)?
     var onScreenshotHotkey: (() -> Void)?
+    var onSelectedTextEditorHotkey: (() -> Void)?
     var onAction: (([HotkeyAction]) -> Void)?
     /// Synchronous, O(1) lookup of the bundle ID KeyMic believes is frontmost.
     /// MUST NOT call into LaunchServices — this runs in the event-tap callback on the
@@ -53,6 +54,7 @@ final class KeyMonitor {
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
+    private var selectedTextEditorHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
     private var repeatTimers: [CGKeyCode: DispatchSourceTimer] = [:]
@@ -227,6 +229,7 @@ final class KeyMonitor {
         vaultHotkey = hotkeys.hotkey(for: .vaultPanel)
         settingsHotkey = hotkeys.hotkey(for: .settingsWindow)
         screenshotHotkey = hotkeys.hotkey(for: .screenshot)
+        selectedTextEditorHotkey = hotkeys.hotkey(for: .selectedTextEditor)
         voiceTriggerHotkey = hotkeys.hotkey(for: .voiceTrigger)
         actionBindings = HotkeyBindingsStore.shared.bindings.compactMap { b in
             guard b.enabled,
@@ -407,6 +410,14 @@ final class KeyMonitor {
                 return nil
             }
 
+            // Selected Text Editor hotkey
+            if let cfg = selectedTextEditorHotkey,
+               !cfg.isPureModifier,
+               cfg.matches(keyCode: keyCode, flags: event.flags) {
+                DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
+                return nil
+            }
+
             // Persona hotkeys: push-to-talk per persona. Activate the persona and
             // start a voice session; the matching keyUp ends it. Swallow the event
             // to prevent dead-key side effects (e.g. ⌥E → ´). Gate on no other
@@ -496,6 +507,11 @@ final class KeyMonitor {
            cfg.matches(keyCode: keyCode, flags: flags),
            UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
             DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
+            return true
+        }
+        if let cfg = selectedTextEditorHotkey, !cfg.isPureModifier,
+           cfg.matches(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
             return true
         }
         return false

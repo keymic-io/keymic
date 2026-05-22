@@ -11,6 +11,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
     case vaultPanel
     case settingsWindow
     case screenshot
+    case selectedTextEditor
 
     var displayName: String {
         switch self {
@@ -19,6 +20,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         case .vaultPanel: return String(localized: "Vault panel")
         case .settingsWindow: return String(localized: "Settings window")
         case .screenshot: return String(localized: "Screenshot")
+        case .selectedTextEditor: return String(localized: "Selected text editor")
         }
     }
 
@@ -28,6 +30,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.vaultPanel.rawValue: "alt+b",                 // Open the Vault panel.
         HotkeyFeature.settingsWindow.rawValue: "cmd+shift+,",       // Open the Settings window.
         HotkeyFeature.screenshot.rawValue: "cmd+shift+a",           // Open screenshot selection and annotation.
+        HotkeyFeature.selectedTextEditor.rawValue: "alt+e",         // Open Selected Text Editor panel.
     ]
 }
 
