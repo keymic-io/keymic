@@ -5,10 +5,12 @@ private final class GrepToolTests {
         try testFilesWithMatchesDefault()
         try testContentModeShowsMatchingLines()
         try testContentModeWithLineNumbers()
+        try testContentModeWithLineNumbersCRLF()
         try testCountMode()
         try testGlobFilter()
         try testCaseInsensitive()
         try testMultilineMode()
+        try testMultilineModeDotMatchesNewline()
         try testMultilineModeIncludesContext()
         try testMultilineModeIncludesContextWithCRLF()
         try testBeforeAfterContext()
@@ -163,6 +165,42 @@ private final class GrepToolTests {
         let out = try toolOutput(pattern: "todo", caseSensitive: false, workingDirectory: dir)
         guard out.contains("a.swift") else {
             fatalError("expected case-insensitive match, got: \(out)")
+        }
+    }
+
+    static func testContentModeWithLineNumbersCRLF() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.txt", "alpha\r\nTARGET\r\ngamma\r\n")
+
+        let out = try toolOutput(
+            pattern: "TARGET",
+            outputMode: "content",
+            workingDirectory: dir
+        )
+        // Bug B8: components(separatedBy: .newlines) used to treat \r and \n as
+        // separate separators, putting TARGET on line 3 instead of 2.
+        guard out.contains("2→TARGET") else {
+            fatalError("expected CRLF match on line 2, got: \(out)")
+        }
+        guard !out.contains("3→TARGET") else {
+            fatalError("CRLF split drift placed match on wrong line: \(out)")
+        }
+    }
+
+    static func testMultilineModeDotMatchesNewline() throws {
+        let dir = tmpDir()
+        try writeFile(dir + "/a.swift", "struct Foo {\n    func bar() {}\n}\n")
+
+        // Bug B7: '.' must cross newlines when multiline is on. Without
+        // .dotMatchesLineSeparators this pattern matches nothing.
+        let out = try toolOutput(
+            pattern: "struct.*?bar",
+            outputMode: "content",
+            multiline: true,
+            workingDirectory: dir
+        )
+        guard out.contains("a.swift") && out.contains("bar") else {
+            fatalError("expected '.' to span newlines under multiline, got: \(out)")
         }
     }
 

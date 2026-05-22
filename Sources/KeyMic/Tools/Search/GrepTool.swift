@@ -134,7 +134,10 @@ public struct GrepTool: Tool {
         let limit = max(0, args.headLimit ?? 0)
         let offset = max(0, args.offset ?? 0)
 
-        let regexOptions: NSRegularExpression.Options = (args.caseSensitive ?? true) ? [] : [.caseInsensitive]
+        var regexOptions: NSRegularExpression.Options = (args.caseSensitive ?? true) ? [] : [.caseInsensitive]
+        if args.multiline ?? false {
+            regexOptions.insert(.dotMatchesLineSeparators)
+        }
         let regex = try NSRegularExpression(pattern: args.pattern, options: regexOptions)
 
         var baseIsDirectory = ObjCBool(false)
@@ -323,7 +326,9 @@ public struct GrepTool: Tool {
         showLineNumbers: Bool,
         includeContent: Bool
     ) -> (matchCount: Int, contentBlock: ContentBlock?) {
-        let lines = content.components(separatedBy: .newlines)
+        let lines = content.components(separatedBy: "\n").map { line in
+            line.hasSuffix("\r") ? String(line.dropLast()) : line
+        }
         var matchingIndices = Set<Int>()
 
         for (index, line) in lines.enumerated() {
