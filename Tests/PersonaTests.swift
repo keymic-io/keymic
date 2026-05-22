@@ -21,15 +21,22 @@ struct PersonaTestRunner {
         expect(decoded == p, "Codable round-trip preserves equality")
         expect(decoded.contextMode == .selectionAndClipboard, "contextMode round-trips")
 
-        // Built-in seeds: exactly 4, ids stable
+        // Built-in seeds: exactly 5, ids stable
         let seeds = Persona.builtInSeeds()
-        expect(seeds.count == 4, "exactly 4 built-in seeds")
+        expect(seeds.count == 5, "exactly 5 built-in seeds")
         let ids = seeds.map(\.id)
-        expect(ids == ["builtin-default", "builtin-translate", "builtin-cli", "builtin-context"],
-               "built-in ids in canonical order")
+        expect(ids == [
+            "builtin-default",
+            "builtin-translate",
+            "builtin-cli",
+            "builtin-context",
+            "builtin-general-editor",
+        ], "built-in ids in canonical order")
         expect(seeds.allSatisfy { $0.builtIn }, "all seeds marked builtIn")
         expect(seeds[3].contextMode == .selectionAndClipboard, "上下文 persona uses selectionAndClipboard")
         expect(seeds[0].contextMode == .none, "default persona uses .none")
+        expect(seeds[4].injectionStrategy == .replaceSelection,
+               "general-editor persona uses replaceSelection strategy")
 
         // Built-in default 沿用 KeyMic 现有的纠错 prompt 文案(关键词)
         expect(seeds[0].stylePrompt.contains("transcription mistakes")

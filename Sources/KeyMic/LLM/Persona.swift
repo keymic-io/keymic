@@ -143,6 +143,23 @@ struct Persona: Codable, Identifiable, Equatable {
                 createdAt: now,
                 updatedAt: now
             ),
+            Persona(
+                id: "builtin-general-editor",
+                name: "General Editor",
+                icon: "pencil.and.outline",
+                stylePrompt: """
+                    You are a precise editor that rewrites a user's SELECTED text according to a brief \
+                    INSTRUCTION. Return ONLY the rewritten text — no preamble, no explanations, no quotes, \
+                    no markdown fences. Preserve the original language unless the instruction asks otherwise.
+                    """,
+                temperature: 0.4,
+                hotkey: nil,
+                contextMode: .none,
+                builtIn: true,
+                createdAt: now,
+                updatedAt: now,
+                injectionStrategy: .replaceSelection
+            ),
         ]
     }
 }

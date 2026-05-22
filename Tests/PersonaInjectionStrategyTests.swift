@@ -5,7 +5,7 @@ struct PersonaInjectionStrategyTestRunner {
     static func main() {
         testCodableRoundTripAllCases()
         testDecodeMissingFieldDefaults()
-        testBuiltInSeedsAllReplaceFocusedText()
+        testBuiltInSeedsHaveCanonicalStrategy()
         testOpenURLTemplatePreserved()
         print("✅ PersonaInjectionStrategyTests passed")
     }
@@ -53,10 +53,23 @@ struct PersonaInjectionStrategyTestRunner {
                "missing field should default to .replaceFocusedText, got \(p.injectionStrategy)")
     }
 
-    static func testBuiltInSeedsAllReplaceFocusedText() {
+    static func testBuiltInSeedsHaveCanonicalStrategy() {
+        // Voice-pipeline built-ins default to replaceFocusedText (current paste behavior).
+        // The General Editor seed drives the LOR-16 in-place edit flow → replaceSelection.
+        let expected: [String: InjectionStrategy] = [
+            "builtin-default": .replaceFocusedText,
+            "builtin-translate": .replaceFocusedText,
+            "builtin-cli": .replaceFocusedText,
+            "builtin-context": .replaceFocusedText,
+            "builtin-general-editor": .replaceSelection,
+        ]
         for seed in Persona.builtInSeeds() {
-            expect(seed.injectionStrategy == .replaceFocusedText,
-                   "P1 built-in \(seed.id) should be .replaceFocusedText, got \(seed.injectionStrategy)")
+            guard let want = expected[seed.id] else {
+                expect(false, "unexpected built-in seed id: \(seed.id)")
+                continue
+            }
+            expect(seed.injectionStrategy == want,
+                   "built-in \(seed.id) should be \(want), got \(seed.injectionStrategy)")
         }
     }
 
