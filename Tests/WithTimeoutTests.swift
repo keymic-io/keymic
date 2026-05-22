@@ -4,7 +4,7 @@ import Foundation
 struct WithTimeoutTests {
     static func main() async throws {
         try await testReturnsValueWhenFastEnough()
-        try await testThrowsTimeoutErrorWhenSlow()
+        try await testThrowsAgentTimeoutErrorWhenSlow()
         try await testRethrowsOperationError()
         print("WithTimeoutTests passed")
     }
@@ -16,14 +16,14 @@ struct WithTimeoutTests {
         precondition(result == 42)
     }
 
-    static func testThrowsTimeoutErrorWhenSlow() async throws {
+    static func testThrowsAgentTimeoutErrorWhenSlow() async throws {
         do {
             _ = try await withTimeout(seconds: 0.1) { () -> Int in
                 try await Task.sleep(nanoseconds: 1_000_000_000) // 1 s
                 return 0
             }
-            preconditionFailure("expected TimeoutError")
-        } catch is TimeoutError {
+            preconditionFailure("expected AgentTimeoutError")
+        } catch is AgentTimeoutError {
             // expected
         }
     }
