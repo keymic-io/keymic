@@ -20,8 +20,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return SpeechEngine(locale: Locale(identifier: code))
     }()
     private let textInjector = TextInjector()
+    private let skillRegistry = SkillRegistry()
+    private let skillLoader = SkillLoader()
+    private lazy var skillBridge = SkillHotkeyBridge(
+        registry: skillRegistry,
+        loader: skillLoader,
+        consume: { [weak self] skill in
+            // Default consumer: paste the skill body into the focused field.
+            // LLM-aware consumers (refine with body as system prompt, etc.)
+            // can be wired here later — see SkillHotkeyBridge docs.
+            guard let body = skill.instructions, !body.isEmpty else { return }
+            DispatchQueue.main.async { self?.textInjector.inject(body) }
+        }
+    )
     private lazy var actionRunner = HotkeyActionRunner(
-        typeText: { [weak self] text in self?.textInjector.inject(text) }
+        typeText: { [weak self] text in self?.textInjector.inject(text) },
+        skillBridge: skillBridge
     )
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
