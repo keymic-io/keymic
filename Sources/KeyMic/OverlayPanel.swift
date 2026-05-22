@@ -177,7 +177,7 @@ final class OverlayPanel: NSPanel {
     }
 
     /// Reuses showSecretToast's dismiss-after-N pattern but with arbitrary text and duration.
-    private func showTransientToast(_ label: String, durationSeconds: Double) {
+    func showTransientToast(_ label: String, durationSeconds: Double) {
         if isShowingTranscript { return }
         state.isAnimating = false
         resetAudioLevel()
