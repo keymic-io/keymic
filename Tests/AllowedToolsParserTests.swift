@@ -14,6 +14,7 @@ struct AllowedToolsParserTests {
         testTabsAndNewlinesAsSeparators()
         testEmptyParens()
         testParensOnlyDropped()
+        testYAMLNullLiteralReturnsNil()
         print("AllowedToolsParserTests passed")
     }
 
@@ -60,5 +61,19 @@ struct AllowedToolsParserTests {
     static func testParensOnlyDropped() {
         // "()" produces an empty token after stripping → dropped → empty set → nil.
         precondition(AllowedToolsParser.parse("()") == nil)
+    }
+
+    static func testYAMLNullLiteralReturnsNil() {
+        // YAML's literal nulls — when a frontmatter parser keeps the raw text,
+        // these arrive as the string "null"/"~", which used to surface as an
+        // allow-set of {"null"} and silently strip every registered tool.
+        precondition(AllowedToolsParser.parse("null") == nil)
+        precondition(AllowedToolsParser.parse("Null") == nil)
+        precondition(AllowedToolsParser.parse("NULL") == nil)
+        precondition(AllowedToolsParser.parse("  null  ") == nil)
+        precondition(AllowedToolsParser.parse("~") == nil)
+        // Defensive: a real tool named "null" used inside a larger list is
+        // still preserved verbatim (a sole "null" token is the YAML literal).
+        precondition(AllowedToolsParser.parse("null Read") == Set(["null", "Read"]))
     }
 }

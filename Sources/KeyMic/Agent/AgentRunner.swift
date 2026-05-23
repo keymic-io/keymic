@@ -52,6 +52,18 @@ final class AgentRunner {
         ToolContext(workingDirectory: workingDirectoryProvider())
     }
 
+    /// Tracks the most recent hotkey- or skill-driven run so a re-fire can
+    /// cancel the predecessor instead of running two `AgentSession`s
+    /// concurrently against the shared `ConsoleSink.shared`. Settings-panel
+    /// runs manage their own cancellation via the returned `Task` and do not
+    /// participate in this slot.
+    private var inFlightHotkeyTask: Task<Void, Never>?
+
+    private func adoptHotkeyTask(_ task: Task<Void, Never>) {
+        inFlightHotkeyTask?.cancel()
+        inFlightHotkeyTask = task
+    }
+
     /// Hotkey-triggered skill activation. Reads `skill.instructions` as the system
     /// prompt and `skill.metadata.allowedTools` as the allow-set.
     @discardableResult
@@ -60,7 +72,7 @@ final class AgentRunner {
         let allowed = AllowedToolsParser.parse(skill.metadata.allowedTools)
         let session = AgentSession(registry: registry, config: configProvider())
         let toolCtx = makeToolContext()
-        return Task.detached {
+        let task = Task.detached {
             for await event in session.run(
                 systemPrompt: body.isEmpty ? nil : body,
                 userMessage: AgentRunner.skillProceedMessage,
@@ -72,6 +84,8 @@ final class AgentRunner {
                 await sink.receive(event)
             }
         }
+        adoptHotkeyTask(task)
+        return task
     }
 
     /// Generic hotkey-triggered agent run with a free-text prompt. No skill context,
@@ -80,7 +94,7 @@ final class AgentRunner {
     func runForHotkey(prompt: String, sink: any AgentEventSink) -> Task<Void, Never> {
         let session = AgentSession(registry: registry, config: configProvider())
         let toolCtx = makeToolContext()
-        return Task.detached {
+        let task = Task.detached {
             for await event in session.run(
                 systemPrompt: AgentRunner.hotkeyDefaultSystemPrompt,
                 userMessage: prompt,
@@ -92,6 +106,8 @@ final class AgentRunner {
                 await sink.receive(event)
             }
         }
+        adoptHotkeyTask(task)
+        return task
     }
 
     /// Settings-panel-driven run with full control over every parameter (panel

@@ -10,13 +10,20 @@ import Foundation
 /// Returns `nil` (meaning "no restriction") for:
 ///   - `nil` input
 ///   - empty / whitespace-only input
+///   - YAML null literals (`null`/`Null`/`NULL`/`~`) — when the frontmatter
+///     parser keeps the raw token text instead of converting to a Swift
+///     `nil`, these would otherwise produce an allow-set of `{"null"}` that
+///     strips every legitimately-named tool from the agent run
 ///   - input where every token strips to empty (e.g. `"()"`)
 public enum AllowedToolsParser {
     public static func parse(_ input: String?) -> Set<String>? {
-        guard let input, !input.isEmpty else { return nil }
+        guard let input else { return nil }
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        if trimmed == "~" || trimmed.lowercased() == "null" { return nil }
 
         let separators = CharacterSet.whitespacesAndNewlines
-        let tokens = input.unicodeScalars
+        let tokens = trimmed.unicodeScalars
             .split(whereSeparator: { separators.contains($0) })
             .map(String.init)
 

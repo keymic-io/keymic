@@ -164,11 +164,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
         keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in self?.extraneousKeyDuringVoice() }
         keyMonitor.isVoiceActive = { [weak self] in self?.voice.state.isActive ?? false }
+        // Wire `onAction` synchronously right after `keyMonitor.start()` so a
+        // hotkey pressed during the first ~10–100ms of launch isn't matched by
+        // the tap (consuming the keystroke) only to then dispatch into a nil
+        // `onAction`. `actionRunner` resolves `agentRunner` lazily via
+        // `agentRunnerProvider`, so it's safe to wire before the runtime is
+        // fully constructed.
+        keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
 
         Task { @MainActor in
             await registerLocalTools()
             agentRunner = AgentRunner(registry: toolRegistry, skillRegistry: skillRegistry)
-            keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
             Task { [mcpManager, toolRegistry] in
                 await mcpManager.loadAndConnectAll(registry: toolRegistry)
             }
