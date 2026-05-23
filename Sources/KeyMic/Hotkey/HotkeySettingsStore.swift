@@ -12,6 +12,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
     case settingsWindow
     case screenshot
     case selectedTextEditor
+    case clipboardTransform
 
     var displayName: String {
         switch self {
@@ -21,6 +22,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         case .settingsWindow: return String(localized: "Settings window")
         case .screenshot: return String(localized: "Screenshot")
         case .selectedTextEditor: return String(localized: "Selected text editor")
+        case .clipboardTransform: return String(localized: "Clipboard transformer")
         }
     }
 
@@ -31,6 +33,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.settingsWindow.rawValue: "cmd+shift+,",       // Open the Settings window.
         HotkeyFeature.screenshot.rawValue: "cmd+shift+a",           // Open screenshot selection and annotation.
         HotkeyFeature.selectedTextEditor.rawValue: "alt+e",         // Open Selected Text Editor panel.
+        HotkeyFeature.clipboardTransform.rawValue: "alt+l",         // Transform selected clipboard items via LLM.
     ]
 }
 
