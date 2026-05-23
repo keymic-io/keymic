@@ -167,6 +167,24 @@ struct Persona: Codable, Identifiable, Equatable {
                 updatedAt: now,
                 injectionStrategy: .replaceSelection
             ),
+            Persona(
+                id: "builtin-clipboard-transformer",
+                name: "Clipboard Transformer",
+                icon: "wand.and.stars",
+                stylePrompt: """
+                    You will receive N clipboard items, each labelled [Item k]. Produce ONE concise output \
+                    that synthesises / summarises / reformats them according to the implicit user intent \
+                    (default: summarise into a single clear paragraph). Return ONLY the result — no preamble, \
+                    no item labels, no markdown fences. Preserve the dominant language of the inputs.
+                    """,
+                temperature: 0.4,
+                hotkey: nil,
+                contextSources: [.clipboardHistory],
+                builtIn: true,
+                createdAt: now,
+                updatedAt: now,
+                injectionStrategy: .clipboard
+            ),
         ]
     }
 }
