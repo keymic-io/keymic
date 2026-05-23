@@ -538,6 +538,8 @@ test-window-ocr:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Context/WindowOCRProvider.swift \
 	       Tests/WindowOCRTests.swift \
+	       -framework ScreenCaptureKit \
+	       -framework AppKit \
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 

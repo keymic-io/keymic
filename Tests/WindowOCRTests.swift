@@ -9,6 +9,12 @@ struct WindowOCRTestRunner {
         testResolvedRecognitionLanguages_emptyPreferred()
         testResolvedRecognitionLanguages_noMatch()
         testResolvedRecognitionLanguages_preservesPreferredOrder()
+        testPickFocusedWindow_picksLargestOnScreenLayerZero()
+        testPickFocusedWindow_filtersOffScreen()
+        testPickFocusedWindow_filtersNonZeroLayer()
+        testPickFocusedWindow_filtersForeignPID()
+        testPickFocusedWindow_emptyReturnsNil()
+        testPickFocusedWindow_noMatchingPIDReturnsNil()
         print("WindowOCRTests passed")
     }
 
@@ -62,6 +68,64 @@ struct WindowOCRTestRunner {
         )
         expect(got == ["fr-FR", "en-US", "zh-Hans"],
                "preferred-order preservation broken, got: \(got)")
+    }
+
+    struct FakeWindow: WindowCandidate, Equatable {
+        let owningPID: pid_t?
+        let isOnScreen: Bool
+        let windowLayer: Int
+        let frameArea: CGFloat
+        var debugID: String
+    }
+
+    static func testPickFocusedWindow_picksLargestOnScreenLayerZero() {
+        let windows: [FakeWindow] = [
+            FakeWindow(owningPID: 42, isOnScreen: true, windowLayer: 0, frameArea: 100_000, debugID: "small"),
+            FakeWindow(owningPID: 42, isOnScreen: true, windowLayer: 0, frameArea: 500_000, debugID: "large"),
+            FakeWindow(owningPID: 42, isOnScreen: true, windowLayer: 0, frameArea: 250_000, debugID: "medium"),
+        ]
+        let picked = WindowOCRProvider.pickFocusedWindow(in: windows, frontPID: 42)
+        expect(picked?.debugID == "large", "should pick largest-area window, got: \(String(describing: picked?.debugID))")
+    }
+
+    static func testPickFocusedWindow_filtersOffScreen() {
+        let windows: [FakeWindow] = [
+            FakeWindow(owningPID: 42, isOnScreen: false, windowLayer: 0, frameArea: 1_000_000, debugID: "offscreen-large"),
+            FakeWindow(owningPID: 42, isOnScreen: true,  windowLayer: 0, frameArea: 100_000,   debugID: "onscreen-small"),
+        ]
+        let picked = WindowOCRProvider.pickFocusedWindow(in: windows, frontPID: 42)
+        expect(picked?.debugID == "onscreen-small", "off-screen window should be filtered, got: \(String(describing: picked?.debugID))")
+    }
+
+    static func testPickFocusedWindow_filtersNonZeroLayer() {
+        let windows: [FakeWindow] = [
+            FakeWindow(owningPID: 42, isOnScreen: true, windowLayer: 3,  frameArea: 1_000_000, debugID: "floating"),
+            FakeWindow(owningPID: 42, isOnScreen: true, windowLayer: 0,  frameArea: 100_000,   debugID: "content"),
+        ]
+        let picked = WindowOCRProvider.pickFocusedWindow(in: windows, frontPID: 42)
+        expect(picked?.debugID == "content", "non-zero windowLayer should be filtered, got: \(String(describing: picked?.debugID))")
+    }
+
+    static func testPickFocusedWindow_filtersForeignPID() {
+        let windows: [FakeWindow] = [
+            FakeWindow(owningPID: 99, isOnScreen: true, windowLayer: 0, frameArea: 1_000_000, debugID: "other-app"),
+            FakeWindow(owningPID: 42, isOnScreen: true, windowLayer: 0, frameArea: 100_000,   debugID: "front-app"),
+        ]
+        let picked = WindowOCRProvider.pickFocusedWindow(in: windows, frontPID: 42)
+        expect(picked?.debugID == "front-app", "non-front PID should be filtered, got: \(String(describing: picked?.debugID))")
+    }
+
+    static func testPickFocusedWindow_emptyReturnsNil() {
+        let picked = WindowOCRProvider.pickFocusedWindow(in: [FakeWindow](), frontPID: 42)
+        expect(picked == nil, "empty list should return nil")
+    }
+
+    static func testPickFocusedWindow_noMatchingPIDReturnsNil() {
+        let windows: [FakeWindow] = [
+            FakeWindow(owningPID: 99, isOnScreen: true, windowLayer: 0, frameArea: 100_000, debugID: "other"),
+        ]
+        let picked = WindowOCRProvider.pickFocusedWindow(in: windows, frontPID: 42)
+        expect(picked == nil, "all-foreign PIDs should return nil, got: \(String(describing: picked?.debugID))")
     }
 
     static func fail(_ message: String) -> Never {
