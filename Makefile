@@ -540,6 +540,7 @@ test-window-ocr:
 	       Tests/WindowOCRTests.swift \
 	       -framework ScreenCaptureKit \
 	       -framework AppKit \
+	       -framework Vision \
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 

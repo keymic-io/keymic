@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Vision
 
 /// Test-friendly view of the SCWindow fields used by the focused-window heuristic.
 /// Production code conforms `SCWindow` to this protocol via an extension below.
@@ -106,12 +107,40 @@ actor WindowOCRProvider {
             throw WindowOCRError.captureFailed(error)
         }
 
-        // Vision step lands in Task 5.
-        _ = cgImage
-        return nil
+        do {
+            return try Self.recognizeText(in: cgImage)
+        } catch {
+            throw WindowOCRError.visionFailed(error)
+        }
         #else
         return nil
         #endif
+    }
+
+    /// Runs Vision on a captured window image and returns top-to-bottom concatenated text.
+    /// Returns nil if Vision found no candidate strings (e.g. screenshot of a blank canvas).
+    @available(macOS 14.0, *)
+    nonisolated static func recognizeText(
+        in cgImage: CGImage,
+        recognitionLevel: VNRequestTextRecognitionLevel = .accurate
+    ) throws -> String? {
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = recognitionLevel
+        request.usesLanguageCorrection = true
+        let supported = (try? VNRecognizeTextRequest.supportedRecognitionLanguages(
+            for: recognitionLevel,
+            revision: VNRecognizeTextRequest.currentRevision
+        )) ?? []
+        request.recognitionLanguages = resolvedRecognitionLanguages(
+            preferred: Locale.preferredLanguages,
+            supported: supported
+        )
+        try handler.perform([request])
+        let lines = (request.results ?? []).compactMap {
+            $0.topCandidates(1).first?.string
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 
     #if canImport(ScreenCaptureKit)
