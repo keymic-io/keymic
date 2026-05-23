@@ -9,11 +9,12 @@ private struct FilteredItems {
 }
 
 struct ClipboardHistoryView: View {
+    @Bindable var selectionBridge: ClipboardPanelSelectionBridge
+
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
 
     @State private var query: String = ""
     @State private var tab: PanelTab = .clipboard
-    @State private var selectedID: UUID?
     @State private var filtered: FilteredItems = FilteredItems(pinned: [], history: [])
     @State private var suppressScrollOnce: Bool = false
     @State private var keyboardNavMouseLock: NSPoint?
@@ -27,6 +28,9 @@ struct ClipboardHistoryView: View {
     let onVaultPaste: (VaultItem) -> Void
     let onVaultDelete: (VaultItem) -> Void
     let onDismiss: () -> Void
+
+    private var selectedIDs: Set<UUID> { selectionBridge.selectedIDs }
+    private var primaryID: UUID? { selectionBridge.primarySelection }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -86,13 +90,24 @@ struct ClipboardHistoryView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .onAppear {
             filtered = computeFiltered()
-            selectedID = filtered.all.first?.id
+            if let id = filtered.all.first?.id {
+                selectionBridge.selectedIDs = [id]
+                selectionBridge.lastClickedID = id
+            } else {
+                selectionBridge.selectedIDs.removeAll()
+            }
+            selectionBridge.visibleOrderedIDs = filtered.all.map(\.id)
             focusedField = .search
         }
         .onChange(of: focus.requestID) { _, _ in
             query = ""
             filtered = computeFiltered()
-            selectedID = filtered.all.first?.id
+            if let id = filtered.all.first?.id {
+                selectionBridge.selectedIDs = [id]
+                selectionBridge.lastClickedID = id
+            } else {
+                selectionBridge.selectedIDs.removeAll()
+            }
             focusedField = .search
         }
         .onChange(of: focus.quickPasteRequestID) { _, _ in
@@ -113,13 +128,29 @@ struct ClipboardHistoryView: View {
         }
         .onChange(of: query) { _, _ in
             filtered = computeFiltered()
+            selectionBridge.visibleOrderedIDs = filtered.all.map(\.id)
             let firstID = filtered.all.first?.id
-            if selectedID != firstID { selectedID = firstID }
+            if primaryID != firstID {
+                if let id = firstID {
+                    selectionBridge.selectedIDs = [id]
+                    selectionBridge.lastClickedID = id
+                } else {
+                    selectionBridge.selectedIDs.removeAll()
+                }
+            }
         }
         .onChange(of: items) { _, _ in
             filtered = computeFiltered()
-            if let id = selectedID, !filtered.all.contains(where: { $0.id == id }) {
-                selectedID = filtered.all.first?.id
+            selectionBridge.visibleOrderedIDs = filtered.all.map(\.id)
+            // Drop any selected IDs that are no longer visible.
+            let visibleSet = Set(filtered.all.map(\.id))
+            let pruned = selectionBridge.selectedIDs.intersection(visibleSet)
+            if pruned != selectionBridge.selectedIDs {
+                selectionBridge.selectedIDs = pruned
+            }
+            if selectionBridge.selectedIDs.isEmpty, let id = filtered.all.first?.id {
+                selectionBridge.selectedIDs = [id]
+                selectionBridge.lastClickedID = id
             }
         }
         .background(
@@ -202,12 +233,28 @@ struct ClipboardHistoryView: View {
                                 .listRowBackground(rowBackground(for: item))
                                 .contentShape(Rectangle())
                                 .onHover { hovering in
-                                    if hovering, selectedID != item.id {
+                                    if hovering, primaryID != item.id {
                                         suppressScrollOnce = true
-                                        selectedID = item.id
+                                        selectionBridge.selectedIDs = [item.id]
+                                        selectionBridge.lastClickedID = item.id
                                     }
                                 }
                                 .onTapGesture { onPaste(item) }
+                                .simultaneousGesture(
+                                    TapGesture(count: 1).modifiers(.command).onEnded {
+                                        if selectionBridge.selectedIDs.contains(item.id) {
+                                            selectionBridge.selectedIDs.remove(item.id)
+                                        } else {
+                                            selectionBridge.selectedIDs.insert(item.id)
+                                        }
+                                        selectionBridge.lastClickedID = item.id
+                                    }
+                                )
+                                .simultaneousGesture(
+                                    TapGesture(count: 1).modifiers(.shift).onEnded {
+                                        extendRange(to: item.id)
+                                    }
+                                )
                                 .id(item.id)
                         }
                     }
@@ -224,6 +271,21 @@ struct ClipboardHistoryView: View {
                                 handleHover(hovering, item: item)
                             }
                             .onTapGesture { onPaste(item) }
+                            .simultaneousGesture(
+                                TapGesture(count: 1).modifiers(.command).onEnded {
+                                    if selectionBridge.selectedIDs.contains(item.id) {
+                                        selectionBridge.selectedIDs.remove(item.id)
+                                    } else {
+                                        selectionBridge.selectedIDs.insert(item.id)
+                                    }
+                                    selectionBridge.lastClickedID = item.id
+                                }
+                            )
+                            .simultaneousGesture(
+                                TapGesture(count: 1).modifiers(.shift).onEnded {
+                                    extendRange(to: item.id)
+                                }
+                            )
                             .id(item.id)
                     }
                 }
@@ -231,13 +293,17 @@ struct ClipboardHistoryView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.clear)
-            .onChange(of: selectedID) { _, new in
-                guard let new else { return }
+            .onChange(of: selectionBridge.selectedIDs) { _, newSet in
                 if suppressScrollOnce {
                     suppressScrollOnce = false
                     return
                 }
-                withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) }
+                // Scroll to primary (single selection) or the most recently clicked anchor.
+                let target: UUID? = newSet.count == 1
+                    ? newSet.first
+                    : (selectionBridge.lastClickedID.flatMap { newSet.contains($0) ? $0 : nil })
+                guard let id = target else { return }
+                withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(id, anchor: .center) }
             }
         }
     }
@@ -254,7 +320,7 @@ struct ClipboardHistoryView: View {
         switch item.kind {
         case .file:
             FileRow(
-                item: item, quickKeyLabel: label, isSelected: item.id == selectedID,
+                item: item, quickKeyLabel: label, isSelected: selectedIDs.contains(item.id),
                 relativeTime: relativeTime)
         case .image:
             ImageRow(
@@ -296,7 +362,7 @@ struct ClipboardHistoryView: View {
 
     private func rowBackground(for item: ClipboardItem) -> some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(item.id == selectedID ? Color.accentColor.opacity(0.35) : Color.clear)
+            .fill(selectedIDs.contains(item.id) ? Color.accentColor.opacity(0.35) : Color.clear)
     }
 
     private func historyQuickKeyLabel(for index: Int) -> String {
@@ -318,9 +384,11 @@ struct ClipboardHistoryView: View {
         return {
             let list = filtered.all
             guard !list.isEmpty else { return }
-            let currentIndex = list.firstIndex(where: { $0.id == selectedID }) ?? 0
+            let currentIndex = list.firstIndex(where: { selectedIDs.contains($0.id) }) ?? 0
             let newIndex = (currentIndex + delta + list.count) % list.count
-            selectedID = list[newIndex].id
+            let newID = list[newIndex].id
+            selectionBridge.selectedIDs = [newID]
+            selectionBridge.lastClickedID = newID
             keyboardNavMouseLock = NSEvent.mouseLocation
         }
     }
@@ -331,25 +399,39 @@ struct ClipboardHistoryView: View {
             return
         }
         keyboardNavMouseLock = nil
-        if selectedID != item.id {
+        if primaryID != item.id {
             suppressScrollOnce = true
-            selectedID = item.id
+            selectionBridge.selectedIDs = [item.id]
+            selectionBridge.lastClickedID = item.id
         }
     }
 
     private func triggerPaste() {
-        guard let id = selectedID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        guard let id = primaryID, let item = filtered.all.first(where: { $0.id == id }) else { return }
         onPaste(item)
     }
 
     private func triggerDelete() {
-        guard let id = selectedID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        guard let id = primaryID, let item = filtered.all.first(where: { $0.id == id }) else { return }
         onDelete(item.id)
     }
 
     private func triggerTogglePin() {
-        guard let id = selectedID else { return }
+        guard let id = primaryID else { return }
         onTogglePin(id)
+    }
+
+    private func extendRange(to targetID: UUID) {
+        guard let anchor = selectionBridge.lastClickedID,
+              let aIdx = filtered.all.firstIndex(where: { $0.id == anchor }),
+              let tIdx = filtered.all.firstIndex(where: { $0.id == targetID }) else {
+            selectionBridge.selectedIDs = [targetID]
+            selectionBridge.lastClickedID = targetID
+            return
+        }
+        let range = aIdx <= tIdx ? aIdx...tIdx : tIdx...aIdx
+        let ids = filtered.all[range].map(\.id)
+        selectionBridge.selectedIDs.formUnion(ids)
     }
 
     private func triggerQuickPaste(_ index: Int) {

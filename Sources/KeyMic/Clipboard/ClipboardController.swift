@@ -162,6 +162,7 @@ final class ClipboardController {
         ClipboardPanel(
             modelContainer: store.modelContainer,
             clipboardCacheURL: store.clipboardCacheURL,
+            selectionBridge: selectionBridge,
             onPaste: { [weak self] item in self?.paste(item) },
             onDelete: { [weak self] id in self?.store.delete(id: id) },
             onTogglePin: { [weak self] id in self?.store.togglePin(id: id) },
