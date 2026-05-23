@@ -14,6 +14,13 @@ public actor MCPClient: MCPClientProtocol {
 
     private var transport: (any Transport)?
     private var stdioProcess: Process?
+    /// Retained explicitly so we can close the parent-side write-end FDs in
+    /// `disconnectResources` — without that, the SDK's stdout read loop can
+    /// block forever waiting for EOF even after the child has exited (parent
+    /// still holds the write-end so the kernel doesn't deliver EOF).
+    private var stdinPipe: Pipe?
+    private var stdoutPipe: Pipe?
+    private var stderrPipe: Pipe?
     private var stderrDrainTask: Task<Void, Never>?
     private var connected = false
     private var connectTask: Task<Void, Error>?
@@ -201,6 +208,9 @@ public actor MCPClient: MCPClientProtocol {
         }
 
         stdioProcess = process
+        self.stdinPipe = stdinPipe
+        self.stdoutPipe = stdoutPipe
+        self.stderrPipe = stderrPipe
         stderrDrainTask = Task {
             let handle = stderrPipe.fileHandleForReading
             do {
@@ -286,6 +296,20 @@ public actor MCPClient: MCPClientProtocol {
         if let process, process.isRunning {
             process.terminate()
         }
+
+        // Close parent-side write-end FDs so the kernel delivers EOF to the
+        // SDK's read loop even if the child somehow lingers. Without this,
+        // `client.disconnect()` below can block waiting for stdout EOF that
+        // never arrives because *we* still hold the write side open.
+        let stdoutPipe = self.stdoutPipe
+        let stderrPipe = self.stderrPipe
+        let stdinPipe = self.stdinPipe
+        self.stdoutPipe = nil
+        self.stderrPipe = nil
+        self.stdinPipe = nil
+        try? stdoutPipe?.fileHandleForWriting.close()
+        try? stderrPipe?.fileHandleForWriting.close()
+        try? stdinPipe?.fileHandleForWriting.close()
 
         await client.disconnect()
         transport = nil

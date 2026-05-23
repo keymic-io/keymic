@@ -12,6 +12,7 @@ final class AgentRunner {
     private let registry: ToolRegistry
     private let skillRegistry: SkillRegistry
     private let configProvider: @Sendable () -> AgentConfig
+    private let workingDirectoryProvider: @Sendable () -> String
 
     /// Default system prompt for `runForHotkey` when no skill body is available.
     nonisolated static let hotkeyDefaultSystemPrompt =
@@ -20,14 +21,35 @@ final class AgentRunner {
     /// Constant userMessage for `runForSkill` runs — avoids sending an empty user turn.
     nonisolated static let skillProceedMessage = "Proceed."
 
+    /// UserDefaults key for an optional explicit working directory override. When
+    /// unset (or empty), file tools sandbox to `~/`; explicitly never to `/`,
+    /// which is the LaunchServices-inherited CWD for an LSUIElement bundle and
+    /// would make `FileSystemActor.isPathSafe` reject every absolute path.
+    nonisolated static let workingDirectoryDefaultsKey = "agentWorkingDirectory"
+
+    nonisolated static func defaultWorkingDirectory() -> String {
+        let raw = UserDefaults.standard.string(forKey: workingDirectoryDefaultsKey) ?? ""
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return NSHomeDirectory() }
+        return (trimmed as NSString).expandingTildeInPath
+    }
+
     init(
         registry: ToolRegistry,
         skillRegistry: SkillRegistry,
-        configProvider: @escaping @Sendable () -> AgentConfig = { AgentConfig.fromDefaults() }
+        configProvider: @escaping @Sendable () -> AgentConfig = { AgentConfig.fromDefaults() },
+        workingDirectoryProvider: @escaping @Sendable () -> String = {
+            AgentRunner.defaultWorkingDirectory()
+        }
     ) {
         self.registry = registry
         self.skillRegistry = skillRegistry
         self.configProvider = configProvider
+        self.workingDirectoryProvider = workingDirectoryProvider
+    }
+
+    private func makeToolContext() -> ToolContext {
+        ToolContext(workingDirectory: workingDirectoryProvider())
     }
 
     /// Hotkey-triggered skill activation. Reads `skill.instructions` as the system
@@ -37,6 +59,7 @@ final class AgentRunner {
         let body = skill.instructions ?? ""
         let allowed = AllowedToolsParser.parse(skill.metadata.allowedTools)
         let session = AgentSession(registry: registry, config: configProvider())
+        let toolCtx = makeToolContext()
         return Task.detached {
             for await event in session.run(
                 systemPrompt: body.isEmpty ? nil : body,
@@ -44,7 +67,7 @@ final class AgentRunner {
                 allowedToolNames: allowed,
                 priorMessages: [],
                 options: AgentRunOptions(),
-                toolContext: ToolContext()
+                toolContext: toolCtx
             ) {
                 await sink.receive(event)
             }
@@ -56,6 +79,7 @@ final class AgentRunner {
     @discardableResult
     func runForHotkey(prompt: String, sink: any AgentEventSink) -> Task<Void, Never> {
         let session = AgentSession(registry: registry, config: configProvider())
+        let toolCtx = makeToolContext()
         return Task.detached {
             for await event in session.run(
                 systemPrompt: AgentRunner.hotkeyDefaultSystemPrompt,
@@ -63,7 +87,7 @@ final class AgentRunner {
                 allowedToolNames: nil,
                 priorMessages: [],
                 options: AgentRunOptions(),
-                toolContext: ToolContext()
+                toolContext: toolCtx
             ) {
                 await sink.receive(event)
             }
@@ -82,6 +106,7 @@ final class AgentRunner {
         sink: any AgentEventSink
     ) -> Task<Void, Never> {
         let session = AgentSession(registry: registry, config: configProvider())
+        let toolCtx = makeToolContext()
         return Task.detached {
             for await event in session.run(
                 systemPrompt: systemPrompt,
@@ -89,7 +114,7 @@ final class AgentRunner {
                 allowedToolNames: allowedToolNames,
                 priorMessages: priorMessages,
                 options: options,
-                toolContext: ToolContext()
+                toolContext: toolCtx
             ) {
                 await sink.receive(event)
             }

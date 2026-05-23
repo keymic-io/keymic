@@ -76,19 +76,14 @@ final class HotkeyActionRunner {
         }
     }
 
+    /// Hotkey shell actions route through `ShellRunner.shared.run` so a single
+    /// hung command can't lock the runner's serial dispatch queue: ShellRunner
+    /// enforces a 30s timeout with SIGTERM then SIGKILL of the whole process
+    /// tree, plus it pipes through the cached login-shell PATH snapshot so
+    /// homebrew/asdf/rbenv shims resolve the same way an interactive shell
+    /// would.
     static func defaultShell(_ command: String) -> Int32 {
-        let process = Process()
-        process.launchPath = "/bin/zsh"
-        process.arguments = ["-lc", command]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-            return process.terminationStatus
-        } catch {
-            return 127
-        }
+        ShellRunner.shared.run(command)
     }
 
     static func defaultKeyPress(_ keyCode: UInt16, _ modifiersRaw: UInt64) {

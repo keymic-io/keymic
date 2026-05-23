@@ -70,7 +70,7 @@ struct MCPClientManagerTests {
         )
 
         let names = await registry.allNames()
-        assertEqual(names, ["Read", "remote.Read"])
+        assertEqual(names, ["Read", "remote_Read"])
     }
 
     static func testDisconnectUsesExplicitServerOwnershipForDottedNames() async throws {
@@ -84,7 +84,9 @@ struct MCPClientManagerTests {
         await manager.disconnect(serverName: "a", registry: registry)
 
         let names = await registry.allNames()
-        assertEqual(names, ["Read", "a.b.X", "b.X"])
+        // `serverName: "a.b"` is sanitized to `"a_b"`, so its tool surfaces as
+        // `a_b_X` — distinct from `a_X` (server "a") and `b_X` (server "b").
+        assertEqual(names, ["Read", "a_b_X", "b_X"])
         let status = await manager.status(for: "a")
         assertEqual(status?.state, .disconnected)
     }
@@ -96,7 +98,7 @@ struct MCPClientManagerTests {
         try await manager.registerAdapter(makeAdapter(serverName: "beta", remoteName: "Search"), forServer: "beta", registry: registry)
 
         let names = await registry.allNames()
-        assertEqual(names, ["alpha.Search", "beta.Search"])
+        assertEqual(names, ["alpha_Search", "beta_Search"])
     }
 
     static func testStaleIdentityCleanupDoesNotRemoveReplacementAdapter() async throws {
@@ -115,9 +117,9 @@ struct MCPClientManagerTests {
         )
         assertEqual(removedOld, false)
 
-        let current = await registry.tool(named: "server.Tool") as? MCPToolAdapter
+        let current = await registry.tool(named: "server_Tool") as? MCPToolAdapter
         assertEqual(current?.registrationID, newAdapter.registrationID)
-        assertEqual(await registry.allNames(), ["server.Tool"])
+        assertEqual(await registry.allNames(), ["server_Tool"])
 
         let removedNew = await manager.unregisterAdapter(
             name: newAdapter.name,

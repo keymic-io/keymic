@@ -61,7 +61,9 @@ struct MCPToolAdapterTests {
 
     static func testPrefixedName() async throws {
         let adapter = makeAdapter(client: FakeMCPClient())
-        assertEqual(adapter.name, "server.remote")
+        // `_` separator (not `.`) so the name passes OpenAI's
+        // `function.name` regex `^[a-zA-Z0-9_-]{1,64}$`.
+        assertEqual(adapter.name, "server_remote")
     }
 
     static func testFactorySchemaExtraction() async throws {
@@ -87,7 +89,7 @@ struct MCPToolAdapterTests {
 
         let adapter = try MCPToolAdapter.make(from: descriptor, serverName: "mcp", client: client)
 
-        assertEqual(adapter.name, "mcp.lookup")
+        assertEqual(adapter.name, "mcp_lookup")
         assertEqual(adapter.description, "Lookup records")
         assertEqual(adapter.parametersJSONSchema["type"] as? String, "object")
         let properties = adapter.parametersJSONSchema["properties"] as? [String: Any]

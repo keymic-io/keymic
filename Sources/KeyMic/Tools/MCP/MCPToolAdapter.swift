@@ -10,8 +10,26 @@ public struct MCPToolAdapter: Tool {
 
     private let client: MCPClientProtocol
 
+    /// OpenAI's `tools[i].function.name` regex is `^[a-zA-Z0-9_-]{1,64}$` —
+    /// dots and most other punctuation are rejected with HTTP 400. We also
+    /// scrub any `.` / whitespace in `serverName` because users may have
+    /// configured a server id like `github.copilot` in their MCP config.
     public var name: String {
-        "\(serverName).\(remoteName)"
+        "\(Self.sanitizeForOpenAI(serverName))_\(Self.sanitizeForOpenAI(remoteName))"
+    }
+
+    private static func sanitizeForOpenAI(_ raw: String) -> String {
+        var out = ""
+        out.reserveCapacity(raw.count)
+        for scalar in raw.unicodeScalars {
+            let ch = Character(scalar)
+            if ch.isLetter || ch.isNumber || ch == "_" || ch == "-" {
+                out.append(ch)
+            } else {
+                out.append("_")
+            }
+        }
+        return out
     }
 
     public init(
@@ -150,7 +168,21 @@ public struct MCPToolAdapter: Tool {
             ]
         }
 
-        return object.mapValues { unwrapSchemaValue($0) }
+        var dict = object.mapValues { unwrapSchemaValue($0) }
+        // OpenAI rejects `tools[i].function.parameters` with HTTP 400 unless the
+        // top-level shape is `{"type":"object","properties":...}`. MCP servers
+        // are allowed to omit `type` (it defaults to "object" under the MCP
+        // spec) or to set it to a non-"object" container — both shapes break
+        // the entire agent session, not just the offending tool, so we normalize
+        // here defensively.
+        let typeValue = dict["type"] as? String
+        if typeValue != "object" {
+            dict["type"] = "object"
+        }
+        if dict["properties"] == nil {
+            dict["properties"] = [String: Any]()
+        }
+        return dict
     }
 
     private static func unwrapSchemaValue(_ value: Value) -> Any {
