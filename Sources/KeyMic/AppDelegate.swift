@@ -380,7 +380,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let context = PersonaContext.snapshotCurrent()
-        let userText = context.buildPrompt(transcript: trimmed, contextMode: persona.contextMode)
+        let userText = context.buildPrompt(transcript: trimmed, sources: persona.contextSources)
         overlayPanel.showRefining()
         refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
             guard let self else { return }
