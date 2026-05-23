@@ -178,16 +178,10 @@ private struct PersonaDetailForm: View {
                     }
                 }
 
-                // Context mode
+                // Context sources (read-only label; multi-select editor is a follow-up)
                 FieldLabel("Context") {
-                    Picker("", selection: model.binding(\.contextMode, for: persona)) {
-                        ForEach(ContextMode.allCases, id: \.self) { mode in
-                            Text(mode.displayName).tag(mode)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(maxWidth: 240, alignment: .leading)
+                    Text(contextSourcesDescription(persona.contextSources))
+                        .foregroundStyle(.secondary)
                 }
 
                 if persona.builtIn {
@@ -203,6 +197,13 @@ private struct PersonaDetailForm: View {
             .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func contextSourcesDescription(_ sources: Set<ContextSource>) -> String {
+        if sources.isEmpty { return String(localized: "None") }
+        // Display in canonical enum order.
+        let ordered = ContextSource.allCases.filter { sources.contains($0) }
+        return ordered.map(\.displayName).joined(separator: ", ")
     }
 }
 
@@ -415,6 +416,7 @@ final class PersonasViewModel: ObservableObject {
             temperature: 0.7,
             hotkey: nil,
             contextMode: .none,
+            contextSources: [],
             builtIn: false,
             createdAt: now,
             updatedAt: now
