@@ -1,17 +1,5 @@
 import Foundation
 
-enum ContextMode: String, Codable, CaseIterable {
-    case none
-    case selectionAndClipboard
-
-    var displayName: String {
-        switch self {
-        case .none: return String(localized: "None")
-        case .selectionAndClipboard: return String(localized: "Selection + Clipboard")
-        }
-    }
-}
-
 struct Persona: Codable, Identifiable, Equatable {
     var id: String
     var name: String
@@ -19,7 +7,6 @@ struct Persona: Codable, Identifiable, Equatable {
     var stylePrompt: String
     var temperature: Double    // 0.0 ... 2.0
     var hotkey: String?        // HotkeyConfig.encode() format, e.g. "alt+q"
-    var contextMode: ContextMode
     var contextSources: Set<ContextSource>
     var builtIn: Bool
     var createdAt: Date
@@ -29,8 +16,8 @@ struct Persona: Codable, Identifiable, Equatable {
     static let temperatureRange: ClosedRange<Double> = 0.0 ... 2.0
 
     init(id: String, name: String, icon: String, stylePrompt: String,
-         temperature: Double, hotkey: String?, contextMode: ContextMode,
-         contextSources: Set<ContextSource>? = nil,
+         temperature: Double, hotkey: String?,
+         contextSources: Set<ContextSource>,
          builtIn: Bool, createdAt: Date, updatedAt: Date,
          injectionStrategy: InjectionStrategy = .replaceFocusedText) {
         self.id = id
@@ -39,26 +26,16 @@ struct Persona: Codable, Identifiable, Equatable {
         self.stylePrompt = stylePrompt
         self.temperature = temperature
         self.hotkey = hotkey
-        self.contextMode = contextMode
-        self.contextSources = contextSources ?? Self.defaultSources(for: contextMode)
+        self.contextSources = contextSources
         self.builtIn = builtIn
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.injectionStrategy = injectionStrategy
     }
 
-    /// Maps the legacy `contextMode` enum to the canonical set, used as the default
-    /// when callers don't pass `contextSources` explicitly. Mirrors §5.3 of the LOR-18 spec.
-    static func defaultSources(for mode: ContextMode) -> Set<ContextSource> {
-        switch mode {
-        case .none: return []
-        case .selectionAndClipboard: return [.selection, .clipboardTop]
-        }
-    }
-
     private enum CodingKeys: String, CodingKey {
         case id, name, icon, stylePrompt, temperature, hotkey
-        case contextMode, contextSources, builtIn, createdAt, updatedAt, injectionStrategy
+        case contextSources, builtIn, createdAt, updatedAt, injectionStrategy
     }
 
     init(from decoder: Decoder) throws {
@@ -69,13 +46,11 @@ struct Persona: Codable, Identifiable, Equatable {
         self.stylePrompt = try c.decode(String.self, forKey: .stylePrompt)
         self.temperature = try c.decode(Double.self, forKey: .temperature)
         self.hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey)
-        self.contextMode = try c.decode(ContextMode.self, forKey: .contextMode)
-        // LOR-18: contextSources is the canonical field. Older personas.json lacks it;
-        // fall back to a mapping derived from contextMode.
+        // LOR-18: contextSources is canonical. Migrate from legacy "contextMode" string if absent.
         if let stored = try c.decodeIfPresent(Set<ContextSource>.self, forKey: .contextSources) {
             self.contextSources = stored
         } else {
-            self.contextSources = Self.defaultSources(for: self.contextMode)
+            self.contextSources = try Self.decodeLegacyContextMode(decoder)
         }
         self.builtIn = try c.decode(Bool.self, forKey: .builtIn)
         self.createdAt = try c.decode(Date.self, forKey: .createdAt)
@@ -84,8 +59,21 @@ struct Persona: Codable, Identifiable, Equatable {
                                                        forKey: .injectionStrategy) ?? .replaceFocusedText
     }
 
+    private static func decodeLegacyContextMode(_ decoder: Decoder) throws -> Set<ContextSource> {
+        // Legacy "contextMode" was a top-level string. Read it via a side-channel struct
+        // since the main CodingKeys no longer includes that case.
+        struct Legacy: Decodable { let contextMode: String? }
+        let legacy = try? Legacy(from: decoder)
+        switch legacy?.contextMode {
+        case "selectionAndClipboard":
+            return [.selection, .clipboardTop]
+        default:
+            return []
+        }
+    }
+
     /// Built-in personas seeded on first launch. Order is stable.
-    /// Built-ins: name + builtIn flag are immutable in UI; stylePrompt + icon + temperature + hotkey + contextMode editable.
+    /// Built-ins: name + builtIn flag are immutable in UI; stylePrompt + icon + temperature + hotkey + contextSources editable.
     static func builtInSeeds() -> [Persona] {
         let now = Date()
         return [
@@ -113,7 +101,6 @@ struct Persona: Codable, Identifiable, Equatable {
                     """,
                 temperature: 0.3,
                 hotkey: nil,
-                contextMode: .none,
                 contextSources: [],
                 builtIn: true,
                 createdAt: now,
@@ -126,7 +113,6 @@ struct Persona: Codable, Identifiable, Equatable {
                 stylePrompt: "Automatically detect the input language and translate it into English. Keep the tone professional and fluent. Return ONLY the translated text.",
                 temperature: 0.6,
                 hotkey: nil,
-                contextMode: .none,
                 contextSources: [],
                 builtIn: true,
                 createdAt: now,
@@ -139,7 +125,6 @@ struct Persona: Codable, Identifiable, Equatable {
                 stylePrompt: "Convert voice transcription into executable shell commands. Be concise and accurate for technical users. Return ONLY the command, with no markdown fences.",
                 temperature: 0.1,
                 hotkey: nil,
-                contextMode: .none,
                 contextSources: [],
                 builtIn: true,
                 createdAt: now,
@@ -160,7 +145,6 @@ struct Persona: Codable, Identifiable, Equatable {
                     """,
                 temperature: 0.5,
                 hotkey: nil,
-                contextMode: .selectionAndClipboard,
                 contextSources: [.selection, .clipboardTop],
                 builtIn: true,
                 createdAt: now,
@@ -177,7 +161,6 @@ struct Persona: Codable, Identifiable, Equatable {
                     """,
                 temperature: 0.4,
                 hotkey: nil,
-                contextMode: .none,
                 contextSources: [.selection],
                 builtIn: true,
                 createdAt: now,

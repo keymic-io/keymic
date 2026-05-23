@@ -11,7 +11,7 @@ struct PersonaTestRunner {
             stylePrompt: "do nothing",
             temperature: 0.5,
             hotkey: "alt+q",
-            contextMode: .selectionAndClipboard,
+            contextSources: [.selection, .clipboardTop],
             builtIn: false,
             createdAt: Date(timeIntervalSince1970: 1_700_000_000),
             updatedAt: Date(timeIntervalSince1970: 1_700_000_001)
@@ -19,7 +19,6 @@ struct PersonaTestRunner {
         let data = try! JSONEncoder().encode(p)
         let decoded = try! JSONDecoder().decode(Persona.self, from: data)
         expect(decoded == p, "Codable round-trip preserves equality")
-        expect(decoded.contextMode == .selectionAndClipboard, "contextMode round-trips")
 
         // Built-in seeds: exactly 5, ids stable
         let seeds = Persona.builtInSeeds()
@@ -33,8 +32,6 @@ struct PersonaTestRunner {
             "builtin-general-editor",
         ], "built-in ids in canonical order")
         expect(seeds.allSatisfy { $0.builtIn }, "all seeds marked builtIn")
-        expect(seeds[3].contextMode == .selectionAndClipboard, "上下文 persona uses selectionAndClipboard")
-        expect(seeds[0].contextMode == .none, "default persona uses .none")
         expect(seeds[4].injectionStrategy == .replaceSelection,
                "general-editor persona uses replaceSelection strategy")
 
@@ -43,7 +40,7 @@ struct PersonaTestRunner {
                || seeds[0].stylePrompt.contains("recognition error"),
                "default prompt preserves KeyMic conservative-correction wording")
 
-        // LOR-18: contextSources derived from contextMode by default
+        // LOR-18: each seed declares its canonical contextSources
         let seedsBuiltIn = Persona.builtInSeeds()
         expect(seedsBuiltIn[0].contextSources == [], "default persona contextSources should be empty")
         expect(seedsBuiltIn[1].contextSources == [], "translate persona contextSources should be empty")

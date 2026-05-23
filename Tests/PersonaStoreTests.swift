@@ -32,7 +32,7 @@ struct PersonaStoreTestRunner {
         let custom = Persona(
             id: "user-1", name: "Mine", icon: "star",
             stylePrompt: "test", temperature: 0.8, hotkey: nil,
-            contextMode: .none, contextSources: [], builtIn: false,
+            contextSources: [], builtIn: false,
             createdAt: now, updatedAt: now
         )
         store3.add(custom)
@@ -56,7 +56,7 @@ struct PersonaStoreTestRunner {
         let custom2 = Persona(
             id: "user-2", name: "Mine2", icon: "star",
             stylePrompt: "x", temperature: 0.5, hotkey: nil,
-            contextMode: .none, contextSources: [], builtIn: false,
+            contextSources: [], builtIn: false,
             createdAt: now2, updatedAt: now2
         )
         store3.add(custom2)

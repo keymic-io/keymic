@@ -14,25 +14,12 @@ struct PersonaContext: Equatable {
 
     static let empty = PersonaContext(selection: nil, clipboardTop: nil, clipboardHistory: nil, windowOCR: nil)
 
-    /// Legacy P1 entry point. Kept for backward compatibility during the LOR-18 migration.
-    /// Removed in a later cleanup task once all callers move to `buildPrompt(transcript:sources:)`.
-    /// Difference vs the new overload: when contextMode is `.selectionAndClipboard` we still
-    /// wrap the transcript in `[User said]\n…` even if no context sections are emitted.
-    func buildPrompt(transcript: String, contextMode: ContextMode) -> String {
-        guard contextMode == .selectionAndClipboard else { return transcript }
-        return buildPrompt(transcript: transcript, sources: [.selection, .clipboardTop], wrapTranscriptWhenNoSections: true)
-    }
-
     /// Builds the labelled user prompt for an LLM call.
     /// Sections are emitted in canonical order when present:
     ///   [Selected text] → [Recent clipboard] → [Clipboard history] → [Window text] → [User said]
     /// Empty / nil providers produce no section even when their source is in `sources`.
     /// Result capped at 7500 UTF-16 units, snapped to character boundary.
     func buildPrompt(transcript: String, sources: Set<ContextSource>) -> String {
-        return buildPrompt(transcript: transcript, sources: sources, wrapTranscriptWhenNoSections: false)
-    }
-
-    private func buildPrompt(transcript: String, sources: Set<ContextSource>, wrapTranscriptWhenNoSections: Bool) -> String {
         let sel = sources.contains(.selection)
             ? (selection?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
             : ""
@@ -71,10 +58,8 @@ struct PersonaContext: Equatable {
             sections.append("[Window text]\n\(ocr)")
         }
 
-        // New API: when there are no context sections, emit just the transcript verbatim
-        // (no `[User said]` wrapper). Legacy API opts back into wrapping via the private flag
-        // to preserve the prior P1 contract that downstream callers rely on.
-        if sections.isEmpty && !wrapTranscriptWhenNoSections {
+        // No context sections → return the bare transcript without a `[User said]` wrapper.
+        if sections.isEmpty {
             return transcript
         }
         if includeTranscript {

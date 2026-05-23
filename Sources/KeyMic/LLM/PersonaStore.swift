@@ -77,7 +77,6 @@ final class PersonaStore {
             stylePrompt: source.stylePrompt,
             temperature: source.temperature,
             hotkey: nil,    // never inherit hotkey — would conflict
-            contextMode: source.contextMode,
             contextSources: source.contextSources,
             builtIn: false,
             createdAt: now,

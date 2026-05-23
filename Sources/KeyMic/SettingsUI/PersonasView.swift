@@ -415,7 +415,6 @@ final class PersonasViewModel: ObservableObject {
             stylePrompt: "",
             temperature: 0.7,
             hotkey: nil,
-            contextMode: .none,
             contextSources: [],
             builtIn: false,
             createdAt: now,
