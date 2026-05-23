@@ -399,6 +399,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.overlayPanel.updateText(status)
                 }
             )
+            // Return to the wave-only "refining" indicator after context gather.
+            self.overlayPanel.showRefining()
             let userText = context.buildPrompt(transcript: trimmed, sources: persona.contextSources)
             refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
                 guard let self else { return }
