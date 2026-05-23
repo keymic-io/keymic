@@ -10,6 +10,42 @@ struct KeyMonitorClipboardPanelTestRunner {
         expect(KeyMonitor.clipboardPanelQuickPasteIndex(keyCode: 0x13, flags: [.maskAlternate, .maskCommand]) == nil, "extra modifiers do not quick paste")
         expect(KeyMonitor.clipboardPanelQuickPasteIndex(keyCode: 0x09, flags: .maskAlternate) == nil, "non-number alt shortcut does not quick paste")
 
+        expect(KeyMonitor.shouldCancelVoiceForUnexpectedKeyPress(
+            keyCode: 0x78,
+            isAutoRepeat: false,
+            isVoiceActive: true,
+            voiceTriggerKeyCode: 0x3F,
+            personaHotkeyKeyDown: CGKeyCode?.none
+        ), "f2 cancels active fn voice session")
+        expect(!KeyMonitor.shouldCancelVoiceForUnexpectedKeyPress(
+            keyCode: 0x78,
+            isAutoRepeat: false,
+            isVoiceActive: false,
+            voiceTriggerKeyCode: 0x3F,
+            personaHotkeyKeyDown: CGKeyCode?.none
+        ), "f2 does not cancel inactive voice session")
+        expect(!KeyMonitor.shouldCancelVoiceForUnexpectedKeyPress(
+            keyCode: 0x3F,
+            isAutoRepeat: false,
+            isVoiceActive: true,
+            voiceTriggerKeyCode: 0x3F,
+            personaHotkeyKeyDown: CGKeyCode?.none
+        ), "voice trigger key does not cancel its own session")
+        expect(!KeyMonitor.shouldCancelVoiceForUnexpectedKeyPress(
+            keyCode: 0x06,
+            isAutoRepeat: false,
+            isVoiceActive: true,
+            voiceTriggerKeyCode: 0x3F,
+            personaHotkeyKeyDown: 0x06
+        ), "persona hotkey key does not cancel its own session")
+        expect(!KeyMonitor.shouldCancelVoiceForUnexpectedKeyPress(
+            keyCode: 0x78,
+            isAutoRepeat: true,
+            isVoiceActive: true,
+            voiceTriggerKeyCode: 0x3F,
+            personaHotkeyKeyDown: CGKeyCode?.none
+        ), "autorepeat keyDown does not repeatedly cancel voice session")
+
         print("KeyMonitorClipboardPanelTests passed")
     }
 

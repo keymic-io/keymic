@@ -37,6 +37,7 @@ enum VoiceSideEffect: Equatable {
     case overlayUpdate(text: String)
     case overlayShowRefining
     case overlayDismiss
+    case overlayShowCanceled
     case overlayShowError(VoiceError)
     case injectAndFinish(text: String)
     case playSound(name: String)
@@ -54,6 +55,7 @@ enum VoiceSideEffect: Equatable {
              (.cancelRecordingTimeoutTimer, .cancelRecordingTimeoutTimer),
              (.overlayShowRefining, .overlayShowRefining),
              (.overlayDismiss, .overlayDismiss),
+             (.overlayShowCanceled, .overlayShowCanceled),
              (.clearPartial, .clearPartial):
             return true
         case (.updateStatusIcon(let a), .updateStatusIcon(let b)):
@@ -123,7 +125,7 @@ struct VoiceStateMachine {
                 .cancelRecordingTimeoutTimer,
                 .cancelSession(session),
                 .updateStatusIcon(recording: false),
-                .overlayDismiss,
+                .overlayShowCanceled,
                 .clearPartial,
             ]
 
@@ -196,7 +198,7 @@ struct VoiceStateMachine {
             return [
                 .cancelGraceTimer,
                 .cancelSession(session),
-                .overlayDismiss,
+                .overlayShowCanceled,
             ]
 
         case (.transcribing(let oldSession), .triggerDown(let newSession)):

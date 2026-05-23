@@ -296,6 +296,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 overlayPanel.showRefining()
             case .overlayDismiss:
                 overlayPanel.dismiss()
+            case .overlayShowCanceled:
+                overlayPanel.showMessage(String(localized: "Voice canceled"))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.overlayPanel.dismiss() }
             case .overlayShowError(let err):
                 overlayPanel.showMessage(err.displayMessage)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlayPanel.dismiss() }

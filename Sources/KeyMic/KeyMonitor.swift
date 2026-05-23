@@ -256,6 +256,17 @@ final class KeyMonitor {
         }
     }
 
+    static func shouldCancelVoiceForUnexpectedKeyPress(
+        keyCode: CGKeyCode,
+        isAutoRepeat: Bool,
+        isVoiceActive: Bool,
+        voiceTriggerKeyCode: CGKeyCode?,
+        personaHotkeyKeyDown: CGKeyCode?
+    ) -> Bool {
+        guard !isAutoRepeat, isVoiceActive else { return false }
+        return keyCode != voiceTriggerKeyCode && keyCode != personaHotkeyKeyDown
+    }
+
     // MARK: - Private
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -329,6 +340,16 @@ final class KeyMonitor {
         }
 
         if let fKey = HotkeyConfig.decodeMediaFKey(type: type, event: event) {
+            if Self.shouldCancelVoiceForUnexpectedKeyPress(
+                keyCode: fKey,
+                isAutoRepeat: false,
+                isVoiceActive: isVoiceActive?() == true,
+                voiceTriggerKeyCode: voiceTriggerHotkey?.keyCode,
+                personaHotkeyKeyDown: state.personaHotkeyKeyDown
+            ) {
+                DispatchQueue.main.async { [weak self] in self?.onExtraneousKeyDuringVoice?() }
+                return Unmanaged.passRetained(event)
+            }
             if dispatchFRowHotkey(keyCode: fKey, flags: event.flags, fnHeld: state.heldModifiers.contains(0x3F)) {
                 return nil
             }
@@ -344,10 +365,13 @@ final class KeyMonitor {
                 DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
             }
 
-            if !isAutoRepeat,
-               isVoiceActive?() == true,
-               keyCode != voiceTriggerHotkey?.keyCode,
-               keyCode != state.personaHotkeyKeyDown {
+            if Self.shouldCancelVoiceForUnexpectedKeyPress(
+                keyCode: keyCode,
+                isAutoRepeat: isAutoRepeat,
+                isVoiceActive: isVoiceActive?() == true,
+                voiceTriggerKeyCode: voiceTriggerHotkey?.keyCode,
+                personaHotkeyKeyDown: state.personaHotkeyKeyDown
+            ) {
                 DispatchQueue.main.async { [weak self] in self?.onExtraneousKeyDuringVoice?() }
                 return Unmanaged.passRetained(event)
             }
