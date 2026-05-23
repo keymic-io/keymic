@@ -294,6 +294,13 @@ final class ClipboardStore {
         Self.logger.info("deleteAllClipboardItems — removed \(all.count, privacy: .public) rows")
     }
 
+    /// O(1)-ish SwiftData lookup by id. Used by ClipboardTransformController's wire-up
+    /// to resolve selection-bridge UUIDs back into `ClipboardItem` instances.
+    func item(id: UUID) -> ClipboardItem? {
+        let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == id })
+        return try? context.fetch(descriptor).first
+    }
+
     func bumpToTop(id: UUID) {
         let descriptor = FetchDescriptor<ClipboardItem>(predicate: #Predicate { $0.id == id })
         guard let item = try? context.fetch(descriptor).first else { return }
