@@ -227,6 +227,9 @@ test-cleanup-policy:
 test-hotkey-action-runner:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyAction.swift \
+	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
 	       Sources/KeyMic/Hotkey/HotkeyActionRunner.swift \
 	       Tests/HotkeyActionRunnerTests.swift \
 	       -o .build/hotkey-action-runner-tests
@@ -285,6 +288,8 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/Input/InputResetReason.swift \
+	       Sources/KeyMic/Input/InputState.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorClipboardPanelTests.swift \
 	       -o .build/keymonitor-clipboard-panel-tests
