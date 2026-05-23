@@ -389,26 +389,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        let context = PersonaContext.snapshotCurrent()
-        let userText = context.buildPrompt(transcript: trimmed, sources: persona.contextSources)
         overlayPanel.showRefining()
-        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            switch result {
-            case .success(let refined):
-                let finalText = refined.isEmpty ? trimmed : refined
-                self.overlayPanel.dismiss()
-                self.routeAndInject(text: finalText,
-                                    strategy: persona.injectionStrategy,
-                                    context: context)
-            case .failure(let error):
-                logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
-                self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                    self?.overlayPanel.dismiss()
-                    self?.routeAndInject(text: trimmed,
-                                         strategy: persona.injectionStrategy,
-                                         context: context)
+            let context = await PersonaContextBuilder.build(
+                for: persona,
+                clipboardStore: self.clipboardController.store,
+                onStatusUpdate: { [weak self] status in
+                    self?.overlayPanel.updateText(status)
+                }
+            )
+            let userText = context.buildPrompt(transcript: trimmed, sources: persona.contextSources)
+            refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success(let refined):
+                    let finalText = refined.isEmpty ? trimmed : refined
+                    self.overlayPanel.dismiss()
+                    self.routeAndInject(text: finalText,
+                                        strategy: persona.injectionStrategy,
+                                        context: context)
+                case .failure(let error):
+                    logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
+                    self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                        self?.overlayPanel.dismiss()
+                        self?.routeAndInject(text: trimmed,
+                                             strategy: persona.injectionStrategy,
+                                             context: context)
+                    }
                 }
             }
         }
