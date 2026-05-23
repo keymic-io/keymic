@@ -92,6 +92,22 @@ final class ClipboardStore {
         return (try? context.fetch(descriptor)) ?? []
     }
 
+    /// Returns the most recent `limit` clipboard texts in descending chronological order,
+    /// non-empty after trimming. Used by `PersonaContextBuilder` to populate
+    /// `PersonaContext.clipboardHistory` for personas that declare `.clipboardHistory`.
+    func recentTexts(limit: Int) -> [String] {
+        guard limit > 0 else { return [] }
+        var descriptor = FetchDescriptor<ClipboardItem>(
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = limit
+        let items = (try? context.fetch(descriptor)) ?? []
+        return items.compactMap {
+            let trimmed = $0.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+    }
+
     func add(text: String, sourceBundleID: String?, sourceAppName: String?) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }

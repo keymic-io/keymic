@@ -537,10 +537,17 @@ test-selected-text-editor:
 test-window-ocr:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Context/WindowOCRProvider.swift \
+	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
+	       Sources/KeyMic/LLM/PersonaContextBuilder.swift \
+	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
+	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
+	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
 	       Tests/WindowOCRTests.swift \
 	       -framework ScreenCaptureKit \
 	       -framework AppKit \
 	       -framework Vision \
+	       -framework Carbon \
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 
