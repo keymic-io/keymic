@@ -329,7 +329,7 @@ final class KeyMonitor {
         }
 
         if let fKey = HotkeyConfig.decodeMediaFKey(type: type, event: event) {
-            if dispatchFRowHotkey(keyCode: fKey, flags: event.flags) {
+            if dispatchFRowHotkey(keyCode: fKey, flags: event.flags, fnHeld: state.heldModifiers.contains(0x3F)) {
                 return nil
             }
             return Unmanaged.passRetained(event)
@@ -338,6 +338,7 @@ final class KeyMonitor {
         if type == .keyDown {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) == 1
+            let fnHeld = state.heldModifiers.contains(0x3F)
 
             if state.triggerActive && !isAutoRepeat {
                 DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
@@ -361,7 +362,7 @@ final class KeyMonitor {
             if !isAutoRepeat, HotkeyPreferences.enabled {
                 let frontBundleID = currentFrontBundleID?()
                 for binding in actionBindings {
-                    if binding.config.matches(keyCode: keyCode, flags: event.flags) {
+                    if binding.config.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                         if !binding.appBundleIDs.isEmpty {
                             guard let bid = frontBundleID, binding.appBundleIDs.contains(bid) else {
                                 continue
@@ -377,7 +378,7 @@ final class KeyMonitor {
             // Clipboard hotkey
             if let cfg = clipboardHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                 DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
                 return nil
             }
@@ -385,7 +386,7 @@ final class KeyMonitor {
             // Vault hotkey
             if let cfg = vaultHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                 DispatchQueue.main.async { [weak self] in self?.onVaultHotkey?() }
                 return nil
             }
@@ -393,7 +394,7 @@ final class KeyMonitor {
             // Settings hotkey
             if let cfg = settingsHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                 DispatchQueue.main.async { [weak self] in self?.onSettingsHotkey?() }
                 return nil
             }
@@ -401,7 +402,7 @@ final class KeyMonitor {
             // Screenshot hotkey
             if let cfg = screenshotHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags),
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld),
                UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
                 DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
                 return nil
@@ -423,7 +424,7 @@ final class KeyMonitor {
                 for persona in PersonaStore.shared.personas {
                     guard let cfg = hotkeys.personaHotkey(personaId: persona.id),
                           !cfg.isPureModifier,
-                          cfg.matches(keyCode: keyCode, flags: event.flags) else { continue }
+                          cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) else { continue }
                     let id = persona.id
                     state.personaHotkeyKeyDown = keyCode
                     DispatchQueue.main.async { [weak self] in
@@ -466,11 +467,11 @@ final class KeyMonitor {
     /// event) against the same hotkey set the regular keyDown path checks.
     /// Skips push-to-talk / persona logic — those rely on a paired keyUp that
     /// media events don't deliver.
-    private func dispatchFRowHotkey(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {
+    private func dispatchFRowHotkey(keyCode: CGKeyCode, flags: CGEventFlags, fnHeld: Bool) -> Bool {
         if HotkeyPreferences.enabled {
             let frontBundleID = currentFrontBundleID?()
             for binding in actionBindings {
-                if binding.config.matches(keyCode: keyCode, flags: flags) {
+                if binding.config.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
                     if !binding.appBundleIDs.isEmpty {
                         guard let bid = frontBundleID, binding.appBundleIDs.contains(bid) else { continue }
                     }
@@ -480,20 +481,20 @@ final class KeyMonitor {
                 }
             }
         }
-        if let cfg = clipboardHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+        if let cfg = clipboardHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
             DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
             return true
         }
-        if let cfg = vaultHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+        if let cfg = vaultHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
             DispatchQueue.main.async { [weak self] in self?.onVaultHotkey?() }
             return true
         }
-        if let cfg = settingsHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+        if let cfg = settingsHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
             DispatchQueue.main.async { [weak self] in self?.onSettingsHotkey?() }
             return true
         }
         if let cfg = screenshotHotkey, !cfg.isPureModifier,
-           cfg.matches(keyCode: keyCode, flags: flags),
+           cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld),
            UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
             DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
             return true

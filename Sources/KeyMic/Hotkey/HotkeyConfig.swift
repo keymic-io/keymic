@@ -159,15 +159,15 @@ struct HotkeyConfig: Hashable {
 
     // MARK: - Match
 
-    func matches(keyCode otherKey: CGKeyCode, flags: CGEventFlags) -> Bool {
+    func matches(keyCode otherKey: CGKeyCode, flags: CGEventFlags, fnHeld: Bool = false) -> Bool {
         guard !isPureModifier else { return false }
         guard otherKey == keyCode else { return false }
         let mask: CGEventFlags = [.maskCommand, .maskShift, .maskControl, .maskAlternate, .maskSecondaryFn]
         var eventModifiers = flags.intersection(mask)
         // F-row / arrow / nav keys arrive with .maskSecondaryFn asserted by
-        // macOS even without a real fn press. Recorded configs are normalized
-        // by dropping the implicit fn; the runtime comparison must match.
-        if Self.implicitFnKeyCodes.contains(otherKey) {
+        // macOS even without a real fn press. Strip only implicit fn. Preserve
+        // real physical Fn tracked from the dedicated flagsChanged event.
+        if Self.implicitFnKeyCodes.contains(otherKey), !fnHeld {
             eventModifiers.remove(.maskSecondaryFn)
         }
         return eventModifiers == modifiers

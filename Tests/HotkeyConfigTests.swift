@@ -48,6 +48,12 @@ struct HotkeyConfigTestRunner {
         expect(!altV.matches(keyCode: 0x08, flags: .maskAlternate), "different keyCode blocks match")
         expect(!fn.matches(keyCode: 0x3F, flags: .maskSecondaryFn), "pure-modifier .matches always false")
 
+        let f2 = HotkeyConfig.parse("f2")!
+        let fnF2 = HotkeyConfig.parse("fn+f2")!
+        expect(f2.matches(keyCode: 0x78, flags: .maskSecondaryFn), "bare f2 matches implicit fn bit")
+        expect(!f2.matches(keyCode: 0x78, flags: .maskSecondaryFn, fnHeld: true), "bare f2 does not match physical fn+f2")
+        expect(fnF2.matches(keyCode: 0x78, flags: .maskSecondaryFn, fnHeld: true), "fn+f2 matches physical fn+f2")
+
         print("HotkeyConfigTests passed")
     }
 
