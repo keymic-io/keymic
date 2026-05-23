@@ -53,9 +53,15 @@ private final class EditToolTests {
         let tool = EditTool()
         let input = #"{"file_path":"x.txt","old_string":"absent","new_string":"present"}"#.data(using: .utf8)!
         let ctx = ToolContext(workingDirectory: dir)
-        let out = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
-        guard out.contains("Failed") || out.contains("not found") else {
-            fatalError("expected failure for missing old_string, got: \(out)")
+        do {
+            _ = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
+            fatalError("expected operationFailed for missing old_string")
+        } catch FileSystemError.operationFailed(let reason) {
+            guard reason.contains("No occurrences") else {
+                fatalError("expected 'No occurrences' reason, got: \(reason)")
+            }
+        } catch {
+            fatalError("expected FileSystemError.operationFailed, got: \(error)")
         }
         let content = try String(contentsOfFile: dir + "/x.txt", encoding: .utf8)
         guard content == "hello" else { fatalError("file should be unchanged, got: \(content)") }
@@ -67,9 +73,15 @@ private final class EditToolTests {
         let tool = EditTool()
         let input = #"{"file_path":"x.txt","old_string":"foo","new_string":"bar"}"#.data(using: .utf8)!
         let ctx = ToolContext(workingDirectory: dir)
-        let out = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
-        guard out.contains("Failed") && out.contains("2 occurrences") else {
-            fatalError("expected non-unique failure, got: \(out)")
+        do {
+            _ = try runAsyncThrowing { try await tool.call(argumentsJSON: input, context: ctx) }
+            fatalError("expected operationFailed for non-unique old_string")
+        } catch FileSystemError.operationFailed(let reason) {
+            guard reason.contains("2 occurrences") else {
+                fatalError("expected '2 occurrences' reason, got: \(reason)")
+            }
+        } catch {
+            fatalError("expected FileSystemError.operationFailed, got: \(error)")
         }
         let content = try String(contentsOfFile: dir + "/x.txt", encoding: .utf8)
         guard content == "foo foo" else { fatalError("file should be unchanged, got: \(content)") }

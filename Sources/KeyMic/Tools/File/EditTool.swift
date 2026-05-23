@@ -88,20 +88,20 @@ public struct EditTool: Tool {
         let originalContent = try await fs.readFile(atPath: normalizedPath)
         let occurrenceCount = originalContent.components(separatedBy: args.oldString).count - 1
 
+        // Failures throw rather than returning a "[Failed]" string so the
+        // AgentSession wire result carries `is_error: true` — otherwise the
+        // model interprets a success-shaped envelope with body text "Failed",
+        // accepts the no-op, and proceeds as if the edit landed.
         guard occurrenceCount > 0 else {
-            return """
-            Edit Operation [Failed]
-            Path: \(normalizedPath)
-            No occurrences of the specified text were found in the file.
-            """
+            throw FileSystemError.operationFailed(
+                reason: "No occurrences of old_string were found in \(normalizedPath)"
+            )
         }
 
         if !replaceAll && occurrenceCount > 1 {
-            return """
-            Edit Operation [Failed]
-            Path: \(normalizedPath)
-            Found \(occurrenceCount) occurrences of old_string. Either provide a larger string with more surrounding context to make the match unique, or use replace_all=true to change every instance.
-            """
+            throw FileSystemError.operationFailed(
+                reason: "Found \(occurrenceCount) occurrences of old_string in \(normalizedPath). Provide more surrounding context to make the match unique, or set replace_all=true."
+            )
         }
 
         let newContent: String

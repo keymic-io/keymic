@@ -81,17 +81,36 @@ public actor MCPClient: MCPClientProtocol {
             throw MCPClientError.notConnected(server: config.name)
         }
 
+        // Use the `RequestContext`-returning overload so we hold the JSON-RPC
+        // request ID and can ship a `notifications/cancelled` to the server
+        // when the local timeout or caller cancellation wins. Without this the
+        // server keeps executing the tool until its own deadline, leaking
+        // resources across the stdio bus.
+        let context: RequestContext<CallTool.Result>
         do {
-            let client = self.client
+            context = try await client.callTool(name: name, arguments: arguments, meta: nil)
+        } catch let error as MCPClientError {
+            throw error
+        } catch {
+            throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
+        }
+        let requestID = context.requestID
+
+        do {
             let result = try await MCPToolCallTimeout.run(seconds: config.timeout.toolCallSeconds) {
-                try await client.callTool(name: name, arguments: arguments, meta: nil)
-            } onTimeout: {}
+                try await context.value
+            } onTimeout: { [self] in
+                // Fire-and-forget detached send so the cancellation reaches the
+                // server even when the calling Task is being torn down.
+                self.sendCancelRequest(requestID, reason: "client timeout")
+            }
             return (content: result.content, isError: result.isError ?? false)
         } catch is MCPToolCallTimeoutError {
             throw MCPClientError.toolCallTimeout(server: config.name, tool: name)
         } catch let error as MCPClientError {
             throw error
         } catch is CancellationError {
+            sendCancelRequest(requestID, reason: "client cancelled")
             throw CancellationError()
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
@@ -215,8 +234,31 @@ public actor MCPClient: MCPClientProtocol {
         )
     }
 
+    /// Parent-process environment keys forwarded to MCP stdio children.
+    /// Everything outside this allowlist (including `OPENAI_API_KEY`,
+    /// `AGENT_API_KEY`, AWS/GitHub tokens inherited from a launching shell)
+    /// is intentionally withheld so a third-party MCP server process cannot
+    /// exfiltrate the user's other secrets via `getenv`. Server-specific
+    /// values must come through `MCPServerConfig.transport.stdio(env:)`.
+    private static let envAllowlist: Set<String> = [
+        "PATH", "HOME", "USER", "LOGNAME", "SHELL",
+        "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES",
+        "TERM", "TMPDIR", "TZ",
+    ]
+
     private func mergedEnvironment(extra: [String: String]?) -> [String: String] {
-        var environment = ProcessInfo.processInfo.environment
+        let parent = ProcessInfo.processInfo.environment
+        var environment: [String: String] = [:]
+        for key in Self.envAllowlist {
+            if let value = parent[key] {
+                environment[key] = value
+            }
+        }
+        // Forward any other LC_* locale overrides not enumerated above so
+        // CLI tools render localized output consistently with the host.
+        for (key, value) in parent where key.hasPrefix("LC_") {
+            environment[key] = value
+        }
 
         if let extra {
             environment.merge(extra) { _, new in new }

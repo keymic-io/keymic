@@ -144,9 +144,7 @@ public actor AgentSession {
 
             var loopTerminated = false
             for call in turn.toolCalls {
-                let argsData: Data = call.argumentsJSON.isEmpty
-                    ? Data("{}".utf8)
-                    : Data(call.argumentsJSON.utf8)
+                let argsData = Self.normalizeArgumentsJSON(call.argumentsJSON)
                 yield(.toolCall(name: call.name, argumentsJSON: argsData))
 
                 let result = await invokeOneTool(
@@ -215,6 +213,22 @@ public actor AgentSession {
         } catch {
             return ("tool '\(call.name)' failed: \(error.localizedDescription)", true)
         }
+    }
+
+    // MARK: - Tool-call arguments normalization
+
+    /// Map missing / null / whitespace-only arguments emitted by some
+    /// OpenAI-compatible endpoints (DeepSeek, qwen, llama.cpp) to an empty
+    /// JSON object so downstream validation doesn't reject them as "not an
+    /// object" and trap the model in a retry loop. Any other payload — valid
+    /// or invalid JSON — is forwarded as-is so the existing validation in
+    /// `invokeOneTool` still catches malformed args.
+    nonisolated private static func normalizeArgumentsJSON(_ raw: String) -> Data {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "null" {
+            return Data("{}".utf8)
+        }
+        return Data(raw.utf8)
     }
 
     // MARK: - AgentMessage → WireMessage mapping
