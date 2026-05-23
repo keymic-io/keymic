@@ -43,6 +43,14 @@ struct PersonaTestRunner {
                || seeds[0].stylePrompt.contains("recognition error"),
                "default prompt preserves KeyMic conservative-correction wording")
 
+        // LOR-18: contextSources derived from contextMode by default
+        let seedsBuiltIn = Persona.builtInSeeds()
+        expect(seedsBuiltIn[0].contextSources == [], "default persona contextSources should be empty")
+        expect(seedsBuiltIn[1].contextSources == [], "translate persona contextSources should be empty")
+        expect(seedsBuiltIn[2].contextSources == [], "cli persona contextSources should be empty")
+        expect(seedsBuiltIn[3].contextSources == [.selection, .clipboardTop], "context persona contextSources should be [selection, clipboardTop]")
+        expect(seedsBuiltIn[4].contextSources == [.selection], "general-editor persona contextSources should be [selection]")
+
         print("✅ PersonaTests passed")
     }
 
