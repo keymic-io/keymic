@@ -203,7 +203,7 @@ struct OutputRouterTestRunner {
     }
 
     static func testURLTemplateSelection() {
-        let ctx = PersonaContext(selection: "café", clipboardTop: nil)
+        let ctx = PersonaContext(selection: "café", clipboardTop: nil, clipboardHistory: nil, windowOCR: nil)
         let out = URLTemplate.substitute(
             template: "https://t.com?s={selection}",
             text: "ignored",
@@ -212,7 +212,7 @@ struct OutputRouterTestRunner {
     }
 
     static func testURLTemplateClipboard() {
-        let ctx = PersonaContext(selection: nil, clipboardTop: "todo")
+        let ctx = PersonaContext(selection: nil, clipboardTop: "todo", clipboardHistory: nil, windowOCR: nil)
         let out = URLTemplate.substitute(
             template: "https://t.com?c={clipboard}",
             text: "ignored",

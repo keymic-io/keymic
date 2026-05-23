@@ -202,7 +202,7 @@ final class SelectedTextEditorController {
                 text: refined,
                 strategy: .replaceSelection,
                 originatingApp: state.originatingApp,
-                context: PersonaContext(selection: state.selectionFullText, clipboardTop: nil)
+                context: PersonaContext(selection: state.selectionFullText, clipboardTop: nil, clipboardHistory: nil, windowOCR: nil)
             )
             let routeResult = await outputRouter().route(output)
             state.routeResult = routeResult

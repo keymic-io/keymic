@@ -192,6 +192,7 @@ test-hotkey-settings-store:
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
@@ -293,6 +294,7 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
@@ -388,6 +390,7 @@ test-persona:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
@@ -400,6 +403,7 @@ test-persona-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
 	       Sources/KeyMic/LLM/PersonaStore.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
@@ -413,6 +417,7 @@ test-persona-context:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
@@ -425,6 +430,7 @@ test-persona-injection-strategy:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
@@ -437,6 +443,7 @@ test-output-router:
 	mkdir -p .build
 	swiftc Sources/KeyMic/LLM/Persona.swift \
 	       Sources/KeyMic/LLM/PersonaContext.swift \
+	       Sources/KeyMic/LLM/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
