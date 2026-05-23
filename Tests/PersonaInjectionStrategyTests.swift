@@ -4,7 +4,10 @@ import Foundation
 struct PersonaInjectionStrategyTestRunner {
     static func main() {
         testCodableRoundTripAllCases()
-        testDecodeMissingFieldDefaults()
+        testMissingInjectionStrategyDefaults()
+        testLegacyDecodeSelectionAndClipboardContextModeMaps()
+        testLegacyDecodeNoneContextModeMaps()
+        testNewFieldWinsOverLegacyContextMode()
         testBuiltInSeedsHaveCanonicalStrategy()
         testOpenURLTemplatePreserved()
         print("✅ PersonaInjectionStrategyTests passed")
@@ -32,25 +35,87 @@ struct PersonaInjectionStrategyTestRunner {
         }
     }
 
-    static func testDecodeMissingFieldDefaults() {
-        // Persona JSON without injectionStrategy — emulates pre-LOR-15 personas.json on disk.
+    static func testMissingInjectionStrategyDefaults() {
+        // Legacy pre-LOR-15 JSON: no injectionStrategy field should default to .replaceFocusedText.
         let json = """
-        {
-          "id":"u1","name":"Test","icon":"sparkles","stylePrompt":"x",
-          "temperature":0.5,"hotkey":null,"contextMode":"none","builtIn":false,
-          "createdAt":"2026-01-01T00:00:00.000Z","updatedAt":"2026-01-01T00:00:00.000Z"
-        }
-        """.data(using: .utf8)!
+          {
+          "id":"i","name":"I","icon":"star","stylePrompt":"sp",
+          "temperature":0.5,"hotkey":null,
+          "contextMode":"none","contextSources":[],
+          "builtIn":false,"createdAt":0.0,"updatedAt":0.0
+          }
+          """.data(using: .utf8)!
         let dec = JSONDecoder()
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        dec.dateDecodingStrategy = .custom { d in
-            let c = try d.singleValueContainer()
-            return formatter.date(from: try c.decode(String.self))!
+        dec.dateDecodingStrategy = .custom { decoder in
+            let c = try decoder.singleValueContainer()
+            let d = try c.decode(Double.self)
+            return Date(timeIntervalSinceReferenceDate: d)
         }
         let p = try! dec.decode(Persona.self, from: json)
         expect(p.injectionStrategy == .replaceFocusedText,
-               "missing field should default to .replaceFocusedText, got \(p.injectionStrategy)")
+               "missing injectionStrategy field should default to .replaceFocusedText, got \(p.injectionStrategy)")
+    }
+
+    static func testLegacyDecodeSelectionAndClipboardContextModeMaps() {
+        // Legacy pre-LOR-18 JSON: contextMode="selectionAndClipboard" with no contextSources
+        // should migrate to [.selection, .clipboardTop].
+        let json = """
+          {
+          "id":"x","name":"X","icon":"star","stylePrompt":"sp",
+          "temperature":0.5,"hotkey":null,"contextMode":"selectionAndClipboard","builtIn":false,
+          "createdAt":0.0,"updatedAt":0.0
+          }
+          """.data(using: .utf8)!
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .custom { decoder in
+            let c = try decoder.singleValueContainer()
+            let d = try c.decode(Double.self)
+            return Date(timeIntervalSinceReferenceDate: d)
+        }
+        let p = try! dec.decode(Persona.self, from: json)
+        expect(p.contextSources == [.selection, .clipboardTop],
+               "legacy contextMode=selectionAndClipboard should migrate to [.selection, .clipboardTop], got \(p.contextSources)")
+    }
+
+    static func testLegacyDecodeNoneContextModeMaps() {
+        let json = """
+          {
+          "id":"y","name":"Y","icon":"star","stylePrompt":"sp",
+          "temperature":0.5,"hotkey":null,"contextMode":"none","builtIn":false,
+          "createdAt":0.0,"updatedAt":0.0
+          }
+          """.data(using: .utf8)!
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .custom { decoder in
+            let c = try decoder.singleValueContainer()
+            let d = try c.decode(Double.self)
+            return Date(timeIntervalSinceReferenceDate: d)
+        }
+        let p = try! dec.decode(Persona.self, from: json)
+        expect(p.contextSources == [], "legacy contextMode=none should migrate to empty set, got \(p.contextSources)")
+    }
+
+    static func testNewFieldWinsOverLegacyContextMode() {
+        // When BOTH fields are present in JSON, contextSources is canonical and wins
+        // over the legacy contextMode-derived default. Locks in Persona.init(from:)'s
+        // decodeIfPresent precedence.
+        let json = """
+          {
+          "id":"z","name":"Z","icon":"star","stylePrompt":"sp",
+          "temperature":0.5,"hotkey":null,
+          "contextMode":"none","contextSources":["selection","clipboardTop"],
+          "builtIn":false,"createdAt":0.0,"updatedAt":0.0
+          }
+          """.data(using: .utf8)!
+        let dec = JSONDecoder()
+        dec.dateDecodingStrategy = .custom { decoder in
+            let c = try decoder.singleValueContainer()
+            let d = try c.decode(Double.self)
+            return Date(timeIntervalSinceReferenceDate: d)
+        }
+        let p = try! dec.decode(Persona.self, from: json)
+        expect(p.contextSources == [.selection, .clipboardTop],
+               "contextSources should win over contextMode default; got \(p.contextSources)")
     }
 
     static func testBuiltInSeedsHaveCanonicalStrategy() {
