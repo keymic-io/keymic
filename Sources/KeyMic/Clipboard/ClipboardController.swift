@@ -168,7 +168,8 @@ final class ClipboardController {
             onTogglePin: { [weak self] id in self?.store.togglePin(id: id) },
             onVaultPaste: { [weak self] item in self?.pasteVault(item) },
             onVaultDelete: { [weak self] item in self?.vaultStore.delete(item) },
-            onDismiss: { [weak self] in self?.panel.dismiss() }
+            onDismiss: { [weak self] in self?.panel.dismiss() },
+            onTransformSelected: { [weak self] in self?.transformSelected() }
         )
     }
 

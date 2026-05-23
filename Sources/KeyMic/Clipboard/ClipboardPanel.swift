@@ -16,7 +16,8 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         onTogglePin: @escaping (UUID) -> Void,
         onVaultPaste: @escaping (VaultItem) -> Void,
         onVaultDelete: @escaping (VaultItem) -> Void,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        onTransformSelected: @escaping () -> Void
     ) {
         let view = ClipboardHistoryView(
             selectionBridge: selectionBridge,
@@ -27,7 +28,8 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
             onTogglePin: onTogglePin,
             onVaultPaste: onVaultPaste,
             onVaultDelete: onVaultDelete,
-            onDismiss: onDismiss
+            onDismiss: onDismiss,
+            onTransformSelected: onTransformSelected
         )
         .modelContainer(modelContainer)
 
