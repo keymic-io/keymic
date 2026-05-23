@@ -81,27 +81,17 @@ public actor MCPClient: MCPClientProtocol {
             throw MCPClientError.notConnected(server: config.name)
         }
 
-        let context: RequestContext<CallTool.Result>
         do {
-            context = try await client.callTool(name: name, arguments: arguments, meta: nil)
-        } catch is CancellationError {
-            throw CancellationError()
-        } catch {
-            throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)
-        }
-
-        do {
-            let result = try await withTimeout(seconds: config.timeout.toolCallSeconds) {
-                try await context.value
-            }
+            let client = self.client
+            let result = try await MCPToolCallTimeout.run(seconds: config.timeout.toolCallSeconds) {
+                try await client.callTool(name: name, arguments: arguments, meta: nil)
+            } onTimeout: {}
             return (content: result.content, isError: result.isError ?? false)
-        } catch is TimeoutError {
-            sendCancelRequest(context.requestID, reason: "Timed out calling tool \(name) on server \(config.name)")
+        } catch is MCPToolCallTimeoutError {
             throw MCPClientError.toolCallTimeout(server: config.name, tool: name)
         } catch let error as MCPClientError {
             throw error
         } catch is CancellationError {
-            sendCancelRequest(context.requestID, reason: "Cancelled calling tool \(name) on server \(config.name)")
             throw CancellationError()
         } catch {
             throw MCPClientError.toolCallFailed(server: config.name, tool: name, reason: error.localizedDescription)

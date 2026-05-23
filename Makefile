@@ -446,6 +446,7 @@ test-tool-protocol:
 	       Sources/KeyMic/Tools/Protocol/Tool.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       Sources/KeyMic/Tools/Protocol/LocalToolRegistrar.swift \
 	       -o .build/tool-protocol-tests
 	.build/tool-protocol-tests
 
@@ -585,6 +586,7 @@ test-mcp-manager:
 	       Tests/MCPClientManagerTests.swift \
 	       Sources/KeyMic/Tools/MCP/MCPClientManager.swift \
 	       Sources/KeyMic/Tools/MCP/MCPClient.swift \
+	       Sources/KeyMic/Tools/MCP/MCPToolCallTimeout.swift \
 	       Sources/KeyMic/Tools/MCP/MCPToolAdapter.swift \
 	       Sources/KeyMic/Tools/MCP/MCPClientProtocol.swift \
 	       Sources/KeyMic/Tools/MCP/MCPConfigStore.swift \

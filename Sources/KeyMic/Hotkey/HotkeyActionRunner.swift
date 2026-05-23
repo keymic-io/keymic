@@ -22,7 +22,7 @@ final class HotkeyActionRunner {
     init(
         typeText: @escaping TypeTextFn,
         keyPress: @escaping KeyPressFn = HotkeyActionRunner.defaultKeyPress,
-        shell:    @escaping ShellFn    = { ShellRunner.shared.run($0) },
+        shell:    @escaping ShellFn    = HotkeyActionRunner.defaultShell,
         skillBridge: SkillHotkeyBridge? = nil,
         agentRunner: AgentRunner? = nil
     ) {
@@ -68,6 +68,21 @@ final class HotkeyActionRunner {
             Task { @MainActor in
                 _ = runner.runForHotkey(prompt: prompt, sink: ConsoleSink.shared)
             }
+        }
+    }
+
+    static func defaultShell(_ command: String) -> Int32 {
+        let process = Process()
+        process.launchPath = "/bin/zsh"
+        process.arguments = ["-lc", command]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus
+        } catch {
+            return 127
         }
     }
 

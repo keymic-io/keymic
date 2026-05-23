@@ -9,6 +9,7 @@ private final class ToolProtocolTests {
         try testRegistryReplaceExistingSucceeds()
         try testRegistryConditionalUnregister()
         try testRegistrySortOrder()
+        try testLocalToolRegistrarCompletesBeforeReturning()
         print("ToolProtocolTests passed")
     }
 
@@ -156,6 +157,17 @@ private final class ToolProtocolTests {
             let toolNames = tools.map { $0.name }
             guard toolNames == ["UpperEcho", "echo"] else {
                 throw TestFailure("all() order wrong: \(toolNames)")
+            }
+        }
+    }
+
+    static func testLocalToolRegistrarCompletesBeforeReturning() throws {
+        let registry = ToolRegistry()
+        try runAsync {
+            try await LocalToolRegistrar.register([EchoTool(), UpperEchoTool()], in: registry)
+            let names = await registry.allNames()
+            guard names == ["UpperEcho", "echo"] else {
+                throw TestFailure("local tools not registered before return: \(names)")
             }
         }
     }

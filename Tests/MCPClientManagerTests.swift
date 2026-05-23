@@ -37,8 +37,25 @@ struct MCPClientManagerTests {
         try await testManagerRegistersAdapterWithoutShadowingBuiltinToolName()
         try await testDisconnectUsesExplicitServerOwnershipForDottedNames()
         try await testOverlappingRemoteToolNamesStayNamespaced()
+        try await testToolCallTimeoutWrapsInitialAwait()
         try await testStaleIdentityCleanupDoesNotRemoveReplacementAdapter()
         print("MCPClientManagerTests passed")
+    }
+
+    static func testToolCallTimeoutWrapsInitialAwait() async throws {
+        let start = Date()
+        do {
+            _ = try await MCPToolCallTimeout.run(seconds: 1) {
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+                return "completed"
+            } onTimeout: {}
+            fail("expected timeout")
+        } catch {
+            let elapsed = Date().timeIntervalSince(start)
+            if elapsed > 2 {
+                fail("timeout did not wrap initial await, elapsed \(elapsed)")
+            }
+        }
     }
 
     static func testManagerRegistersAdapterWithoutShadowingBuiltinToolName() async throws {

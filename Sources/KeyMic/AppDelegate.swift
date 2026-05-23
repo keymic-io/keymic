@@ -153,15 +153,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
         keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in self?.extraneousKeyDuringVoice() }
         keyMonitor.isVoiceActive = { [weak self] in self?.voice.state.isActive ?? false }
-        keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
 
-        // Plan 6: construct the agent runner (MainActor-isolated) and register
-        // local tools + start configured MCP servers so their tools appear in
-        // toolRegistry before any AgentSession.run.
-        agentRunner = AgentRunner(registry: toolRegistry, skillRegistry: skillRegistry)
-        registerLocalTools()
-        Task { [mcpManager, toolRegistry] in
-            await mcpManager.loadAndConnectAll(registry: toolRegistry)
+        Task { @MainActor in
+            await registerLocalTools()
+            agentRunner = AgentRunner(registry: toolRegistry, skillRegistry: skillRegistry)
+            keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
+            Task { [mcpManager, toolRegistry] in
+                await mcpManager.loadAndConnectAll(registry: toolRegistry)
+            }
         }
 
         clipboardController = ClipboardController()
@@ -794,7 +793,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Register the built-in (in-process) tools into `toolRegistry`. MCP-discovered
     /// tools arrive asynchronously via `MCPClientManager.loadAndConnectAll`.
-    private func registerLocalTools() {
+    private func registerLocalTools() async {
         let tools: [any Tool] = [
             BashTool(),
             ReadTool(),
@@ -805,14 +804,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             GrepTool(),
             ActivateSkillTool(registry: skillRegistry, loader: skillLoader),
         ]
-        Task { [toolRegistry] in
-            for tool in tools {
-                do {
-                    try await toolRegistry.register(tool, replacingExisting: true)
-                } catch {
-                    logger.error("Failed to register tool \(tool.name, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                }
-            }
+        do {
+            try await LocalToolRegistrar.register(tools, in: toolRegistry)
+        } catch {
+            logger.error("Failed to register local tools: \(error.localizedDescription, privacy: .public)")
         }
     }
 }
