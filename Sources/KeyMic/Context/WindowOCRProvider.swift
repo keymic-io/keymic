@@ -78,6 +78,60 @@ actor WindowOCRProvider {
         }
         return filtered.max { $0.frameArea < $1.frameArea }
     }
+
+    /// Captures the focused window's pixels and returns recognized text.
+    /// Returns nil when there's no focused window (no error — "no context" is a normal outcome).
+    /// Throws on TCC denial or Vision errors so the caller can decide policy.
+    func recognize() async throws -> String? {
+        #if canImport(ScreenCaptureKit)
+        guard #available(macOS 14.0, *) else { return nil }
+        let content: SCShareableContent
+        do {
+            content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        } catch {
+            throw WindowOCRError.screenRecordingDenied
+        }
+
+        guard let frontApp = await MainActor.run(body: { NSWorkspace.shared.frontmostApplication }) else {
+            return nil
+        }
+        guard let scWindow = Self.pickFocusedWindow(in: content.windows, frontPID: frontApp.processIdentifier) else {
+            return nil
+        }
+
+        let cgImage: CGImage
+        do {
+            cgImage = try await captureImage(of: scWindow)
+        } catch {
+            throw WindowOCRError.captureFailed(error)
+        }
+
+        // Vision step lands in Task 5.
+        _ = cgImage
+        return nil
+        #else
+        return nil
+        #endif
+    }
+
+    #if canImport(ScreenCaptureKit)
+    @available(macOS 14.0, *)
+    private func captureImage(of scWindow: SCWindow) async throws -> CGImage {
+        let scale = await MainActor.run { () -> CGFloat in
+            NSScreen.screens.first { screen in
+                scWindow.frame.intersects(screen.frame)
+            }?.backingScaleFactor ?? 2.0
+        }
+        let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+        let config = SCStreamConfiguration()
+        config.showsCursor = false
+        config.width = Int(scWindow.frame.width * scale)
+        config.height = Int(scWindow.frame.height * scale)
+        config.scalesToFit = false
+        config.captureResolution = .best
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+    }
+    #endif
 }
 
 #if canImport(ScreenCaptureKit)
