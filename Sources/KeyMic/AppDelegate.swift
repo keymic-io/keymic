@@ -392,6 +392,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         overlayPanel.showRefining()
         Task { @MainActor [weak self] in
             guard let self else { return }
+            if persona.contextSources.contains(.windowOCR) {
+                self.maybeShowOCRPermissionToast()
+            }
             let context = await PersonaContextBuilder.build(
                 for: persona,
                 clipboardStore: self.clipboardController.store,
@@ -426,6 +429,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Dispatches to OutputRouter after the 100ms pop-sound delay (matches today's injectAfterPop UX).
+    /// Shows a one-time toast when a persona declares `.windowOCR` but Screen Recording TCC is denied.
+    /// Rate-limited per launch via UserDefaults.
+    private func maybeShowOCRPermissionToast() {
+        let key = "windowOCRPermissionToastShown"
+        if UserDefaults.standard.bool(forKey: key) { return }
+        if WindowOCRProvider.hasScreenRecordingPermission() { return }
+        UserDefaults.standard.set(true, forKey: key)
+        overlayPanel.showTransientToast(
+            String(localized: "Screen Recording permission needed for Window OCR"),
+            durationSeconds: 4.0
+        )
+        logger.info("Open: x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+    }
+
     private func routeAndInject(text: String, strategy: InjectionStrategy, context: PersonaContext?) {
         let app = voiceOriginatingApp
         voiceOriginatingApp = nil
