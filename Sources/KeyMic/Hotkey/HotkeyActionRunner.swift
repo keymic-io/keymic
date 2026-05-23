@@ -12,7 +12,11 @@ final class HotkeyActionRunner {
     private let keyPress: KeyPressFn
     private let shell: ShellFn
     private let skillBridge: SkillHotkeyBridge?
-    private let agentRunner: AgentRunner?
+    /// Resolved lazily so `.runAgent` hotkeys still work when the AgentRunner
+    /// is constructed asynchronously after launch (or is intentionally absent).
+    /// Invoked on the MainActor inside `execute(.runAgent)` so it's safe for
+    /// the closure body to touch `@MainActor`-isolated state.
+    private let agentRunnerProvider: @Sendable () -> AgentRunner?
     private let queue = DispatchQueue(label: "io.keymic.app.hotkey-action-runner", qos: .userInitiated)
     private static let logger = Logger(subsystem: "io.keymic.app", category: "HotkeyActionRunner")
 
@@ -24,13 +28,13 @@ final class HotkeyActionRunner {
         keyPress: @escaping KeyPressFn = HotkeyActionRunner.defaultKeyPress,
         shell:    @escaping ShellFn    = HotkeyActionRunner.defaultShell,
         skillBridge: SkillHotkeyBridge? = nil,
-        agentRunner: AgentRunner? = nil
+        agentRunnerProvider: @escaping @Sendable () -> AgentRunner? = { nil }
     ) {
         self.typeText = typeText
         self.keyPress = keyPress
         self.shell = shell
         self.skillBridge = skillBridge
-        self.agentRunner = agentRunner
+        self.agentRunnerProvider = agentRunnerProvider
     }
 
     func run(_ actions: [HotkeyAction]) {
@@ -61,11 +65,12 @@ final class HotkeyActionRunner {
             }
             bridge.fire(name: name)
         case .runAgent(let prompt):
-            guard let runner = agentRunner else {
-                Self.logger.warning("runAgent fired but no AgentRunner wired; ignoring")
-                return
-            }
+            let provider = agentRunnerProvider
             Task { @MainActor in
+                guard let runner = provider() else {
+                    Self.logger.warning("runAgent fired but no AgentRunner wired; ignoring")
+                    return
+                }
                 _ = runner.runForHotkey(prompt: prompt, sink: ConsoleSink.shared)
             }
         }

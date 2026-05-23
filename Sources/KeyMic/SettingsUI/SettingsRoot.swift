@@ -9,7 +9,14 @@ import UniformTypeIdentifiers
 // MARK: - Window host
 
 final class SwiftUISettingsWindow: NSPanel {
-    init(agentRunner: AgentRunner? = nil, toolRegistry: ToolRegistry? = nil) {
+    /// `agentRunnerProvider` is invoked each time the Agent tab renders, so the
+    /// window can be constructed before the AgentRunner exists — switching to
+    /// the Agent tab once the runner is ready will surface it without rebuilding
+    /// the window.
+    init(
+        agentRunnerProvider: @escaping @MainActor () -> AgentRunner? = { nil },
+        toolRegistry: ToolRegistry? = nil
+    ) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 540),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -20,7 +27,10 @@ final class SwiftUISettingsWindow: NSPanel {
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
-        let host = NSHostingController(rootView: SettingsRootView(agentRunner: agentRunner, toolRegistry: toolRegistry))
+        let host = NSHostingController(rootView: SettingsRootView(
+            agentRunnerProvider: agentRunnerProvider,
+            toolRegistry: toolRegistry
+        ))
         host.view.translatesAutoresizingMaskIntoConstraints = false
         contentViewController = host
         center()
@@ -134,11 +144,14 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
 
 struct SettingsRootView: View {
     @State private var selection: SettingsSection = .general
-    let agentRunner: AgentRunner?
+    let agentRunnerProvider: @MainActor () -> AgentRunner?
     let toolRegistry: ToolRegistry?
 
-    init(agentRunner: AgentRunner? = nil, toolRegistry: ToolRegistry? = nil) {
-        self.agentRunner = agentRunner
+    init(
+        agentRunnerProvider: @escaping @MainActor () -> AgentRunner? = { nil },
+        toolRegistry: ToolRegistry? = nil
+    ) {
+        self.agentRunnerProvider = agentRunnerProvider
         self.toolRegistry = toolRegistry
     }
 
@@ -164,12 +177,20 @@ struct SettingsRootView: View {
         case .voice: VoiceSettingsView()
         case .llm: LLMSettingsView()
         case .agent:
-            if let agentRunner, let toolRegistry {
+            // Re-evaluate provider on every render so a runner that comes
+            // online after the window opens is picked up when the user
+            // navigates back to this tab.
+            if let agentRunner = agentRunnerProvider(), let toolRegistry {
                 AgentSettingsTab(agentRunner: agentRunner, toolRegistry: toolRegistry)
             } else {
-                Text("Agent runtime not available.")
-                    .foregroundColor(.secondary)
-                    .padding()
+                VStack(spacing: 8) {
+                    Text("Agent runtime not ready yet.")
+                        .foregroundColor(.secondary)
+                    Text("Try again in a moment, or switch tabs and come back.")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
             }
         case .personas: PersonasView()
         case .clipboard: ClipboardSettingsView()

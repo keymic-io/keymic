@@ -26,8 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let mcpManager = MCPClientManager()
     /// Constructed inside `applicationDidFinishLaunching` because `AgentRunner.init`
     /// is `@MainActor`-isolated and stored-property initializers run in a
-    /// nonisolated context.
-    private var agentRunner: AgentRunner!
+    /// nonisolated context. May be `nil` early in launch (before
+    /// `registerLocalTools()` completes) or if construction was deferred — all
+    /// consumers must tolerate absence and degrade gracefully.
+    private var agentRunner: AgentRunner?
     private lazy var skillBridge = SkillHotkeyBridge(
         registry: skillRegistry,
         loader: skillLoader,
@@ -37,14 +39,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // system prompt and `allowedTools` filters the tool set.
             guard let self = self else { return }
             Task { @MainActor in
-                _ = self.agentRunner.runForSkill(skill, sink: ConsoleSink.shared)
+                guard let runner = self.agentRunner else {
+                    logger.warning("Skill hotkey fired but AgentRunner not ready; ignoring")
+                    return
+                }
+                _ = runner.runForSkill(skill, sink: ConsoleSink.shared)
             }
         }
     )
     private lazy var actionRunner = HotkeyActionRunner(
         typeText: { [weak self] text in self?.textInjector.inject(text) },
         skillBridge: skillBridge,
-        agentRunner: agentRunner
+        agentRunnerProvider: { [weak self] in
+            // Re-resolved on every `.runAgent` invocation so an AgentRunner
+            // that comes online after this runner is materialized is still
+            // picked up.
+            MainActor.assumeIsolated { self?.agentRunner }
+        }
     )
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
@@ -82,7 +93,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
     private lazy var settingsWindow = SwiftUISettingsWindow(
-        agentRunner: agentRunner,
+        agentRunnerProvider: { [weak self] in self?.agentRunner },
         toolRegistry: toolRegistry
     )
     var selectedLocaleCode: String {
