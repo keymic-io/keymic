@@ -13,6 +13,8 @@ final class FakePasteboard: PasteboardReading {
     func types() -> [String] { typesValue }
     func data(forType type: String) -> Data? { dataByType[type] }
     func fileURLs() -> [URL] { fileURLValues }
+    func copyItems() -> [NSPasteboardItem]? { nil }
+    func writeItems(_ items: [NSPasteboardItem]) -> Int { changeCount += 1; return changeCount }
 
     func simulate(text: String, types: [String] = []) {
         stringValue = text

@@ -44,7 +44,7 @@ enum SingleInstance {
         let pidURL = lockURL.appendingPathComponent("pid")
         guard let content = try? String(contentsOf: pidURL, encoding: .utf8),
               let pid = pid_t(content.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return false
+            return true
         }
         return kill(pid, 0) != 0 && errno == ESRCH
     }

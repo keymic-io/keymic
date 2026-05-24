@@ -12,7 +12,15 @@ final class TextInjector {
         let pasteboard = NSPasteboard.general
 
         // Save current clipboard content
-        let savedText = pasteboard.string(forType: .string)
+        let savedItems: [NSPasteboardItem]? = pasteboard.pasteboardItems?.map { item in
+            let newItem = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    newItem.setData(data, forType: type)
+                }
+            }
+            return newItem
+        }
 
         // Write transcription to clipboard
         pasteboard.clearContents()
@@ -56,9 +64,11 @@ final class TextInjector {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard pasteboard.changeCount == writeChangeCount else { return }
             pasteboard.clearContents()
-            if let saved = savedText {
-                pasteboard.setString(saved, forType: .string)
-                self?.onMarkIgnored?(saved)
+            if let saved = savedItems {
+                pasteboard.writeObjects(saved)
+                if let savedText = pasteboard.string(forType: .string) {
+                    self?.onMarkIgnored?(savedText)
+                }
             }
         }
     }
