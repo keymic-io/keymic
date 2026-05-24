@@ -13,6 +13,12 @@ struct ShellOutputTestRunner {
         testAllPlaceholdersEmptyNotSubstantial()
         testOneNonEmptyResolutionSubstantial()
 
+        testStripPassthrough()
+        testStripCSIColor()
+        testStripCSIMulti()
+        testStripOSC()
+        testStripBare()
+
         print("ShellOutputTests passed")
     }
 
@@ -60,6 +66,36 @@ struct ShellOutputTestRunner {
         let ok = ShellTemplate.hasResolvedSubstantialContent(
             original: "echo {query} {selection}", resolved: "echo hi ")
         expect(ok, "at least one non-empty placeholder is substantial")
+    }
+
+    static func testStripPassthrough() {
+        let got = ANSIStripper.strip("hello world")
+        expect(got == "hello world", "plain text must passthrough, got: \(got)")
+    }
+
+    static func testStripCSIColor() {
+        let input = "\u{001B}[31mRED\u{001B}[0m"
+        let got = ANSIStripper.strip(input)
+        expect(got == "RED", "CSI color stripping failed, got: \(got)")
+    }
+
+    static func testStripCSIMulti() {
+        let input = "\u{001B}[1;32mBOLD GREEN\u{001B}[0m and \u{001B}[4munderlined\u{001B}[0m"
+        let got = ANSIStripper.strip(input)
+        expect(got == "BOLD GREEN and underlined", "multi-CSI strip failed, got: \(got)")
+    }
+
+    static func testStripOSC() {
+        let input = "\u{001B}]0;my title\u{0007}body"
+        let got = ANSIStripper.strip(input)
+        expect(got == "body", "OSC strip failed, got: \(got)")
+    }
+
+    static func testStripBare() {
+        let input = "\u{001B}xliteral"
+        let got = ANSIStripper.strip(input)
+        expect(got == "xliteral" || got == "literal",
+               "bare ESC handling unexpected, got: \(got)")
     }
 
     static func expect(_ cond: Bool, _ msg: String) {
