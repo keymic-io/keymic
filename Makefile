@@ -543,6 +543,7 @@ test-shell-output:
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
 	       Tests/ShellOutputTests.swift \
 	       -framework AppKit \
 	       -framework Carbon \

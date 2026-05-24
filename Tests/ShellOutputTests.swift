@@ -2,7 +2,7 @@ import Foundation
 
 @main
 struct ShellOutputTestRunner {
-    static func main() {
+    static func main() async {
         testSubstituteQuery()
         testSubstituteEcho()
         testSubstituteUnknownPlaceholderLiteral()
@@ -19,7 +19,37 @@ struct ShellOutputTestRunner {
         testStripOSC()
         testStripBare()
 
+        await runRunnerSmoke()
+
         print("ShellOutputTests passed")
+    }
+
+    static func runRunnerSmoke() async {
+        do {
+            let ok = try await ShellOutputRunner.run("echo hello", timeout: 5)
+            expect(ok.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "hello",
+                   "echo hello stdout mismatch, got: \(ok.stdout)")
+            expect(ok.stderr.isEmpty, "echo hello should have no stderr, got: \(ok.stderr)")
+            expect(ok.exitCode == 0, "echo hello exitCode mismatch, got: \(ok.exitCode)")
+        } catch {
+            fail("echo hello threw: \(error)")
+        }
+
+        do {
+            let bad = try await ShellOutputRunner.run("false", timeout: 5)
+            expect(bad.exitCode != 0, "`false` should have non-zero exit, got: \(bad.exitCode)")
+        } catch {
+            fail("false threw unexpectedly: \(error)")
+        }
+
+        do {
+            _ = try await ShellOutputRunner.run("sleep 3", timeout: 0.5)
+            fail("sleep 3 timeout=0.5 should have thrown .timeout")
+        } catch ShellOutputRunnerError.timeout {
+            // expected
+        } catch {
+            fail("sleep 3 threw wrong error: \(error)")
+        }
     }
 
     static func testSubstituteQuery() {
