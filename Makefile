@@ -197,6 +197,11 @@ test-hotkey-settings-store:
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Tests/HotkeySettingsStoreTests.swift \
@@ -299,6 +304,11 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Sources/KeyMic/Input/InputState.swift \
 	       Sources/KeyMic/Input/InputResetReason.swift \
