@@ -50,7 +50,7 @@ scripts/release.sh -f 1.2.3   # `-f` overwrites existing v<VERSION> release + ta
 `Sources/KeyMic/AppDelegate.swift` owns every long-lived component and connects them by callback:
 
 - `KeyMonitor` → emits `onTriggerDown` / `onTriggerUp` (voice hold) and `onClipboardHotkey` (⌥V).
-- Voice path: `triggerDown` → `SpeechEngine.startRecording` → partial results stream into `OverlayPanel` → release fires `triggerUp` → 2s grace timer → `finishTranscription` → optional `LLMRefiner.refine` → `TextInjector.inject`.
+- Voice path: `KeyMonitor.onTriggerDown/Up` → `VoiceTrigger` (in `PersonaPlatform/Triggers/`) → `SpeechEngine` via `SpeechSessionHost` → 2 s grace timer → `PersonaEngine.run(Invocation)` → `LLMClient.complete` → `OutputRouter.dispatch` → `FocusedTextStrategy` (Cmd+V via `TextInjector`). `AppDelegate` constructs the platform graph in `applicationDidFinishLaunching` and routes `SpeechEngine` callbacks via `speechSessionHost.routePartial/Final/Error/AudioLevel`.
 - Clipboard path: `onClipboardHotkey` → `ClipboardController.toggle` (showing `ClipboardPanel` SwiftUI view).
 
 User-visible state lives in `UserDefaults` and is read on demand (no central settings object). Keys are scattered across components: `voiceEnabled`, `selectedLocaleCode`, `voiceTriggerKey`, `keyMappingEnabled`, `llmEnabled`/`llm*`, `ClipboardPreferences.*Key`, `HotkeyPreferences`, and `VaultConfig`.
@@ -121,7 +121,7 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 
 - Swift 5.9, target macOS 14. Source root: `Sources/KeyMic/`.
 - One SwiftPM dependency: Sparkle 2 (`2.6.0..<3.0.0`).
-- Logging: `os.Logger` with subsystem `io.keymic.app`. `LLMRefiner` additionally writes to `~/Library/Logs/KeyMic.log` for offline debugging.
-- Singletons (`KeyMappingManager.shared`, `LLMRefiner.shared`) for cross-cutting state; everything else is owned by `AppDelegate`.
+- Logging: `os.Logger` with subsystem `io.keymic.app`.
+- Singletons (`KeyMappingManager.shared`, `PersonaStore.shared`) for cross-cutting state; `OpenAICompatibleLLMClient` and other PersonaPlatform components are owned by `AppDelegate`'s graph (injected, not shared).
 - Persistent locations: SwiftData store + lock file under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.
 - `AGENTS.md` (repo root) documents non-obvious macOS HID + TCC gotchas — read it before editing `KeyMonitor.swift` or codesign/Info.plist plumbing.

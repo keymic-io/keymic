@@ -29,17 +29,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var selectedTextEditorController: SelectedTextEditorController!
     private var clipboardTransformController: ClipboardTransformController!
 
-    private var voice = VoiceStateMachine()
-    /// Frontmost app captured at `triggerDown()`. Used by OutputRouter to restore focus
-    /// before injecting — necessary because the overlay panel and speech engine setup
-    /// may briefly steal focus by the time `finishTranscription` runs.
-    private var voiceOriginatingApp: NSRunningApplication?
-    private var graceTimer: Timer?
-    private var recordingTimeoutTimer: Timer?
-    private static let recordingMaxDuration: TimeInterval = 6 * 60
-    private static let graceDuration: TimeInterval = 2.0
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
+
+    private var personaEngine: PersonaEngine!
+    private var voiceTrigger: VoiceTrigger!
+    private var speechSessionHost: DefaultSpeechSessionHost!
+    private var llmClient: OpenAICompatibleLLMClient!
 
     /// Cached frontmost-app bundle ID. Updated via `NSWorkspace.didActivateApplicationNotification`.
     /// KeyMonitor's event-tap callback reads this O(1); calling
@@ -128,11 +124,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyMonitor.currentFrontBundleID = { [weak self] in self?.cachedFrontBundleID }
 
-        keyMonitor.onTriggerDown = { [weak self] in self?.triggerDown() }
-        keyMonitor.onTriggerUp = { [weak self] in self?.triggerUp() }
-        keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
-        keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in self?.extraneousKeyDuringVoice() }
-        keyMonitor.isVoiceActive = { [weak self] in self?.voice.state.isActive ?? false }
         keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
         clipboardController = ClipboardController()
         clipboardController.overlayPanel = overlayPanel
@@ -160,6 +151,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             confirmShellRun: { command in
                 await ShellConfirmationSheet.present(command: command)
             })
+
+        llmClient = OpenAICompatibleLLMClient()
+        personaEngine = PersonaEngine(
+            llmClient: llmClient,
+            clipboardStore: clipboardController.store,
+            outputRouter: OutputRouter.shared
+        )
+        speechSessionHost = DefaultSpeechSessionHost(speechEngine: speechEngine)
+        voiceTrigger = VoiceTrigger(
+            engine: personaEngine,
+            sessionHost: speechSessionHost,
+            overlayPanel: overlayPanel,
+            personaStore: PersonaStore.shared,
+            textInjector: textInjector
+        )
+        keyMonitor.onTriggerDown = { [weak self] in
+            guard let self, self.isVoiceEnabled else { return }
+            Task { @MainActor in self.voiceTrigger.onTriggerDown() }
+        }
+        keyMonitor.onTriggerUp = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onTriggerUp() }
+        }
+        keyMonitor.onTriggerInterrupted = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onTriggerInterrupted() }
+        }
+        keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onExtraneousKeyDuringVoice() }
+        }
+        keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isActive ?? false }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onVaultHotkey = { [weak self] in
             self?.clipboardController.toggle(initialTab: .vault)
@@ -266,197 +286,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    // MARK: - Key events
-
-    private func triggerDown() {
-        guard isVoiceEnabled else { return }
-        guard !voice.state.isListening else { return }
-        voiceOriginatingApp = NSWorkspace.shared.frontmostApplication
-        LLMRefiner.shared.cancel()
-        do {
-            let session = try speechEngine.startSession()
-            let effects = voice.handle(.triggerDown(session: session))
-            apply(effects)
-        } catch let err as VoiceError {
-            apply(voice.handle(.error(err)))
-        } catch {
-            apply(voice.handle(.error(.audioEngineFailed(error.localizedDescription))))
-        }
-    }
-
-    private func triggerUp() {
-        guard voice.state.isActive else { return }
-        speechEngine.endAudio()
-        apply(voice.handle(.triggerUp))
-    }
-
-    private func cancelRecording() {
-        guard voice.state.isActive else { return }
-        voiceOriginatingApp = nil
-        apply(voice.handle(.extraneousKey))
-    }
-
-    private func extraneousKeyDuringVoice() {
-        guard voice.state.isActive else { return }
-        apply(voice.handle(.extraneousKey))
-    }
-
-    private func apply(_ effects: [VoiceSideEffect]) {
-        for e in effects {
-            switch e {
-            case .cancelSession(let s):
-                s.cancel()
-            case .stopAudio(_):
-                speechEngine.endAudio()
-            case .startGraceTimer:
-                graceTimer?.invalidate()
-                graceTimer = Timer.scheduledTimer(withTimeInterval: Self.graceDuration, repeats: false) { [weak self] _ in
-                    self?.apply(self?.voice.handle(.graceTimeout) ?? [])
-                }
-            case .cancelGraceTimer:
-                graceTimer?.invalidate(); graceTimer = nil
-            case .startRecordingTimeoutTimer(_):
-                recordingTimeoutTimer?.invalidate()
-                recordingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: Self.recordingMaxDuration, repeats: false) { [weak self] _ in
-                    self?.apply(self?.voice.handle(.recordingTimeout) ?? [])
-                }
-            case .cancelRecordingTimeoutTimer:
-                recordingTimeoutTimer?.invalidate(); recordingTimeoutTimer = nil
-            case .updateStatusIcon(let on):
-                updateStatusIcon(recording: on)
-            case .overlayShow(let t):
-                overlayPanel.show(text: t)
-            case .overlayUpdate(let t):
-                overlayPanel.updateText(t)
-            case .overlayShowRefining:
-                overlayPanel.showRefining()
-            case .overlayDismiss:
-                overlayPanel.dismiss()
-            case .overlayShowError(let err):
-                overlayPanel.showMessage(err.displayMessage)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlayPanel.dismiss() }
-            case .injectAndFinish(let text):
-                finishTranscription(text: text)
-            case .playSound(let name):
-                NSSound(named: .init(name))?.play()
-            case .bufferPartial, .clearPartial:
-                break  // lastPartial lives in the reducer; runtime doesn't duplicate it
-            }
-        }
-    }
-
-    // MARK: - Speech callbacks
+    // Voice pipeline lives in PersonaPlatform/Triggers/VoiceTrigger.
 
     private func setupSpeechCallbacks() {
         speechEngine.onPartialResult = { [weak self] text in
             DispatchQueue.main.async { [weak self] in
-                self?.apply(self?.voice.handle(.partialResult(text)) ?? [])
+                self?.speechSessionHost?.routePartial(text)
             }
         }
         speechEngine.onFinalResult = { [weak self] text in
             DispatchQueue.main.async { [weak self] in
-                self?.apply(self?.voice.handle(.finalResult(text)) ?? [])
+                self?.speechSessionHost?.routeFinal(text)
             }
         }
         speechEngine.onError = { [weak self] msg in
             DispatchQueue.main.async { [weak self] in
-                self?.apply(self?.voice.handle(.error(.audioEngineFailed(msg))) ?? [])
+                self?.speechSessionHost?.routeError(msg)
             }
         }
         speechEngine.onAudioLevel = { [weak self] level in
-            self?.overlayPanel.updateAudioLevel(level)
+            DispatchQueue.main.async { [weak self] in
+                self?.speechSessionHost?.routeAudioLevel(level)
+            }
         }
         speechEngine.onLocaleUnavailable = { [weak self] msg in
             DispatchQueue.main.async { [weak self] in
                 self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
-            }
-        }
-    }
-
-    private func finishTranscription(text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else {
-            overlayPanel.dismiss()
-            voiceOriginatingApp = nil
-            return
-        }
-
-        let persona = PersonaStore.shared.activePersona
-        let refiner = LLMRefiner.shared
-
-        guard let persona, refiner.isReady else {
-            overlayPanel.dismiss()
-            routeAndInject(text: trimmed,
-                           strategy: persona?.injectionStrategy ?? .replaceFocusedText,
-                           context: nil)
-            return
-        }
-
-        overlayPanel.showRefining()
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            if persona.contextSources.contains(.windowOCR) {
-                self.maybeShowOCRPermissionToast()
-            }
-            let context = await PersonaContextBuilder.build(
-                for: persona,
-                clipboardStore: self.clipboardController.store,
-                onStatusUpdate: { [weak self] status in
-                    self?.overlayPanel.updateText(status)
-                }
-            )
-            // Return to the wave-only "refining" indicator after context gather.
-            self.overlayPanel.showRefining()
-            let userText = context.buildPrompt(transcript: trimmed, sources: persona.contextSources)
-            refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
-                guard let self else { return }
-                switch result {
-                case .success(let refined):
-                    let finalText = refined.isEmpty ? trimmed : refined
-                    self.overlayPanel.dismiss()
-                    self.routeAndInject(text: finalText,
-                                        strategy: persona.injectionStrategy,
-                                        context: context)
-                case .failure(let error):
-                    logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
-                    self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                        self?.overlayPanel.dismiss()
-                        self?.routeAndInject(text: trimmed,
-                                             strategy: persona.injectionStrategy,
-                                             context: context)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Dispatches to OutputRouter after the 100ms pop-sound delay (matches today's injectAfterPop UX).
-    /// Shows a one-time toast when a persona declares `.windowOCR` but Screen Recording TCC is denied.
-    /// Rate-limited per launch via UserDefaults.
-    private func maybeShowOCRPermissionToast() {
-        let key = "windowOCRPermissionToastShown"
-        if UserDefaults.standard.bool(forKey: key) { return }
-        if WindowOCRProvider.hasScreenRecordingPermission() { return }
-        UserDefaults.standard.set(true, forKey: key)
-        overlayPanel.showTransientToast(
-            String(localized: "Screen Recording permission needed for Window OCR"),
-            durationSeconds: 4.0
-        )
-        logger.info("Open: x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
-    }
-
-    private func routeAndInject(text: String, strategy: InjectionStrategy, context: PersonaContext?) {
-        let app = voiceOriginatingApp
-        voiceOriginatingApp = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self else { return }
-            NSSound(named: .init("Pop"))?.play()
-            let output = PersonaOutput(text: text, strategy: strategy,
-                                       originatingApp: app, context: context)
-            Task { @MainActor [weak self] in
-                let result = await OutputRouter.shared.route(output)
-                self?.overlayPanel.showRouteResult(result)
             }
         }
     }
@@ -596,8 +451,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(enabled, forKey: Self.voiceEnabledKey)
         voiceEnabledMenuItem.state = enabled ? .on : .off
 
-        if !enabled, voice.state.isActive {
-            apply(voice.handle(.voiceDisabled))
+        if !enabled, let voiceTrigger {
+            Task { @MainActor in voiceTrigger.onTriggerInterrupted() }
         }
     }
 

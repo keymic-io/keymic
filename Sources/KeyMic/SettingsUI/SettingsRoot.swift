@@ -610,22 +610,22 @@ private struct LLMSettingsView: View {
     }
 
     private func runTest() {
-        let refiner = LLMRefiner.shared
-        guard refiner.isReady else {
+        let client = OpenAICompatibleLLMClient()
+        guard client.isReady else {
             status = .fail("API key is empty")
             return
         }
         status = .testing
-        refiner.refine(
-            "Hello, this is a test.",
-            systemPrompt: "Return the input exactly as-is.",
-            temperature: 0.0
-        ) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let text): status = .ok(text)
-                case .failure(let err): status = .fail(err.localizedDescription)
-                }
+        Task {
+            do {
+                let text = try await client.complete(
+                    systemPrompt: "Return the input exactly as-is.",
+                    userText: "Hello, this is a test.",
+                    temperature: 0.0
+                )
+                await MainActor.run { status = .ok(text) }
+            } catch {
+                await MainActor.run { status = .fail(error.localizedDescription) }
             }
         }
     }

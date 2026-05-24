@@ -190,13 +190,13 @@ test-hotkey-bindings-store:
 test-hotkey-settings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
-	       Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -297,13 +297,13 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
-	       Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -398,12 +398,12 @@ test-overlay-state:
 
 test-persona:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -416,13 +416,13 @@ test-persona:
 
 test-persona-store:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -435,12 +435,12 @@ test-persona-store:
 
 test-persona-context:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -453,12 +453,12 @@ test-persona-context:
 
 test-persona-injection-strategy:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -471,12 +471,12 @@ test-persona-injection-strategy:
 
 test-output-router:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -535,21 +535,21 @@ test-shell-runner:
 
 test-pasteboard-snapshot:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/PasteboardSnapshot.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
 	       Tests/PasteboardSnapshotTests.swift \
 	       -o .build/pasteboard-snapshot-tests
 	.build/pasteboard-snapshot-tests
 
 test-selection-copy-wait:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Tests/SelectionCopyWaitTests.swift \
 	       -o .build/selection-copy-wait-tests
 	.build/selection-copy-wait-tests
 
 test-context-source:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/ContextSource.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
 	       Tests/ContextSourceTests.swift \
 	       -o .build/context-source-tests
 	.build/context-source-tests
@@ -571,11 +571,11 @@ test-selected-text-editor:
 
 test-shell-output:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
@@ -588,12 +588,12 @@ test-shell-output:
 test-window-ocr:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Context/WindowOCRProvider.swift \
-	       Sources/KeyMic/LLM/PersonaContext.swift \
-	       Sources/KeyMic/LLM/ContextSource.swift \
-	       Sources/KeyMic/LLM/PersonaContextBuilder.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContextBuilder.swift \
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
-	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
-	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
 	       Tests/WindowOCRTests.swift \
 	       -framework ScreenCaptureKit \
 	       -framework AppKit \
