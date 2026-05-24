@@ -1,7 +1,7 @@
 ---
 tracker:
   kind: linear
-  project_slug: "keymic"
+  project_slug: "keymic-25706805af2a"
   active_states:
     - Todo
     - In Progress
