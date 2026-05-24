@@ -20,8 +20,93 @@ struct OutputRouterTestRunner {
         await testOpenURLHappyPath()
         await testOpenURLRejectsJavascript()
         await testRunShellWithDefaultConfirmReturnsUserCancelled()
+        await testRunShellSuccessInjectsStrippedStdout()
+        await testRunShellStderrPathReturnsFailed()
+        await testRunShellEmptyPlaceholderRefused()
         await testWriteToITermFailsCleanlyWhenNotInstalled()
         print("✅ OutputRouterTests passed")
+    }
+
+    @MainActor
+    static func testRunShellSuccessInjectsStrippedStdout() async {
+        var injected: String? = nil
+        let router = OutputRouter(
+            inject: { text in injected = text },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in },
+            confirmShellRun: { _ in true })
+        router.runShellExecutor = { command in
+            expect(command == "ls", "command after substitution mismatch: \(command)")
+            return ShellOutputResult(stdout: "\u{001B}[32mok\u{001B}[0m\n", stderr: "", exitCode: 0)
+        }
+        let output = PersonaOutput(
+            text: "ls",
+            strategy: .runShell(commandTemplate: "{query}"),
+            originatingApp: nil,
+            context: nil
+        )
+        let result = await router.route(output)
+        expect(result == .injected, "expected .injected, got: \(result)")
+        expect(injected == "ok\n", "ANSI not stripped before inject; got: \(String(describing: injected))")
+    }
+
+    @MainActor
+    static func testRunShellStderrPathReturnsFailed() async {
+        let router = OutputRouter(
+            inject: { _ in expect(false, "inject must not be called on stderr path") },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in },
+            confirmShellRun: { _ in true })
+        router.runShellExecutor = { _ in
+            ShellOutputResult(stdout: "", stderr: "no such file or directory", exitCode: 1)
+        }
+        let output = PersonaOutput(
+            text: "ls",
+            strategy: .runShell(commandTemplate: "{query}"),
+            originatingApp: nil,
+            context: nil
+        )
+        let result = await router.route(output)
+        if case .failed(let msg) = result {
+            expect(msg.contains("no such file"),
+                   "failed message should contain stderr; got: \(msg)")
+        } else {
+            expect(false, "expected .failed, got: \(result)")
+        }
+    }
+
+    @MainActor
+    static func testRunShellEmptyPlaceholderRefused() async {
+        let router = OutputRouter(
+            inject: { _ in expect(false, "inject must not be called when refusing empty placeholders") },
+            readSelection: { nil },
+            writeSelection: { _ in false },
+            onMarkIgnored: { _ in },
+            confirmShellRun: { _ in
+                expect(false, "confirm must not be reached when refusing empty placeholders")
+                return false
+            })
+        router.runShellExecutor = { _ in
+            expect(false, "executor must not run when refusing empty placeholders")
+            return ShellOutputResult(stdout: "", stderr: "", exitCode: 0)
+        }
+        // Template has {selection} but PersonaContext has no selection → all-empty.
+        let ctx = PersonaContext(selection: "", clipboardTop: nil, clipboardHistory: nil, windowOCR: nil)
+        let output = PersonaOutput(
+            text: "",
+            strategy: .runShell(commandTemplate: "rm -rf {selection}"),
+            originatingApp: nil,
+            context: ctx
+        )
+        let result = await router.route(output)
+        if case .failed(let msg) = result {
+            expect(msg.contains("empty placeholders"),
+                   "expected empty-placeholder refusal, got: \(msg)")
+        } else {
+            expect(false, "expected .failed, got: \(result)")
+        }
     }
 
     @MainActor
