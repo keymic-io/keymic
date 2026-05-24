@@ -46,6 +46,25 @@ struct KeyMonitorClipboardPanelTestRunner {
             personaHotkeyKeyDown: CGKeyCode?.none
         ), "autorepeat keyDown does not repeatedly cancel voice session")
 
+        var heldModifiers: Set<CGKeyCode> = []
+        KeyMonitor.updateTrackedModifierState(
+            heldModifiers: &heldModifiers,
+            keyCode: 0x36,
+            eventFlags: [],
+            isResetRecoveryMode: true
+        )
+        expect(!heldModifiers.contains(0x36), "release after reset does not reinsert modifier")
+
+        heldModifiers = [0x37]
+        KeyMonitor.updateTrackedModifierState(
+            heldModifiers: &heldModifiers,
+            keyCode: 0x36,
+            eventFlags: CGEventFlags.maskCommand,
+            isResetRecoveryMode: false
+        )
+        expect(heldModifiers.contains(0x37), "left command remains held")
+        expect(heldModifiers.contains(0x36), "right command press adds current key without clearing counterpart")
+
         print("KeyMonitorClipboardPanelTests passed")
     }
 
