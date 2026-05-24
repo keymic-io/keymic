@@ -174,26 +174,35 @@ final class ClipboardController {
     }
 
     private func pasteVault(_ item: VaultItem) {
-        let plain: String
-        do {
-            plain = try vaultStore.reveal(item)
-        } catch {
-            // Authentication failed / cancelled / orphan — silently dismiss.
-            panel.dismiss()
-            return
-        }
-        let savedText = pasteboard.string()
-        let writeChangeCount = pasteboard.write(plain)
-        monitor.markIgnored(text: plain)
-        panel.dismiss()
-        activateTargetAndSendCommandV()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
-            if let savedText {
-                self.pasteboard.write(savedText)
-                self.monitor.markIgnored(text: savedText)
-            } else {
-                self.pasteboard.clear()
+        let savedItems = pasteboard.copyItems()
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let plain: String
+            do {
+                plain = try self.vaultStore.reveal(item)
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    self?.panel.dismiss()
+                }
+                return
+            }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                let writeChangeCount = self.pasteboard.write(plain)
+                self.monitor.markIgnored(text: plain)
+                self.panel.dismiss()
+                self.activateTargetAndSendCommandV()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                    guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
+                    if let savedItems {
+                        self.pasteboard.writeItems(savedItems)
+                        if let savedText = self.pasteboard.string() {
+                            self.monitor.markIgnored(text: savedText)
+                        }
+                    } else {
+                        self.pasteboard.clear()
+                    }
+                }
             }
         }
     }

@@ -62,7 +62,7 @@ struct VoiceStateMachineTestRunner {
         let effects = sm.handle(.extraneousKey)
         if case .idle = sm.state {} else { expect(false, "expected idle, got \(sm.state)") }
         expect(contains(effects, .cancelSession(s)), "missing cancelSession")
-        expect(contains(effects, .overlayDismiss), "missing overlayDismiss")
+        expect(contains(effects, .overlayShowCanceled), "missing overlayShowCanceled")
         expect(contains(effects, .cancelRecordingTimeoutTimer), "missing cancelRecordingTimeoutTimer")
     }
 
@@ -140,7 +140,7 @@ struct VoiceStateMachineTestRunner {
         let effects = sm.handle(.extraneousKey)
         if case .idle = sm.state {} else { expect(false, "expected idle, got \(sm.state)") }
         expect(contains(effects, .cancelSession(s)), "missing cancelSession")
-        expect(contains(effects, .overlayDismiss), "missing overlayDismiss")
+        expect(contains(effects, .overlayShowCanceled), "missing overlayShowCanceled")
         expect(!effects.contains(where: { if case .injectAndFinish = $0 { return true } else { return false } }), "must NOT inject")
     }
 

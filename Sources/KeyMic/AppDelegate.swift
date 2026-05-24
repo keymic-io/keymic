@@ -288,6 +288,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Voice pipeline lives in PersonaPlatform/Triggers/VoiceTrigger.
 
+    // MARK: - Speech callbacks
+
     private func setupSpeechCallbacks() {
         speechEngine.onPartialResult = { [weak self] text in
             DispatchQueue.main.async { [weak self] in
