@@ -35,7 +35,29 @@ struct KeychainVault: KeychainBackend {
     func read(account: String) throws -> String {
         let context = LAContext()
         context.touchIDAuthenticationAllowableReuseDuration = VaultConfig.touchIDReuseDuration
-        context.localizedReason = String(localized: "Reveal secret from KeyMic Vault")
+        let reason = String(localized: "Reveal secret from KeyMic Vault")
+
+        var evaluationSuccess = false
+        var evaluationError: Error?
+        let semaphore = DispatchSemaphore(value: 0)
+
+        // Evaluate policy explicitly to ensure TouchID or Passcode prompt is shown
+        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
+            evaluationSuccess = success
+            evaluationError = error
+            semaphore.signal()
+        }
+        _ = semaphore.wait(timeout: .distantFuture)
+
+        if !evaluationSuccess {
+            if let err = evaluationError as? LAError {
+                if err.code == .userCancel || err.code == .appCancel || err.code == .systemCancel {
+                    throw KeychainError.userCancelled
+                }
+                throw KeychainError.readFailed(OSStatus(err.code.rawValue))
+            }
+            throw KeychainError.readFailed(errSecAuthFailed)
+        }
 
         var query = baseQuery(account: account)
         query[kSecReturnData as String] = true

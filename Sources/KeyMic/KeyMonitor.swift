@@ -526,23 +526,87 @@ final class KeyMonitor {
         return false
     }
 
+    private func flag(for keyCode: CGKeyCode) -> CGEventFlags? {
+        Self.flag(for: keyCode)
+    }
+
+    static func flag(for keyCode: CGKeyCode) -> CGEventFlags? {
+        switch keyCode {
+        case 0x38, 0x3C: return .maskShift
+        case 0x3B, 0x3E: return .maskControl
+        case 0x3A, 0x3D: return .maskAlternate
+        case 0x37, 0x36: return .maskCommand
+        case 0x3F: return .maskSecondaryFn
+        case 0x39: return .maskAlphaShift
+        default: return nil
+        }
+    }
+
+    static func updateTrackedModifierState(
+        heldModifiers: inout Set<CGKeyCode>,
+        keyCode: CGKeyCode,
+        eventFlags: CGEventFlags,
+        isResetRecoveryMode: Bool
+    ) {
+        guard let mask = flag(for: keyCode) else { return }
+        if !eventFlags.contains(mask) {
+            heldModifiers.remove(keyCode)
+            return
+        }
+        if isResetRecoveryMode {
+            heldModifiers.insert(keyCode)
+            return
+        }
+        if heldModifiers.contains(keyCode) {
+            heldModifiers.remove(keyCode)
+        } else {
+            heldModifiers.insert(keyCode)
+        }
+    }
+
+    static func isModifierKeyDown(
+        remappedKeysDown: inout Set<CGKeyCode>,
+        keyCode: CGKeyCode,
+        eventFlags: CGEventFlags,
+        isResetRecoveryMode: Bool
+    ) -> Bool {
+        guard let mask = flag(for: keyCode) else {
+            let wasDown = remappedKeysDown.contains(keyCode)
+            let isDown = !wasDown
+            if isDown {
+                remappedKeysDown.insert(keyCode)
+            } else {
+                remappedKeysDown.remove(keyCode)
+            }
+            return isDown
+        }
+        if !eventFlags.contains(mask) {
+            remappedKeysDown.remove(keyCode)
+            return false
+        }
+        if isResetRecoveryMode {
+            remappedKeysDown.insert(keyCode)
+            return true
+        }
+        let isDown = !remappedKeysDown.contains(keyCode)
+        if isDown {
+            remappedKeysDown.insert(keyCode)
+        } else {
+            remappedKeysDown.remove(keyCode)
+        }
+        return isDown
+    }
+
     private func computeTriggerActive(type: CGEventType, event: CGEvent) -> Bool {
         if type == .flagsChanged {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             if HotkeyConfig.modifierKeyCodes.contains(keyCode) {
-                if keyCode == 0x3F {
-                    if event.flags.contains(.maskSecondaryFn) {
-                        state.heldModifiers.insert(keyCode)
-                    } else {
-                        state.heldModifiers.remove(keyCode)
-                    }
-                } else {
-                    if state.heldModifiers.contains(keyCode) {
-                        state.heldModifiers.remove(keyCode)
-                    } else {
-                        state.heldModifiers.insert(keyCode)
-                    }
-                }
+                Self.updateTrackedModifierState(
+                    heldModifiers: &state.heldModifiers,
+                    keyCode: keyCode,
+                    eventFlags: event.flags,
+                    isResetRecoveryMode: false
+                )
             }
         }
 
@@ -602,14 +666,12 @@ final class KeyMonitor {
         case .keyUp:
             return false
         case .flagsChanged:
-            let wasDown = state.remappedKeysDown.contains(keyCode)
-            let isDown = !wasDown
-            if isDown {
-                state.remappedKeysDown.insert(keyCode)
-            } else {
-                state.remappedKeysDown.remove(keyCode)
-            }
-            return isDown
+            return Self.isModifierKeyDown(
+                remappedKeysDown: &state.remappedKeysDown,
+                keyCode: keyCode,
+                eventFlags: event.flags,
+                isResetRecoveryMode: false
+            )
         default:
             return true
         }
@@ -638,14 +700,11 @@ final class KeyMonitor {
             // Right Cmd). Post at session level to skip HID-level modifier merging, which
             // would otherwise add .maskCommand back onto the synthesized event.
             let source = CGEventSource(stateID: .privateState)
-            guard let down = CGEvent(keyboardEventSource: source, virtualKey: targetKeyCode, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: source, virtualKey: targetKeyCode, keyDown: false)
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: targetKeyCode, keyDown: true)
             else { return }
             down.flags = []
-            up.flags = []
             down.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
             down.post(tap: .cgSessionEventTap)
-            up.post(tap: .cgSessionEventTap)
         }
         timer.resume()
         repeatTimers[sourceKey] = timer

@@ -8,6 +8,11 @@ protocol PasteboardReading: AnyObject {
     func data(forType type: String) -> Data?
     /// File URLs from a `.fileURL` pasteboard. Returns empty if none.
     func fileURLs() -> [URL]
+    /// Back up all pasteboard items by copying their raw types and data.
+    func copyItems() -> [NSPasteboardItem]?
+    /// Restore the copied pasteboard items.
+    @discardableResult
+    func writeItems(_ items: [NSPasteboardItem]) -> Int
 }
 
 final class SystemPasteboard: PasteboardReading {
@@ -35,6 +40,25 @@ final class SystemPasteboard: PasteboardReading {
             return []
         }
         return objs
+    }
+
+    func copyItems() -> [NSPasteboardItem]? {
+        return pasteboard.pasteboardItems?.map { item in
+            let newItem = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    newItem.setData(data, forType: type)
+                }
+            }
+            return newItem
+        }
+    }
+
+    @discardableResult
+    func writeItems(_ items: [NSPasteboardItem]) -> Int {
+        pasteboard.clearContents()
+        pasteboard.writeObjects(items)
+        return pasteboard.changeCount
     }
 
     /// Writer used by ClipboardController. Returns the new changeCount after the write.
