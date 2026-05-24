@@ -1,6 +1,52 @@
 import AppKit
 import SwiftUI
 
+private enum InjectionStrategyKind: String, CaseIterable, Identifiable {
+    case replaceFocusedText
+    case replaceSelection
+    case clipboard
+    case openURL
+    case runShell
+    case writeToITermPane
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .replaceFocusedText: return String(localized: "Replace focused text (paste)")
+        case .replaceSelection:   return String(localized: "Replace selection (AX)")
+        case .clipboard:          return String(localized: "Copy to clipboard")
+        case .openURL:            return String(localized: "Open URL")
+        case .runShell:           return String(localized: "Run shell command")
+        case .writeToITermPane:   return String(localized: "Write to iTerm pane")
+        }
+    }
+
+    init(_ strategy: InjectionStrategy) {
+        switch strategy {
+        case .replaceFocusedText: self = .replaceFocusedText
+        case .replaceSelection:   self = .replaceSelection
+        case .clipboard:          self = .clipboard
+        case .openURL:            self = .openURL
+        case .runShell:           self = .runShell
+        case .writeToITermPane:   self = .writeToITermPane
+        }
+    }
+
+    /// Produce a fresh `InjectionStrategy` with sensible defaults when the picker
+    /// switches arms. Existing associated values are LOST when switching arms — by design.
+    func defaultStrategy() -> InjectionStrategy {
+        switch self {
+        case .replaceFocusedText: return .replaceFocusedText
+        case .replaceSelection:   return .replaceSelection
+        case .clipboard:          return .clipboard
+        case .openURL:            return .openURL(template: "https://www.google.com/search?q={query}")
+        case .runShell:           return .runShell(commandTemplate: "{query}")
+        case .writeToITermPane:   return .writeToITermPane(paneIndex: 0)
+        }
+    }
+}
+
 // MARK: - Root view
 
 struct PersonasView: View {
@@ -184,6 +230,29 @@ private struct PersonaDetailForm: View {
                         .foregroundStyle(.secondary)
                 }
 
+                // Output destination (injection strategy)
+                FieldLabel("Output") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Strategy", selection: Binding<InjectionStrategyKind>(
+                            get: { InjectionStrategyKind(persona.injectionStrategy) },
+                            set: { newKind in
+                                guard !persona.builtIn else { return }
+                                model.setInjectionStrategy(newKind.defaultStrategy(), for: persona)
+                            }
+                        )) {
+                            ForEach(InjectionStrategyKind.allCases) { kind in
+                                Text(kind.displayName).tag(kind)
+                            }
+                        }
+                        .disabled(persona.builtIn)
+                        .help(persona.builtIn
+                              ? String(localized: "Built-in personas have a fixed output strategy.")
+                              : String(localized: "Where to send the model's output."))
+
+                        injectionStrategyEditor(for: persona)
+                    }
+                }
+
                 if persona.builtIn {
                     Text("Built-in persona: name cannot be changed and cannot be deleted.")
                         .font(.caption)
@@ -196,6 +265,63 @@ private struct PersonaDetailForm: View {
             .padding(.top, 2)
             .padding(.bottom, 20)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func injectionStrategyEditor(for persona: Persona) -> some View {
+        switch persona.injectionStrategy {
+        case .openURL(let template):
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("URL template", text: Binding<String>(
+                    get: { template },
+                    set: { new in
+                        guard !persona.builtIn else { return }
+                        model.setInjectionStrategy(.openURL(template: new), for: persona)
+                    }))
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(persona.builtIn)
+                Text("Placeholders: {query} {selection} {clipboard}")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .runShell(let commandTemplate):
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("Command template", text: Binding<String>(
+                    get: { commandTemplate },
+                    set: { new in
+                        guard !persona.builtIn else { return }
+                        model.setInjectionStrategy(.runShell(commandTemplate: new), for: persona)
+                    }))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .disabled(persona.builtIn)
+                Text("Placeholders: {query} {selection} {clipboard}. A confirmation sheet shows on every run.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .writeToITermPane(let paneIndex):
+            HStack {
+                Text("Pane index:")
+                Stepper(value: Binding<Int>(
+                    get: { paneIndex },
+                    set: { new in
+                        guard !persona.builtIn else { return }
+                        let clamped = max(0, min(9, new))
+                        model.setInjectionStrategy(.writeToITermPane(paneIndex: clamped), for: persona)
+                    }), in: 0...9) {
+                    Text("\(paneIndex)")
+                        .frame(width: 24, alignment: .trailing)
+                        .monospacedDigit()
+                }
+                .disabled(persona.builtIn)
+                Spacer()
+            }
+
+        case .replaceFocusedText, .replaceSelection, .clipboard:
+            EmptyView()
         }
     }
 
@@ -438,6 +564,13 @@ final class PersonasViewModel: ObservableObject {
     func setTemperature(_ value: Double, for persona: Persona) {
         guard var p = store.persona(id: persona.id) else { return }
         p.temperature = value
+        store.update(p)
+    }
+
+    func setInjectionStrategy(_ strategy: InjectionStrategy, for persona: Persona) {
+        guard !persona.builtIn else { return }
+        guard var p = store.persona(id: persona.id) else { return }
+        p.injectionStrategy = strategy
         store.update(p)
     }
 
