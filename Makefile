@@ -450,6 +450,8 @@ test-output-router:
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/OutputRouterTests.swift \
 	       -o .build/output-router-tests

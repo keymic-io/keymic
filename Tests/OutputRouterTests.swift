@@ -20,7 +20,7 @@ struct OutputRouterTestRunner {
         await testOpenURLHappyPath()
         await testOpenURLRejectsJavascript()
         await testRunShellWithDefaultConfirmReturnsUserCancelled()
-        await testWriteToITermStubReturnsStrategyNotImplemented()
+        await testWriteToITermFailsCleanlyWhenNotInstalled()
         print("✅ OutputRouterTests passed")
     }
 
@@ -41,9 +41,15 @@ struct OutputRouterTestRunner {
     }
 
     @MainActor
-    static func testWriteToITermStubReturnsStrategyNotImplemented() async {
+    static func testWriteToITermFailsCleanlyWhenNotInstalled() async {
+        // Cannot easily stub ITermAvailability without making it injectable. On a dev
+        // machine WITH iTerm installed, the call routes into ITermBridge which may
+        // trigger an Automation prompt — so we skip the assertion when iTerm is present.
+        // T13 will add stubbable coverage with `runShellExecutor`-style seams.
+        guard !ITermAvailability.isInstalled() else { return }
+
         let router = OutputRouter(
-            inject: { _ in },
+            inject: { _ in expect(false, "must not paste for iTerm strategy") },
             readSelection: { nil },
             writeSelection: { _ in false },
             onMarkIgnored: { _ in })
@@ -51,8 +57,9 @@ struct OutputRouterTestRunner {
                                    strategy: .writeToITermPane(paneIndex: 0),
                                    originatingApp: nil, context: nil)
         let result = await router.route(output)
-        if case .failed = result { /* ok */ }
-        else { expect(false, "expected .failed, got: \(result)") }
+        if case .failed(let msg) = result {
+            expect(msg.contains("not installed"), "expected not-installed message, got: \(msg)")
+        } else { expect(false, "expected .failed, got: \(result)") }
     }
 
     @MainActor

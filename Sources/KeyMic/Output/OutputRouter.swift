@@ -151,8 +151,27 @@ final class OutputRouter {
             return opened ? .injected : .failed(message: "workspace failed to open URL")
         case .runShell(let commandTemplate):
             return await runShell(template: commandTemplate, output: output)
-        case .writeToITermPane:
-            return .failed(message: "iterm strategy not yet available")
+        case .writeToITermPane(let paneIndex):
+            return await writeToITerm(paneIndex: paneIndex, text: output.text)
+        }
+    }
+
+    /// `.writeToITermPane` dispatch.
+    private func writeToITerm(paneIndex: Int, text: String) async -> RouteResult {
+        guard ITermAvailability.isInstalled() else {
+            return .failed(message: "iTerm 2 is not installed")
+        }
+        do {
+            try await ITermBridge.write(text: text, paneIndex: paneIndex)
+            return .injected
+        } catch ITermBridge.Error.permissionDenied {
+            return .failed(message: "Automation permission for iTerm 2 is required (System Settings → Privacy & Security → Automation → KeyMic)")
+        } catch ITermBridge.Error.iTermNotRunning {
+            return .failed(message: "iTerm 2 has no open window")
+        } catch ITermBridge.Error.paneOutOfRange {
+            return .failed(message: "iTerm pane index out of range")
+        } catch {
+            return .failed(message: "iTerm write failed: \(error.localizedDescription)")
         }
     }
 
