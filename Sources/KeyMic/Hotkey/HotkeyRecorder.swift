@@ -38,6 +38,14 @@ final class HotkeyRecorder: NSButton {
         }
     }
 
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned && isRecording {
+            cancelRecording()
+        }
+        return resigned
+    }
+
     init(initial: HotkeyConfig?, mode: Mode, validator: @escaping Validator, onCommit: @escaping (HotkeyConfig) -> Void) {
         self.current = initial
         self.mode = mode
