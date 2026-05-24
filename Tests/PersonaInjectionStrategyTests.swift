@@ -124,7 +124,7 @@ struct PersonaInjectionStrategyTestRunner {
         let expected: [String: InjectionStrategy] = [
             "builtin-default": .replaceFocusedText,
             "builtin-translate": .replaceFocusedText,
-            "builtin-cli": .replaceFocusedText,
+            "builtin-cli": .runShell(commandTemplate: "{query}"),
             "builtin-context": .replaceFocusedText,
             "builtin-general-editor": .replaceSelection,
             "builtin-clipboard-transformer": .clipboard,

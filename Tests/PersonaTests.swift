@@ -33,6 +33,8 @@ struct PersonaTestRunner {
             "builtin-clipboard-transformer",
         ], "built-in ids in canonical order")
         expect(seeds.allSatisfy { $0.builtIn }, "all seeds marked builtIn")
+        expect(seeds[2].injectionStrategy == .runShell(commandTemplate: "{query}"),
+               "builtin-cli persona uses .runShell({query})")
         expect(seeds[4].injectionStrategy == .replaceSelection,
                "general-editor persona uses replaceSelection strategy")
         expect(seeds[5].injectionStrategy == .clipboard,

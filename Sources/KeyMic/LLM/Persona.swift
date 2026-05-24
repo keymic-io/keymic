@@ -128,7 +128,8 @@ struct Persona: Codable, Identifiable, Equatable {
                 contextSources: [],
                 builtIn: true,
                 createdAt: now,
-                updatedAt: now
+                updatedAt: now,
+                injectionStrategy: .runShell(commandTemplate: "{query}")
             ),
             Persona(
                 id: "builtin-context",

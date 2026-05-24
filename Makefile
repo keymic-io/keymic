@@ -394,6 +394,11 @@ test-persona:
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaTests.swift \
 	       -o .build/persona-tests
@@ -408,6 +413,11 @@ test-persona-store:
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaStoreTests.swift \
 	       -o .build/persona-store-tests
@@ -421,6 +431,11 @@ test-persona-context:
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaContextTests.swift \
 	       -o .build/persona-context-tests
@@ -434,6 +449,11 @@ test-persona-injection-strategy:
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaInjectionStrategyTests.swift \
 	       -o .build/persona-injection-tests
