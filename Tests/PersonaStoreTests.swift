@@ -88,7 +88,54 @@ struct PersonaStoreTestRunner {
         expect(store3.persona(forHotkey: "alt+w") == nil,
                "missing hotkey returns nil")
 
+        testBuiltinCliInjectionStrategyPromotedOnMerge()
+
         print("✅ PersonaStoreTests passed")
+    }
+
+    /// Existing installs have `builtin-cli.injectionStrategy = .replaceFocusedText` on disk
+    /// (set by P2 seed before LOR-15). Without a migration the legacy JSON value wins and the
+    /// new `.runShell({query})` strategy never activates. `mergeWithBuiltIns` must promote the
+    /// seed's `injectionStrategy` onto the loaded built-in while preserving user-editable
+    /// fields (stylePrompt, temperature).
+    static func testBuiltinCliInjectionStrategyPromotedOnMerge() {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymic-persona-migration-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let storeURL = tmpDir.appendingPathComponent("personas.json")
+
+        let legacyJSON = """
+        {
+          "version": 1,
+          "personas": [
+            {
+              "builtIn": true,
+              "contextSources": [],
+              "createdAt": "2024-01-01T00:00:00.000Z",
+              "icon": "terminal",
+              "id": "builtin-cli",
+              "injectionStrategy": { "replaceFocusedText": {} },
+              "name": "CLI Wizard",
+              "stylePrompt": "USER EDITED PROMPT",
+              "temperature": 0.2,
+              "updatedAt": "2024-01-01T00:00:00.000Z"
+            }
+          ],
+          "activePersonaId": null
+        }
+        """
+        try? legacyJSON.write(to: storeURL, atomically: true, encoding: .utf8)
+
+        let store = PersonaStore(storeURL: storeURL)
+        guard let cli = store.persona(id: "builtin-cli") else {
+            expect(false, "builtin-cli missing after merge"); return
+        }
+        expect(cli.injectionStrategy == .runShell(commandTemplate: "{query}"),
+               "merge must promote builtin-cli.injectionStrategy to .runShell({query})")
+        expect(cli.stylePrompt == "USER EDITED PROMPT",
+               "user-edited stylePrompt must survive the merge")
+        expect(cli.temperature == 0.2, "user-edited temperature must survive the merge")
     }
 
     static func expect(_ cond: Bool, _ msg: String) {
