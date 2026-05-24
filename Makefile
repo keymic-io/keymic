@@ -447,6 +447,9 @@ test-output-router:
 	       Sources/KeyMic/LLM/SelectionTextProvider.swift \
 	       Sources/KeyMic/LLM/PasteboardSnapshot.swift \
 	       Sources/KeyMic/LLM/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/OutputRouterTests.swift \
 	       -o .build/output-router-tests

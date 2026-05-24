@@ -90,22 +90,31 @@ final class OutputRouter {
     private let pasteboard: NSPasteboard
     private let workspace: NSWorkspace
     private let onMarkIgnored: (String) -> Void
+    /// `.runShell` confirmation gate. Returns true if the user approved. Default is a
+    /// safety stub that always returns false — production wires `ShellConfirmationSheet.present`.
+    private let confirmShellRun: (String) async -> Bool
 
     /// Test injection point — overrides `NSWorkspace.open(_:)`. Production default delegates to workspace.
     var openURLHandler: ((URL) -> Bool)?
+
+    /// Test injection point — overrides `ShellOutputRunner.run(_:)`. Production default delegates
+    /// to the real runner with the default 30 s timeout.
+    var runShellExecutor: ((String) async throws -> ShellOutputResult)?
 
     init(inject: @escaping (String) -> Void,
          readSelection: @escaping () -> String? = { SelectionTextProvider.currentSelection() },
          writeSelection: @escaping (String) -> Bool = { AXSelectionWriter.write($0) },
          pasteboard: NSPasteboard = .general,
          workspace: NSWorkspace = .shared,
-         onMarkIgnored: @escaping (String) -> Void = { _ in }) {
+         onMarkIgnored: @escaping (String) -> Void = { _ in },
+         confirmShellRun: @escaping (String) async -> Bool = { _ in false }) {
         self.inject = inject
         self.readSelection = readSelection
         self.writeSelection = writeSelection
         self.pasteboard = pasteboard
         self.workspace = workspace
         self.onMarkIgnored = onMarkIgnored
+        self.confirmShellRun = confirmShellRun
     }
 
     /// Main entry point.
@@ -140,10 +149,62 @@ final class OutputRouter {
             }
             let opened = openURLHandler?(url) ?? workspace.open(url)
             return opened ? .injected : .failed(message: "workspace failed to open URL")
-        case .runShell:
-            return .failed(message: "shell strategy not yet available")
+        case .runShell(let commandTemplate):
+            return await runShell(template: commandTemplate, output: output)
         case .writeToITermPane:
             return .failed(message: "iterm strategy not yet available")
+        }
+    }
+
+    /// `.runShell` dispatch. Substitutes the template, refuses empty / all-empty-placeholder
+    /// commands, asks `confirmShellRun` (cancel → `.userCancelled`), runs `ShellOutputRunner`,
+    /// strips ANSI from stdout, then routes through `inject(_:)` (same path as
+    /// `.replaceFocusedText`). stderr present (with any exit code) surfaces as `.failed`.
+    private func runShell(template: String, output: PersonaOutput) async -> RouteResult {
+        guard let substituted = ShellTemplate.substitute(
+                template: template, text: output.text, context: output.context) else {
+            return .failed(message: "shell template substitution failed")
+        }
+        let command = substituted.trimmingCharacters(in: .whitespaces)
+        guard !command.isEmpty else {
+            return .failed(message: "Empty shell command after substitution")
+        }
+        guard ShellTemplate.hasResolvedSubstantialContent(
+                original: template, resolved: substituted) else {
+            return .failed(message: "Refusing to run command with empty placeholders")
+        }
+
+        let confirmed = await confirmShellRun(command)
+        guard confirmed else {
+            routerLogger.debug("runShell user cancelled (length=\(command.count, privacy: .public))")
+            return .userCancelled
+        }
+
+        do {
+            let result: ShellOutputResult
+            if let executor = runShellExecutor {
+                result = try await executor(command)
+            } else {
+                result = try await ShellOutputRunner.run(command)
+            }
+            routerLogger.debug("runShell exit=\(result.exitCode, privacy: .public) stdout_len=\(result.stdout.count, privacy: .public) stderr_len=\(result.stderr.count, privacy: .public)")
+            let cleanStdout = ANSIStripper.strip(result.stdout)
+            if !cleanStdout.isEmpty {
+                await activateOriginatingApp(output.originatingApp)
+                inject(cleanStdout)
+            }
+            if !result.stderr.isEmpty {
+                routerLogger.error("runShell stderr present exit=\(result.exitCode, privacy: .public)")
+                let truncated = result.stderr.count > 200
+                    ? String(result.stderr.prefix(200)) + "…"
+                    : result.stderr
+                return .failed(message: truncated)
+            }
+            return .injected
+        } catch ShellOutputRunnerError.timeout {
+            return .failed(message: "shell command timed out after 30s")
+        } catch {
+            return .failed(message: "shell run failed: \(error.localizedDescription)")
         }
     }
 

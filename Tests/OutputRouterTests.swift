@@ -19,15 +19,17 @@ struct OutputRouterTestRunner {
         await testReplaceSelectionNoSelectionFallback()
         await testOpenURLHappyPath()
         await testOpenURLRejectsJavascript()
-        await testRunShellStubReturnsStrategyNotImplemented()
+        await testRunShellWithDefaultConfirmReturnsUserCancelled()
         await testWriteToITermStubReturnsStrategyNotImplemented()
         print("✅ OutputRouterTests passed")
     }
 
     @MainActor
-    static func testRunShellStubReturnsStrategyNotImplemented() async {
+    static func testRunShellWithDefaultConfirmReturnsUserCancelled() async {
+        // Default `confirmShellRun` is `{ _ in false }` — a safety stub that always cancels.
+        // Production wires `ShellConfirmationSheet.present`.
         let router = OutputRouter(
-            inject: { _ in expect(false, "must not paste") },
+            inject: { _ in expect(false, "must not paste when default confirm denies") },
             readSelection: { nil },
             writeSelection: { _ in false },
             onMarkIgnored: { _ in })
@@ -35,9 +37,7 @@ struct OutputRouterTestRunner {
                                    strategy: .runShell(commandTemplate: "ls"),
                                    originatingApp: nil, context: nil)
         let result = await router.route(output)
-        if case .failed(let msg) = result {
-            expect(msg.contains("not yet available"), "got: \(msg)")
-        } else { expect(false, "expected .failed, got: \(result)") }
+        expect(result == .userCancelled, "expected .userCancelled (default confirm denies), got: \(result)")
     }
 
     @MainActor
