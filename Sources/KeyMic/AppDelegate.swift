@@ -156,6 +156,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             inject: { [weak self] text in self?.textInjector.inject(text) },
             onMarkIgnored: { [weak self] text in
                 self?.clipboardController.markPasteboardWrite(text)
+            },
+            confirmShellRun: { command in
+                await ShellConfirmationSheet.present(command: command)
             })
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onVaultHotkey = { [weak self] in
