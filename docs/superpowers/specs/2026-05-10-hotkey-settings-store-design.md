@@ -47,7 +47,7 @@ Suggested default raw values:
 - `clipboardPanel`: `alt+v`
 - `vaultPanel`: `alt+b`
 - `settingsWindow`: `cmd+shift+comma`
-- `screenshot`: `cmd+shift+a`
+- `screenshot`: `ctrl+alt+a`
 
 If a default cannot be parsed by `HotkeyConfig`, that is a code bug and should be caught during build-time review or tests.
 
