@@ -138,6 +138,7 @@ struct PersonaStoreTestRunner {
         expect(cli.temperature == 0.2, "user-edited temperature must survive the merge")
     }
 
+
     static func expect(_ cond: Bool, _ msg: String) {
         if !cond { print("❌ \(msg)"); exit(1) }
     }

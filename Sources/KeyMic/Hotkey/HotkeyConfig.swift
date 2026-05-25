@@ -92,6 +92,7 @@ struct HotkeyConfig: Hashable {
         return nxKeyTypeToFKey[nxKeyType]
     }
 
+
     var isPureModifier: Bool {
         modifiers.isEmpty && Self.modifierKeyCodes.contains(keyCode)
     }

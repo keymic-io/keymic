@@ -47,6 +47,7 @@ private enum InjectionStrategyKind: String, CaseIterable, Identifiable {
     }
 }
 
+
 // MARK: - Root view
 
 struct PersonasView: View {
@@ -573,6 +574,7 @@ final class PersonasViewModel: ObservableObject {
         p.injectionStrategy = strategy
         store.update(p)
     }
+
 
     /// Binding that reads from the live personas array and calls store.update on set.
     func binding<Value: Equatable>(_ keyPath: WritableKeyPath<Persona, Value>, for persona: Persona) -> Binding<Value> {

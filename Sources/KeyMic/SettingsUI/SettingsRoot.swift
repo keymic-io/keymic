@@ -128,36 +128,6 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-// MARK: - Root
-
-struct SettingsRootView: View {
-    @State private var selection: SettingsSection = .general
-
-    var body: some View {
-        NavigationSplitView {
-            List(SettingsSection.allCases, selection: $selection) { section in
-                Label(section.title, systemImage: section.symbol).tag(section)
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 170, ideal: 180, max: 220)
-        } detail: {
-            detail
-                .frame(minWidth: 480, idealWidth: 560, minHeight: 420)
-                .navigationTitle(selection.title)
-        }
-        .frame(minWidth: 720, minHeight: 480)
-    }
-
-    @ViewBuilder
-    private var detail: some View {
-        switch selection {
-        case .general: GeneralSettingsView()
-        case .voice: VoiceSettingsView()
-        case .llm: LLMSettingsView()
-        case .personas: PersonasView()
-        case .clipboard: ClipboardSettingsView()
-        case .keyMapping: KeyMappingSettingsSection()
-        case .shortcuts: ShortcutsSettingsSection()
         case .screenshot: ScreenshotSettingsView()
         }
     }
@@ -188,17 +158,6 @@ private func resetHotkey(_ store: HotkeySettingsStore, for feature: HotkeyFeatur
     }
 }
 
-// MARK: - Screenshot
-
-private struct ScreenshotSettingsView: View {
-    @AppStorage("screenshotEnabled") private var screenshotEnabled: Bool = true
-    @State private var hotkeyStore = HotkeySettingsStore.shared
-    @State private var hotkeyResetError: String?
-
-    private var screenshotHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .screenshot) }
-
-    private var hotkeyDisplayString: String {
-        HotkeyConfig.parse(screenshotHotkey.wrappedValue)?.displayString() ?? "⌘⇧A"
     }
 
     var body: some View {
@@ -302,37 +261,6 @@ private struct GeneralSettingsView: View {
             }
 
             Section {
-                Toggle("Automatically check and install updates", isOn: $automaticallyUpdates)
-            } header: {
-                Text("Updates")
-            } footer: {
-                Text(
-                    "When enabled, KeyMic checks for updates daily at 11:00 AM and installs them silently. When disabled, you'll be prompted to review updates before installing."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-
-            Section {
-                LabeledContent("Open Settings:") {
-                    HotkeyRecorderWithClear(
-                        encoded: settingsHotkey,
-                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.settingsWindow.rawValue]!,
-                        mode: .combo,
-                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.settingsWindow)) },
-                        recorderWidth: 200,
-                        resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .settingsWindow) }
-                    )
-                }
-                if let hotkeyResetError {
-                    Text(hotkeyResetError)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                }
-            } header: {
-                Text("Hotkey")
-            } footer: {
-                Text("Global shortcut to open this Settings window from anywhere.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -770,29 +698,6 @@ struct HotkeyRecorderField: View {
     let validator: HotkeyRecorder.Validator
     let displayName: DisplayName?
     let showsClearButton: Bool
-
-    init(
-        config: Binding<HotkeyConfig?>,
-        mode: HotkeyRecorder.Mode,
-        validator: @escaping HotkeyRecorder.Validator,
-        displayName: DisplayName? = nil,
-        showsClearButton: Bool = true
-    ) {
-        self._config = config
-        self.mode = mode
-        self.validator = validator
-        self.displayName = displayName
-        self.showsClearButton = showsClearButton
-    }
-
-    /// Convenience initializer that bridges to a UserDefaults-backed encoded string.
-    init(
-        encoded: Binding<String>,
-        mode: HotkeyRecorder.Mode,
-        validator: @escaping HotkeyRecorder.Validator,
-        showsClearButton: Bool = true
-    ) {
-        self.init(
             config: Binding(
                 get: { HotkeyConfig.parse(encoded.wrappedValue) },
                 set: { encoded.wrappedValue = $0?.encode() ?? "" }
@@ -888,15 +793,6 @@ struct HotkeyRecorderWithClear: View {
     let validator: HotkeyRecorder.Validator
     let recorderWidth: CGFloat
     let resetAction: () -> Void
-
-    private var canReset: Bool {
-        if let defaultEncoded { return encoded != defaultEncoded }
-        return !encoded.isEmpty
-    }
-
-    var body: some View {
-        HStack(spacing: 4) {
-            HotkeyRecorderField(encoded: $encoded, mode: mode, validator: validator, showsClearButton: false)
                 .frame(width: recorderWidth, height: 24)
 
             ClearHotkeyButton(

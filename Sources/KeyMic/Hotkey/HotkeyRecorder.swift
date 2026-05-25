@@ -18,6 +18,7 @@ final class HotkeyRecorder: NSButton {
     /// even when the app is frontmost. Same approach as skhd.
     static weak var activeRecorder: HotkeyRecorder?
 
+
     private var current: HotkeyConfig?
     private let validator: Validator
     private let mode: Mode
@@ -45,6 +46,7 @@ final class HotkeyRecorder: NSButton {
         }
         return resigned
     }
+
 
     init(initial: HotkeyConfig?, mode: Mode, validator: @escaping Validator, onCommit: @escaping (HotkeyConfig) -> Void) {
         self.current = initial
