@@ -256,6 +256,17 @@ final class KeyMonitor {
         }
     }
 
+    static func shouldCancelVoiceForUnexpectedKeyPress(
+        keyCode: CGKeyCode,
+        isAutoRepeat: Bool,
+        isVoiceActive: Bool,
+        voiceTriggerKeyCode: CGKeyCode?,
+        personaHotkeyKeyDown: CGKeyCode?
+    ) -> Bool {
+        guard !isAutoRepeat, isVoiceActive else { return false }
+        return keyCode != voiceTriggerKeyCode && keyCode != personaHotkeyKeyDown
+    }
+
     // MARK: - Private
 
     private func handle(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
@@ -329,7 +340,17 @@ final class KeyMonitor {
         }
 
         if let fKey = HotkeyConfig.decodeMediaFKey(type: type, event: event) {
-            if dispatchFRowHotkey(keyCode: fKey, flags: event.flags) {
+            if Self.shouldCancelVoiceForUnexpectedKeyPress(
+                keyCode: fKey,
+                isAutoRepeat: false,
+                isVoiceActive: isVoiceActive?() == true,
+                voiceTriggerKeyCode: voiceTriggerHotkey?.keyCode,
+                personaHotkeyKeyDown: state.personaHotkeyKeyDown
+            ) {
+                DispatchQueue.main.async { [weak self] in self?.onExtraneousKeyDuringVoice?() }
+                return Unmanaged.passRetained(event)
+            }
+            if dispatchFRowHotkey(keyCode: fKey, flags: event.flags, fnHeld: state.heldModifiers.contains(0x3F)) {
                 return nil
             }
             return Unmanaged.passRetained(event)
@@ -338,15 +359,19 @@ final class KeyMonitor {
         if type == .keyDown {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             let isAutoRepeat = event.getIntegerValueField(.keyboardEventAutorepeat) == 1
+            let fnHeld = state.heldModifiers.contains(0x3F)
 
             if state.triggerActive && !isAutoRepeat {
                 DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
             }
 
-            if !isAutoRepeat,
-               isVoiceActive?() == true,
-               keyCode != voiceTriggerHotkey?.keyCode,
-               keyCode != state.personaHotkeyKeyDown {
+            if Self.shouldCancelVoiceForUnexpectedKeyPress(
+                keyCode: keyCode,
+                isAutoRepeat: isAutoRepeat,
+                isVoiceActive: isVoiceActive?() == true,
+                voiceTriggerKeyCode: voiceTriggerHotkey?.keyCode,
+                personaHotkeyKeyDown: state.personaHotkeyKeyDown
+            ) {
                 DispatchQueue.main.async { [weak self] in self?.onExtraneousKeyDuringVoice?() }
                 return Unmanaged.passRetained(event)
             }
@@ -361,7 +386,7 @@ final class KeyMonitor {
             if !isAutoRepeat, HotkeyPreferences.enabled {
                 let frontBundleID = currentFrontBundleID?()
                 for binding in actionBindings {
-                    if binding.config.matches(keyCode: keyCode, flags: event.flags) {
+                    if binding.config.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                         if !binding.appBundleIDs.isEmpty {
                             guard let bid = frontBundleID, binding.appBundleIDs.contains(bid) else {
                                 continue
@@ -377,7 +402,7 @@ final class KeyMonitor {
             // Clipboard hotkey
             if let cfg = clipboardHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                 DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
                 return nil
             }
@@ -385,7 +410,7 @@ final class KeyMonitor {
             // Vault hotkey
             if let cfg = vaultHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                 DispatchQueue.main.async { [weak self] in self?.onVaultHotkey?() }
                 return nil
             }
@@ -393,7 +418,7 @@ final class KeyMonitor {
             // Settings hotkey
             if let cfg = settingsHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
                 DispatchQueue.main.async { [weak self] in self?.onSettingsHotkey?() }
                 return nil
             }
@@ -401,7 +426,7 @@ final class KeyMonitor {
             // Screenshot hotkey
             if let cfg = screenshotHotkey,
                !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags),
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld),
                UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
                 DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
                 return nil
@@ -423,7 +448,7 @@ final class KeyMonitor {
                 for persona in PersonaStore.shared.personas {
                     guard let cfg = hotkeys.personaHotkey(personaId: persona.id),
                           !cfg.isPureModifier,
-                          cfg.matches(keyCode: keyCode, flags: event.flags) else { continue }
+                          cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) else { continue }
                     let id = persona.id
                     state.personaHotkeyKeyDown = keyCode
                     DispatchQueue.main.async { [weak self] in
@@ -466,11 +491,11 @@ final class KeyMonitor {
     /// event) against the same hotkey set the regular keyDown path checks.
     /// Skips push-to-talk / persona logic — those rely on a paired keyUp that
     /// media events don't deliver.
-    private func dispatchFRowHotkey(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool {
+    private func dispatchFRowHotkey(keyCode: CGKeyCode, flags: CGEventFlags, fnHeld: Bool) -> Bool {
         if HotkeyPreferences.enabled {
             let frontBundleID = currentFrontBundleID?()
             for binding in actionBindings {
-                if binding.config.matches(keyCode: keyCode, flags: flags) {
+                if binding.config.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
                     if !binding.appBundleIDs.isEmpty {
                         guard let bid = frontBundleID, binding.appBundleIDs.contains(bid) else { continue }
                     }
@@ -480,20 +505,20 @@ final class KeyMonitor {
                 }
             }
         }
-        if let cfg = clipboardHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+        if let cfg = clipboardHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
             DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
             return true
         }
-        if let cfg = vaultHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+        if let cfg = vaultHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
             DispatchQueue.main.async { [weak self] in self?.onVaultHotkey?() }
             return true
         }
-        if let cfg = settingsHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags) {
+        if let cfg = settingsHotkey, !cfg.isPureModifier, cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
             DispatchQueue.main.async { [weak self] in self?.onSettingsHotkey?() }
             return true
         }
         if let cfg = screenshotHotkey, !cfg.isPureModifier,
-           cfg.matches(keyCode: keyCode, flags: flags),
+           cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld),
            UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
             DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
             return true
@@ -501,23 +526,87 @@ final class KeyMonitor {
         return false
     }
 
+    private func flag(for keyCode: CGKeyCode) -> CGEventFlags? {
+        Self.flag(for: keyCode)
+    }
+
+    static func flag(for keyCode: CGKeyCode) -> CGEventFlags? {
+        switch keyCode {
+        case 0x38, 0x3C: return .maskShift
+        case 0x3B, 0x3E: return .maskControl
+        case 0x3A, 0x3D: return .maskAlternate
+        case 0x37, 0x36: return .maskCommand
+        case 0x3F: return .maskSecondaryFn
+        case 0x39: return .maskAlphaShift
+        default: return nil
+        }
+    }
+
+    static func updateTrackedModifierState(
+        heldModifiers: inout Set<CGKeyCode>,
+        keyCode: CGKeyCode,
+        eventFlags: CGEventFlags,
+        isResetRecoveryMode: Bool
+    ) {
+        guard let mask = flag(for: keyCode) else { return }
+        if !eventFlags.contains(mask) {
+            heldModifiers.remove(keyCode)
+            return
+        }
+        if isResetRecoveryMode {
+            heldModifiers.insert(keyCode)
+            return
+        }
+        if heldModifiers.contains(keyCode) {
+            heldModifiers.remove(keyCode)
+        } else {
+            heldModifiers.insert(keyCode)
+        }
+    }
+
+    static func isModifierKeyDown(
+        remappedKeysDown: inout Set<CGKeyCode>,
+        keyCode: CGKeyCode,
+        eventFlags: CGEventFlags,
+        isResetRecoveryMode: Bool
+    ) -> Bool {
+        guard let mask = flag(for: keyCode) else {
+            let wasDown = remappedKeysDown.contains(keyCode)
+            let isDown = !wasDown
+            if isDown {
+                remappedKeysDown.insert(keyCode)
+            } else {
+                remappedKeysDown.remove(keyCode)
+            }
+            return isDown
+        }
+        if !eventFlags.contains(mask) {
+            remappedKeysDown.remove(keyCode)
+            return false
+        }
+        if isResetRecoveryMode {
+            remappedKeysDown.insert(keyCode)
+            return true
+        }
+        let isDown = !remappedKeysDown.contains(keyCode)
+        if isDown {
+            remappedKeysDown.insert(keyCode)
+        } else {
+            remappedKeysDown.remove(keyCode)
+        }
+        return isDown
+    }
+
     private func computeTriggerActive(type: CGEventType, event: CGEvent) -> Bool {
         if type == .flagsChanged {
             let keyCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             if HotkeyConfig.modifierKeyCodes.contains(keyCode) {
-                if keyCode == 0x3F {
-                    if event.flags.contains(.maskSecondaryFn) {
-                        state.heldModifiers.insert(keyCode)
-                    } else {
-                        state.heldModifiers.remove(keyCode)
-                    }
-                } else {
-                    if state.heldModifiers.contains(keyCode) {
-                        state.heldModifiers.remove(keyCode)
-                    } else {
-                        state.heldModifiers.insert(keyCode)
-                    }
-                }
+                Self.updateTrackedModifierState(
+                    heldModifiers: &state.heldModifiers,
+                    keyCode: keyCode,
+                    eventFlags: event.flags,
+                    isResetRecoveryMode: false
+                )
             }
         }
 
@@ -577,14 +666,12 @@ final class KeyMonitor {
         case .keyUp:
             return false
         case .flagsChanged:
-            let wasDown = state.remappedKeysDown.contains(keyCode)
-            let isDown = !wasDown
-            if isDown {
-                state.remappedKeysDown.insert(keyCode)
-            } else {
-                state.remappedKeysDown.remove(keyCode)
-            }
-            return isDown
+            return Self.isModifierKeyDown(
+                remappedKeysDown: &state.remappedKeysDown,
+                keyCode: keyCode,
+                eventFlags: event.flags,
+                isResetRecoveryMode: false
+            )
         default:
             return true
         }
@@ -613,14 +700,11 @@ final class KeyMonitor {
             // Right Cmd). Post at session level to skip HID-level modifier merging, which
             // would otherwise add .maskCommand back onto the synthesized event.
             let source = CGEventSource(stateID: .privateState)
-            guard let down = CGEvent(keyboardEventSource: source, virtualKey: targetKeyCode, keyDown: true),
-                  let up = CGEvent(keyboardEventSource: source, virtualKey: targetKeyCode, keyDown: false)
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: targetKeyCode, keyDown: true)
             else { return }
             down.flags = []
-            up.flags = []
             down.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
             down.post(tap: .cgSessionEventTap)
-            up.post(tap: .cgSessionEventTap)
         }
         timer.resume()
         repeatTimers[sourceKey] = timer
