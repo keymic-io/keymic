@@ -1,6 +1,5 @@
 import AppKit
 import CoreGraphics
-import CryptoKit
 import Foundation
 import ImageIO
 import os
@@ -18,7 +17,7 @@ final class ClipboardMonitor {
     private let isEnabled: () -> Bool
 
     private var lastChangeCount: Int
-    private var ignoredToken: String?
+    private var ignoredChangeCount: Int?
     private var timer: DispatchSourceTimer?
 
     init(
@@ -52,16 +51,10 @@ final class ClipboardMonitor {
         timer = nil
     }
 
-    /// Marks `token` as KeyMic's own write so the next observed change matching it is skipped.
-    /// Token semantics: text = content string, image = SHA-256 hex, file = absolute path,
-    /// richText = plain-text fallback.
-    func markIgnored(token: String) {
-        ignoredToken = token
-    }
-
-    /// Back-compat shim — `ClipboardController.markPasteboardWrite` still uses the text overload.
-    func markIgnored(text: String) {
-        markIgnored(token: text)
+    /// Records `changeCount` as KeyMic's own write so the next tick observing that
+    /// exact changeCount is skipped.  Counter-based — no content matching needed.
+    func markIgnoredChangeCount(_ changeCount: Int) {
+        ignoredChangeCount = changeCount
     }
 
     func tickForTesting() { tick() }
@@ -71,21 +64,25 @@ final class ClipboardMonitor {
         guard current != lastChangeCount else { return }
         lastChangeCount = current
 
+        // Counter-based ignore: skip the tick whose changeCount we just wrote.
+        if let ignored = ignoredChangeCount, ignored == current {
+            ignoredChangeCount = nil
+            return
+        }
+
         guard isEnabled() else {
-            ignoredToken = nil
+            ignoredChangeCount = nil
             return
         }
 
         let types = Set(pasteboard.types())
 
         if ignoreConfidential(), !types.isDisjoint(with: ConfidentialClipboardType.all) {
-            ignoredToken = nil
             return
         }
 
         let source = sourceAppProvider()
         if let bundleID = source.bundleID, bundleID == ownBundleID {
-            ignoredToken = nil
             return
         }
 
@@ -105,13 +102,7 @@ final class ClipboardMonitor {
             types.contains("public.png")
             ? ("public.png", .png)
             : ("public.tiff", .tiff)
-        guard let data = pasteboard.data(forType: preferType) else {
-            ignoredToken = nil
-            return
-        }
-
-        let hash = data.sha256Hex
-        if shouldDropMatchingIgnored(hash) { return }
+        guard let data = pasteboard.data(forType: preferType) else { return }
 
         let (w, h) = decodeImageDimensions(data: data)
         store.add(
@@ -121,11 +112,7 @@ final class ClipboardMonitor {
 
     private func captureFile(source: (bundleID: String?, name: String?)) {
         let urls = pasteboard.fileURLs()
-        guard let first = urls.first else {
-            ignoredToken = nil
-            return
-        }
-        if shouldDropMatchingIgnored(first.path) { return }
+        guard let first = urls.first else { return }
         store.add(fileURL: first, sourceBundleID: source.bundleID, sourceAppName: source.name)
     }
 
@@ -134,12 +121,8 @@ final class ClipboardMonitor {
             types.contains("public.html")
             ? ("public.html", .html)
             : ("public.rtf", .rtf)
-        guard let blob = pasteboard.data(forType: typeKey) else {
-            ignoredToken = nil
-            return
-        }
+        guard let blob = pasteboard.data(forType: typeKey) else { return }
         let plain = pasteboard.string() ?? ""
-        if shouldDropMatchingIgnored(plain) { return }
         store.add(
             richText: blob, format: format, plainText: plain,
             sourceBundleID: source.bundleID, sourceAppName: source.name)
@@ -148,20 +131,8 @@ final class ClipboardMonitor {
     private func capturePlainText(source: (bundleID: String?, name: String?)) {
         guard let text = pasteboard.string(),
             !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-            ignoredToken = nil
-            return
-        }
-        if shouldDropMatchingIgnored(text) { return }
+        else { return }
         store.add(text: text, sourceBundleID: source.bundleID, sourceAppName: source.name)
-    }
-
-    private func shouldDropMatchingIgnored(_ token: String) -> Bool {
-        if let ignored = ignoredToken {
-            ignoredToken = nil
-            if ignored == token { return true }
-        }
-        return false
     }
 
     private func decodeImageDimensions(data: Data) -> (Int, Int) {
@@ -173,13 +144,5 @@ final class ClipboardMonitor {
             return (0, 0)
         }
         return (w, h)
-    }
-}
-
-extension Data {
-    /// Lowercase SHA-256 hex digest. Must produce the same string as
-    /// `ClipboardStore.add(image:)` so markIgnored tokens compare equal.
-    fileprivate var sha256Hex: String {
-        SHA256.hash(data: self).map { String(format: "%02x", $0) }.joined()
     }
 }

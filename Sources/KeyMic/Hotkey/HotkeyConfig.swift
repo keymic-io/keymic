@@ -140,7 +140,13 @@ struct HotkeyConfig: Hashable {
         let tokens = s.split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         guard !tokens.isEmpty, !tokens.contains(where: { $0.isEmpty }) else { return nil }
         guard let last = tokens.last else { return nil }
-        guard let keyCode = tokenToKeyCode[last] else { return nil }
+        var keyCode: CGKeyCode?
+        if let kc = tokenToKeyCode[last] {
+            keyCode = kc
+        } else if last.hasPrefix("0x"), let hex = UInt16(last.dropFirst(2), radix: 16) {
+            keyCode = hex
+        }
+        guard let keyCode else { return nil }
         guard !modifierKeyCodes.contains(keyCode) || tokens.count > 1 else { return nil }
 
         var modifiers: CGEventFlags = []

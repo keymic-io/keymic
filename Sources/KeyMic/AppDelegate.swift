@@ -30,8 +30,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var voice = VoiceStateMachine()
     private var graceTimer: Timer?
     private var recordingTimeoutTimer: Timer?
+    private var refiningTimeoutTimer: Timer?
     private static let recordingMaxDuration: TimeInterval = 6 * 60
     private static let graceDuration: TimeInterval = 2.0
+    private static let refiningTimeoutDuration: TimeInterval = 20.0
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
 
@@ -91,6 +93,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if activateExistingInstanceIfNeeded() { return }
+
+        // Clear any stale HID-level mappings left by a previous crash/SIGKILL.
+        // `applicationWillTerminate` calls reset() on clean quit, but force-quit
+        // or crash leaves hidutil UserKeyMapping active. Reset-then-reapply is idempotent.
+        HIDRemapper.reset()
 
         AppScreen.refresh()
 
@@ -354,8 +361,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let userText = buildUserText(transcript: trimmed, contextMode: persona.contextMode)
         overlayPanel.showRefining()
+
+        // Guard against indefinite hang if the LLM request never completes (network stall, DNS failure, etc.)
+        refiningTimeoutTimer?.invalidate()
+        refiningTimeoutTimer = Timer.scheduledTimer(withTimeInterval: Self.refiningTimeoutDuration, repeats: false) { [weak self] _ in
+            guard let self else { return }
+            logger.warning("LLM refine timed out — injecting raw transcript")
+            LLMRefiner.shared.cancel()
+            self.refiningTimeoutTimer = nil
+            self.overlayPanel.dismiss()
+            self.injectAfterPop(trimmed)
+        }
+
         refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
             guard let self else { return }
+            self.refiningTimeoutTimer?.invalidate()
+            self.refiningTimeoutTimer = nil
             switch result {
             case .success(let refined):
                 let finalText = refined.isEmpty ? trimmed : refined

@@ -79,7 +79,8 @@ struct KindClassifier {
 
     private func matchesXML(_ text: String) -> Bool {
         if text.lowercased().hasPrefix("<?xml") { return true }
-        guard text.hasPrefix("<"), let data = text.data(using: .utf8) else { return false }
+        // Guard against blocking the main thread on multi-MB HTML payloads.
+        guard text.count < 8192, text.hasPrefix("<"), let data = text.data(using: .utf8) else { return false }
         let parser = XMLParser(data: data)
         return parser.parse()
     }

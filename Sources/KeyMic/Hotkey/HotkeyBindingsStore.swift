@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 @Observable
 final class HotkeyBindingsStore {
@@ -24,6 +25,12 @@ final class HotkeyBindingsStore {
 
     private static func load(from defaults: UserDefaults) -> [HotkeyBinding] {
         guard let data = defaults.data(forKey: userDefaultsKey) else { return [] }
-        return (try? JSONDecoder().decode([HotkeyBinding].self, from: data)) ?? []
+        do {
+            return try JSONDecoder().decode([HotkeyBinding].self, from: data)
+        } catch {
+            Logger(subsystem: "io.keymic.app", category: "HotkeyBindingsStore")
+                .error("failed to decode persisted bindings: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
     }
 }

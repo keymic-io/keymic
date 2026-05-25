@@ -35,6 +35,7 @@ final class HotkeyActionRunner {
     }
 
     private func execute(_ action: HotkeyAction) {
+        dispatchPrecondition(condition: .notOnQueue(DispatchQueue.main))
         switch action {
         case .typeText(let s):
             DispatchQueue.main.sync { typeText(s) }
@@ -50,6 +51,11 @@ final class HotkeyActionRunner {
             }
         }
     }
+
+    // TODO: Synthetic CGEvents posted here may be re-intercepted by KeyMonitor's
+    // .cgSessionEventTap, causing re-entrant action loops if a keyPress action's
+    // keyCode+modifiers matches another binding. Fix: tag synthetic events with a
+    // distinguishable CGEventSource stateID and filter in KeyMonitor.
 
     static func defaultKeyPress(_ keyCode: UInt16, _ modifiersRaw: UInt64) {
         let source = CGEventSource(stateID: .combinedSessionState)

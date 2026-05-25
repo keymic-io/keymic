@@ -61,8 +61,11 @@ final class UpdaterController {
         let today11 = cal.date(bySettingHour: 11, minute: 0, second: 0, of: now)!
         let next11 = today11 > now ? today11 : cal.date(byAdding: .day, value: 1, to: today11)!
         let delay = next11.timeIntervalSince(now)
+        // Ensure at least 1 hour between checks so we catch the next 11 AM window
+        // even after a long sleep (>24h).
+        let adjustedDelay = max(delay, 3600)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + adjustedDelay) { [weak self] in
             self?.performScheduledCheck()
             self?.scheduleDailyCheck()
         }
