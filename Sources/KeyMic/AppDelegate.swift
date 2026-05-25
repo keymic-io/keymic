@@ -318,6 +318,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func injectAfterPop(_ text: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
+            self?.textInjector.inject(text)
+            NSSound(named: .init("Pop"))?.play()
+        }
+    }
+
     // MARK: - Main Menu
 
     private func setupMainMenu() {
