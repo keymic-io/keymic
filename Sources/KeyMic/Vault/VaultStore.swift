@@ -57,7 +57,11 @@ final class VaultStore {
         } catch {
             Self.logger.error("vault metadata save failed: \(error.localizedDescription, privacy: .public)")
             context.delete(item)
-            try? keychain.delete(account: item.keychainAccount)
+            do {
+                try keychain.delete(account: item.keychainAccount)
+            } catch {
+                Self.logger.error("keychain cleanup delete failed (orphaned entry \(item.keychainAccount, privacy: .public)): \(String(describing: error), privacy: .public)")
+            }
             return nil
         }
     }

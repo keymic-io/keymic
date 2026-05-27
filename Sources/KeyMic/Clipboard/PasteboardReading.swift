@@ -87,8 +87,10 @@ final class SystemPasteboard: PasteboardReading {
         return pasteboard.changeCount
     }
 
-    func clear() {
+    @discardableResult
+    func clear() -> Int {
         pasteboard.clearContents()
+        return pasteboard.changeCount
     }
 }
 

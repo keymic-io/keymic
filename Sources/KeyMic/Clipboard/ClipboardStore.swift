@@ -96,7 +96,7 @@ final class ClipboardStore {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if let existing = findExisting(text: text) {
+        if let existing = findExisting(text: trimmed) {
             let previousDate = existing.createdAt
             existing.createdAt = Date()
             if !saveDedup(newest: existing) {
@@ -291,6 +291,7 @@ final class ClipboardStore {
             context.delete(item)
         }
         try? context.save()
+        addCount = 0
         Self.logger.info("deleteAllClipboardItems — removed \(all.count, privacy: .public) rows")
     }
 
@@ -364,6 +365,8 @@ final class ClipboardStore {
         }
     }
 
+    // Intentionally case-sensitive: "Hello" and "hello" are distinct clipboard
+    // entries even though the UI search is case-insensitive.
     private func findExisting(text: String) -> ClipboardItem? {
         let descriptor = FetchDescriptor<ClipboardItem>(
             predicate: #Predicate { $0.text == text }

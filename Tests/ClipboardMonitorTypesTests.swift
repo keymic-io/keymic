@@ -92,14 +92,15 @@ struct ClipboardMonitorTypesTestRunner {
         expect(rt.richBlob == html, "html blob captured")
         expect(rt.text == "hi", "plain text captured")
 
-        // 4. markIgnored(token:) suppresses next matching capture only.
-        monitor.markIgnored(token: "user-write")
+        // 4. markIgnoredChangeCount suppresses next tick with that changeCount.
         fake.simulate(text: "user-write")
+        let ignoredCC = fake.changeCount
+        monitor.markIgnoredChangeCount(ignoredCC)
         monitor.tickForTesting()
         let countBefore = store.fetchAll().count
         expect(
             store.fetchAll().first?.text != "user-write" || store.fetchAll().first?.kind == .richText,
-            "matching token suppresses capture")
+            "matching changeCount suppresses capture")
         // marker should be consumed; next external write is captured
         fake.simulate(text: "next-real")
         monitor.tickForTesting()

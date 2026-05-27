@@ -32,6 +32,13 @@ struct KeychainVault: KeychainBackend {
         }
     }
 
+    /// Reads a secret from the keychain after biometric/passcode authentication.
+    ///
+    /// **Blocking**: This method uses a `DispatchSemaphore` to synchronously wait for
+    /// the LAContext biometric prompt. Callers MUST invoke this from a context that
+    /// can tolerate blocking (e.g. the main thread for user-initiated actions).
+    /// Do NOT call from a GCD worker thread — the semaphore can exhaust the thread
+    /// pool if multiple reads overlap.
     func read(account: String) throws -> String {
         let context = LAContext()
         context.touchIDAuthenticationAllowableReuseDuration = VaultConfig.touchIDReuseDuration
@@ -74,6 +81,10 @@ struct KeychainVault: KeychainBackend {
             throw KeychainError.userCancelled
         case errSecItemNotFound:
             throw KeychainError.missing
+        case errSecInteractionNotAllowed:
+            // Keychain is locked (device just rebooted, not yet unlocked).
+            // Wrap with a distinct status so callers can show a "unlock your Mac" message.
+            throw KeychainError.readFailed(errSecInteractionNotAllowed)
         default:
             throw KeychainError.readFailed(status)
         }

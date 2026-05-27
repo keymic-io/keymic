@@ -504,6 +504,7 @@ private struct SpeechLanguageOption: Identifiable {
 
 private struct LLMSettingsView: View {
     @AppStorage("llmAPIBaseURL") private var apiBaseURL: String = "https://api.openai.com/v1"
+    // TODO: migrate API key from UserDefaults to Keychain for security
     @AppStorage("llmAPIKey") private var apiKey: String = ""
     @AppStorage("llmModel") private var model: String = "gpt-4o-mini"
 

@@ -1,5 +1,6 @@
 import Cocoa
 import ScreenCaptureKit
+import os.log
 
 enum ScreenshotError: Error {
     case permissionDenied
@@ -8,6 +9,7 @@ enum ScreenshotError: Error {
 }
 
 actor ScreenCapturer {
+    private static let logger = Logger(subsystem: "io.keymic.app", category: "ScreenCapturer")
     func captureAllScreens() async throws -> [NSScreen: CGImage] {
         let content: SCShareableContent
         do {
@@ -42,7 +44,8 @@ actor ScreenCapturer {
                     result[screen] = cgImage
                 }
             } catch {
-                throw ScreenshotError.unknown(error)
+                Self.logger.warning("display \(display.displayID) capture failed: \(error)")
+                continue
             }
         }
         guard !result.isEmpty else { throw ScreenshotError.displayMismatch }

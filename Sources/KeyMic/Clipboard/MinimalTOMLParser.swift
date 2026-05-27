@@ -200,7 +200,7 @@ enum MinimalTOMLParser {
             } else if inTriple {
                 cur.append(c)
                 if body[i...].hasPrefix("'''") {
-                    inTriple = false; cur.append("''"); i = body.index(i, offsetBy: 3); continue
+                    inTriple = false; cur.append("'''"); i = body.index(i, offsetBy: 3); continue
                 }
             } else if inDouble {
                 cur.append(c)

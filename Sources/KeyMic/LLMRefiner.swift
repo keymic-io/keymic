@@ -5,6 +5,7 @@ private let logger = Logger(subsystem: "io.keymic.app", category: "LLMRefiner")
 
 /// Stateless LLM endpoint config + per-call refinement.
 /// Persona-specific prompt + temperature are passed in by the caller.
+@MainActor
 final class LLMRefiner {
     static let shared = LLMRefiner()
 
@@ -67,8 +68,15 @@ final class LLMRefiner {
         ]
 
         logger.info("request — host=\(url.host ?? "?", privacy: .public) model=\(self.model, privacy: .public) temp=\(temperature, privacy: .public) userTextLen=\(userText.count, privacy: .public)")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        } catch {
+            logger.error("JSON serialization failed: \(error.localizedDescription, privacy: .public)")
+            completion(.failure(error))
+            return
+        }
 
+        currentTask?.cancel()
         currentTask = URLSession.shared.dataTask(with: request) { data, response, error in
             if let error {
                 logger.error("network error: \(error.localizedDescription, privacy: .public)")
@@ -91,7 +99,7 @@ final class LLMRefiner {
             let errMsg = LLMRefiner.extractErrorMessage(from: data) ?? ""
             let preview = String(data: data.prefix(1024), encoding: .utf8) ?? "<non-utf8>"
             logger.error("invalid response — status=\(status, privacy: .public) bytes=\(data.count, privacy: .public) err=\(errMsg, privacy: .public) preview=\(preview, privacy: .public)")
-            DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
+            DispatchQueue.main.async { completion(.failure(RefinerError.httpError(status: status, message: errMsg))) }
         }
         currentTask?.resume()
     }
@@ -208,12 +216,15 @@ final class LLMRefiner {
         case notReady
         case invalidURL
         case invalidResponse
+        case httpError(status: Int, message: String)
 
         var errorDescription: String? {
             switch self {
             case .notReady: return "LLM endpoint not configured"
             case .invalidURL: return "Invalid API base URL"
             case .invalidResponse: return "Invalid response from LLM API"
+            case .httpError(let status, let message):
+                return "LLM API error (HTTP \(status)): \(message.isEmpty ? "no details" : message)"
             }
         }
     }

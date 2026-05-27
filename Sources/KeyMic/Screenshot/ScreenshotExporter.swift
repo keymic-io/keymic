@@ -36,7 +36,7 @@ final class ScreenshotExporter {
             }
             UserDefaults.standard.set(dir, forKey: "lastScreenshotSaveDir")
             let fmt = DateFormatter()
-            fmt.dateFormat = "yyyyMMdd-HHmmss"
+            fmt.dateFormat = "yyyyMMdd-HHmmss.SSS"
             let filename = "KeyMic-\(fmt.string(from: Date())).png"
             let url = dir.appendingPathComponent(filename)
             self.writePNG(image, to: url, completion: completion)
