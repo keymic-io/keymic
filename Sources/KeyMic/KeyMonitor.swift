@@ -294,6 +294,19 @@ final class KeyMonitor {
             return Unmanaged.passRetained(event)
         }
 
+        // Recorder capture must take precedence over remap: the user is trying
+        // to register the *physical* keystroke they just pressed, not whatever
+        // it gets rewritten to (e.g. Right Cmd → Forward Delete). Without this
+        // ordering the recorder either records the remapped key or never sees
+        // the keystroke at all because remapIfNeeded swallowed it.
+        if HotkeyRecorder.isAnyRecording {
+            if let recorder = HotkeyRecorder.activeRecorder,
+               recorder.handleCGEvent(type: type, event: event) {
+                return nil
+            }
+            return Unmanaged.passRetained(event)
+        }
+
         if let remapped = remapIfNeeded(type: type, event: event) {
             return remapped
         }
@@ -307,19 +320,6 @@ final class KeyMonitor {
         // a session stuck) only applies to the voice-trigger and persona push-to-talk
         // state machines, so we now gate just those two activation paths below and let
         // single-shot dispatch run normally.
-
-        // Bypass app-level hotkey dispatch while a HotkeyRecorder is capturing input.
-        // Forward the raw CGEvent directly to the active recorder — this is more
-        // reliable than NSEvent.addLocalMonitorForEvents, which silently drops bare
-        // F-row keyDowns and some media-key systemDefined events even when the app
-        // is frontmost. Mirrors how skhd captures F1-F12.
-        if HotkeyRecorder.isAnyRecording {
-            if let recorder = HotkeyRecorder.activeRecorder,
-               recorder.handleCGEvent(type: type, event: event) {
-                return nil
-            }
-            return Unmanaged.passRetained(event)
-        }
 
         // Persona push-to-talk: while a persona hotkey is held, every event for
         // its primary key (auto-repeat keyDowns and the final keyUp) must be

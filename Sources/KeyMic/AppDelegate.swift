@@ -4,6 +4,7 @@ import os.log
 
 private let logger = Logger(subsystem: "io.keymic.app", category: "AppDelegate")
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
@@ -214,13 +215,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        HIDRemapper.reset()
+        // Only the primary instance (lock holder) owns the hidutil UserKeyMapping.
+        // A second instance terminating itself in activateExistingInstanceIfNeeded()
+        // must not reset, or it wipes the running primary's mapping.
+        if let singleInstanceLockURL {
+            HIDRemapper.reset()
+            SingleInstance.releaseLock(at: singleInstanceLockURL)
+        }
         if let token = personaObserverToken {
             NotificationCenter.default.removeObserver(token)
             personaObserverToken = nil
-        }
-        if let singleInstanceLockURL {
-            SingleInstance.releaseLock(at: singleInstanceLockURL)
         }
     }
 
