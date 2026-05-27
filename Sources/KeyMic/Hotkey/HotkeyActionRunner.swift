@@ -11,6 +11,12 @@ final class HotkeyActionRunner {
     private let typeText: TypeTextFn
     private let keyPress: KeyPressFn
     private let shell: ShellFn
+    private let skillBridge: SkillHotkeyBridge?
+    /// Resolved lazily so `.runAgent` hotkeys still work when the AgentRunner
+    /// is constructed asynchronously after launch (or is intentionally absent).
+    /// Invoked on the MainActor inside `execute(.runAgent)` so it's safe for
+    /// the closure body to touch `@MainActor`-isolated state.
+    private let agentRunnerProvider: @Sendable () -> AgentRunner?
     private let queue = DispatchQueue(label: "io.keymic.app.hotkey-action-runner", qos: .userInitiated)
     private static let logger = Logger(subsystem: "io.keymic.app", category: "HotkeyActionRunner")
 
@@ -20,11 +26,15 @@ final class HotkeyActionRunner {
     init(
         typeText: @escaping TypeTextFn,
         keyPress: @escaping KeyPressFn = HotkeyActionRunner.defaultKeyPress,
-        shell:    @escaping ShellFn    = { ShellRunner.shared.run($0) }
+        shell:    @escaping ShellFn    = HotkeyActionRunner.defaultShell,
+        skillBridge: SkillHotkeyBridge? = nil,
+        agentRunnerProvider: @escaping @Sendable () -> AgentRunner? = { nil }
     ) {
         self.typeText = typeText
         self.keyPress = keyPress
         self.shell = shell
+        self.skillBridge = skillBridge
+        self.agentRunnerProvider = agentRunnerProvider
     }
 
     func run(_ actions: [HotkeyAction]) {
@@ -48,7 +58,41 @@ final class HotkeyActionRunner {
             if code != 0 {
                 Self.logger.warning("shell exit \(code): \(cmd, privacy: .public)")
             }
+        case .runSkill(let name):
+            guard let bridge = skillBridge else {
+                Self.logger.warning("runSkill('\(name, privacy: .public)') fired but no SkillHotkeyBridge wired; ignoring")
+                return
+            }
+            bridge.fire(name: name)
+        case .runAgent(let prompt):
+            // Block the runner queue on the agent task so `[runAgent, typeText]`
+            // and similar composed bindings execute sequentially, matching
+            // every other action kind. A re-fired hotkey will cancel the in-
+            // flight agent via `AgentRunner`'s in-flight-task tracking, which
+            // signals the semaphore promptly so the queue doesn't stall.
+            let provider = agentRunnerProvider
+            let semaphore = DispatchSemaphore(value: 0)
+            Task { @MainActor in
+                defer { semaphore.signal() }
+                guard let runner = provider() else {
+                    Self.logger.warning("runAgent fired but no AgentRunner wired; ignoring")
+                    return
+                }
+                let task = runner.runForHotkey(prompt: prompt, sink: ConsoleSink.shared)
+                _ = await task.value
+            }
+            semaphore.wait()
         }
+    }
+
+    /// Hotkey shell actions route through `ShellRunner.shared.run` so a single
+    /// hung command can't lock the runner's serial dispatch queue: ShellRunner
+    /// enforces a 30s timeout with SIGTERM then SIGKILL of the whole process
+    /// tree, plus it pipes through the cached login-shell PATH snapshot so
+    /// homebrew/asdf/rbenv shims resolve the same way an interactive shell
+    /// would.
+    static func defaultShell(_ command: String) -> Int32 {
+        ShellRunner.shared.run(command)
     }
 
     static func defaultKeyPress(_ keyCode: UInt16, _ modifiersRaw: UInt64) {

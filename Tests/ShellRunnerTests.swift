@@ -10,6 +10,7 @@ private final class ShellRunnerTests {
         try testCommandContainingSingleQuote()
         try testStderrCapturedToLog()
         try testTimeoutSigterm()
+        try testRunAndCaptureReturnsOutput()
         print("ShellRunnerTests passed")
     }
 
@@ -135,6 +136,35 @@ private final class ShellRunnerTests {
         let validExits: [Int32] = [15, 9]  // SIGTERM=15, SIGKILL=9
         guard validExits.contains(code) else {
             fatalError("testTimeoutSigterm: expected 15 or 9, got \(code)")
+        }
+    }
+
+    static func testRunAndCaptureReturnsOutput() throws {
+        let captured = CapturedLogger()
+        let runner = makeRunner(snapshot: nil, captured: captured)
+
+        let semaphore = DispatchSemaphore(value: 0)
+        var result: (exitCode: Int32, stdout: String, stderr: String)!
+        Task {
+            result = await runner.runAndCapture("echo hello && echo oops 1>&2")
+            semaphore.signal()
+        }
+        semaphore.wait()
+
+        guard result.exitCode == 0 else {
+            fatalError("expected exit 0, got \(result.exitCode)")
+        }
+        guard result.stdout.contains("hello") else {
+            fatalError("stdout missing 'hello': '\(result.stdout)'")
+        }
+        guard result.stderr.contains("oops") else {
+            fatalError("stderr missing 'oops': '\(result.stderr)'")
+        }
+
+        // Log-entry assertion: runAndCapture must produce the same log row
+        // as run(_:). Cheap insurance against the runAndLog refactor.
+        guard let entry = captured.entries.last, entry.stdout.contains("hello") else {
+            fatalError("expected ShellLogEntry from runAndCapture to capture stdout")
         }
     }
 }

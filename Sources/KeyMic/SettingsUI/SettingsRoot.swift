@@ -9,7 +9,14 @@ import UniformTypeIdentifiers
 // MARK: - Window host
 
 final class SwiftUISettingsWindow: NSPanel {
-    init() {
+    /// `agentRunnerProvider` is invoked each time the Agent tab renders, so the
+    /// window can be constructed before the AgentRunner exists — switching to
+    /// the Agent tab once the runner is ready will surface it without rebuilding
+    /// the window.
+    init(
+        agentRunnerProvider: @escaping @MainActor () -> AgentRunner? = { nil },
+        toolRegistry: ToolRegistry? = nil
+    ) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 540),
             styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
@@ -20,7 +27,10 @@ final class SwiftUISettingsWindow: NSPanel {
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
-        let host = NSHostingController(rootView: SettingsRootView())
+        let host = NSHostingController(rootView: SettingsRootView(
+            agentRunnerProvider: agentRunnerProvider,
+            toolRegistry: toolRegistry
+        ))
         host.view.translatesAutoresizingMaskIntoConstraints = false
         contentViewController = host
         center()
@@ -43,7 +53,7 @@ final class SwiftUISettingsWindow: NSPanel {
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot
+    case general, voice, llm, agent, personas, keyMapping, shortcuts, clipboard, screenshot
 
     var id: String { rawValue }
 
@@ -52,6 +62,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general: String(localized: "General")
         case .voice: String(localized: "Voice")
         case .llm: "LLM"
+        case .agent: String(localized: "Agent")
         case .personas: String(localized: "Personas")
         case .keyMapping: String(localized: "Key Mapping")
         case .shortcuts: String(localized: "Shortcuts")
@@ -65,6 +76,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .general: "gearshape"
         case .voice: "mic"
         case .llm: "sparkles"
+        case .agent: "brain"
         case .personas: "person.crop.circle.badge.checkmark"
         case .keyMapping: "keyboard"
         case .shortcuts: "command.square"
@@ -132,6 +144,16 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
 
 struct SettingsRootView: View {
     @State private var selection: SettingsSection = .general
+    let agentRunnerProvider: @MainActor () -> AgentRunner?
+    let toolRegistry: ToolRegistry?
+
+    init(
+        agentRunnerProvider: @escaping @MainActor () -> AgentRunner? = { nil },
+        toolRegistry: ToolRegistry? = nil
+    ) {
+        self.agentRunnerProvider = agentRunnerProvider
+        self.toolRegistry = toolRegistry
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -154,6 +176,22 @@ struct SettingsRootView: View {
         case .general: GeneralSettingsView()
         case .voice: VoiceSettingsView()
         case .llm: LLMSettingsView()
+        case .agent:
+            // Re-evaluate provider on every render so a runner that comes
+            // online after the window opens is picked up when the user
+            // navigates back to this tab.
+            if let agentRunner = agentRunnerProvider(), let toolRegistry {
+                AgentSettingsTab(agentRunner: agentRunner, toolRegistry: toolRegistry)
+            } else {
+                VStack(spacing: 8) {
+                    Text("Agent runtime not ready yet.")
+                        .foregroundColor(.secondary)
+                    Text("Try again in a moment, or switch tabs and come back.")
+                        .font(.callout)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+            }
         case .personas: PersonasView()
         case .clipboard: ClipboardSettingsView()
         case .keyMapping: KeyMappingSettingsSection()
@@ -1207,6 +1245,11 @@ enum HotkeyActionFormatter {
         case .shell(let cmd):
             let trimmed = cmd.count > 24 ? String(cmd.prefix(24)) + "…" : cmd
             return "run \"\(trimmed)\""
+        case .runSkill(let name):
+            return "skill \"\(name)\""
+        case .runAgent(let prompt):
+            let trimmed = prompt.count > 24 ? String(prompt.prefix(24)) + "…" : prompt
+            return "agent \"\(trimmed)\""
         }
     }
 }
@@ -1347,7 +1390,7 @@ private struct BindingEditorSheet: View {
 
 private struct ActionDraft: Identifiable, Equatable {
     enum Kind: String, CaseIterable, Identifiable {
-        case typeText, keyPress, wait, shell
+        case typeText, keyPress, wait, shell, runSkill, runAgent
         var id: String { rawValue }
         var label: String {
             switch self {
@@ -1355,6 +1398,8 @@ private struct ActionDraft: Identifiable, Equatable {
             case .keyPress: String(localized: "Key")
             case .wait: String(localized: "Wait")
             case .shell: String(localized: "Shell")
+            case .runSkill: String(localized: "Skill")
+            case .runAgent: String(localized: "Agent")
             }
         }
     }
@@ -1379,6 +1424,12 @@ private struct ActionDraft: Identifiable, Equatable {
         case .shell(let cmd):
             kind = .shell
             text = cmd
+        case .runSkill(let name):
+            kind = .runSkill
+            text = name
+        case .runAgent(let prompt):
+            kind = .runAgent
+            text = prompt
         }
     }
 
@@ -1390,6 +1441,8 @@ private struct ActionDraft: Identifiable, Equatable {
             return !cfg.isPureModifier
         case .wait: return Int(text) != nil
         case .shell: return !text.isEmpty
+        case .runSkill: return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        case .runAgent: return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         }
     }
 
@@ -1403,6 +1456,8 @@ private struct ActionDraft: Identifiable, Equatable {
             return .keyPress(keyCode: 0, modifiers: 0)
         case .wait: return .wait(ms: max(0, Int(text) ?? 100))
         case .shell: return .shell(text)
+        case .runSkill: return .runSkill(name: text.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .runAgent: return .runAgent(prompt: text)
         }
     }
 }
@@ -1441,6 +1496,8 @@ private struct ActionDraftRow: View {
         case .keyPress: String(localized: "e.g. cmd+shift+a")
         case .wait: String(localized: "Milliseconds")
         case .shell: String(localized: "Shell command")
+        case .runSkill: String(localized: "Skill name")
+        case .runAgent: String(localized: "Agent prompt")
         }
     }
 }

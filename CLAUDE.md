@@ -10,6 +10,7 @@ KeyMic is a single macOS menu-bar app (`LSUIElement`) that bundles several produ
 - **Clipboard history** — text-only background monitor, SwiftData-backed storage, hotkey panel (`⌥V`) with search, arrow navigation, `⌥1`–`⌥0` quick paste.
 - **Key mapping** — Karabiner-style modifier remaps applied via a session-level `CGEvent` tap (e.g. Right Cmd → Forward Delete, Caps Lock → Left Control).
 - **Hotkey actions** — user-configurable shortcuts bound to `HotkeyAction` cases (`HotkeyConfig` + `HotkeyBindingsStore` + `HotkeyActionRunner`).
+- **Agent tools** — Claude-Code-compatible tool layer. `Tools/Protocol/` hosts the `Tool` protocol + `ToolContext` + `ToolRegistry`. Concrete tools: `Tools/Bash/BashTool` (wraps `ShellRunner`), `Tools/File/` (`Read` / `Write` / `Edit` / `MultiEdit` + `FileSystemActor` enforcing path-safe sandbox). Foundation for future Search / MCP / Skill tools and an in-app agent loop.
 - **Vault** — secret-aware clipboard escalation. `SecretScanner` (driven by bundled `gitleaks.toml`) classifies clipboard text; matches are persisted in macOS Keychain via `KeychainBackend` + `VaultStore`, surfaced through `VaultListView`.
 - **Screenshot annotation** — selection overlay + editor (`Sources/KeyMic/Screenshot/`) for capture, pixelation, annotation, and export.
 - **Auto-update** — Sparkle 2 EdDSA-signed appcast (`UpdaterController`).
@@ -97,6 +98,35 @@ Single `.cgSessionEventTap` watching `flagsChanged` + `keyDown` + `keyUp`. The c
 - `HotkeyActionRunner` — central dispatch invoked from `KeyMonitor` / menu / settings.
 - `HotkeyRecorder` — settings UI capture surface.
 
+### Agent loop (`Sources/KeyMic/Agent/`)
+
+- `AgentSession` actor runs a multi-turn OpenAI tool-calling loop
+  (`/v1/chat/completions` + `tools` + `tool_choice`). Returns
+  `AsyncStream<AgentEvent>` for step-level events (`step`, `assistantMessage`,
+  `toolCall`, `toolResult`, `done`, `error`).
+- Tools come from a `ToolRegistry` snapshot at the start of each `run`. MCP
+  tools must already be registered — `AppDelegate.applicationDidFinishLaunching`
+  calls `MCPClientManager.loadAndConnectAll(registry:)` so they appear in the
+  registry before any `AgentSession.run`. The 8 built-in tools (`Bash`, `Read`,
+  `Write`, `Edit`, `MultiEdit`, `Glob`, `Grep`, `ActivateSkill`) are registered
+  synchronously at the same time via `registerLocalTools()`.
+- `allowedToolNames: Set<String>?` filters the registry; `nil` = all.
+  Skill-driven runs parse `skill.metadata.allowedTools` via `AllowedToolsParser`
+  (v1: name-level only; `Bash(git:*)` collapses to `Bash`).
+- Error policy: per-tool failures/timeouts become `tool_result.is_error=true`
+  and the loop continues. Transport errors, `notConfigured`, `maxSteps`,
+  `maxWallTime`, and cancellation terminate with `.error`.
+- Config: `agentAPIBaseURL` / `agentAPIKey` / `agentModel` UserDefaults keys,
+  falling back to `llmAPI*` for zero-config bootstrap. The "Agent" settings tab
+  edits them.
+- Entry points (all via `AgentRunner`, a `@MainActor` helper):
+  `SkillHotkeyBridge` consumer (replaces the Plan-5 textInjector consumer),
+  `HotkeyAction.runAgent(prompt:)`, and `AgentSettingsTab`. `AgentSession`
+  itself is unaware of Skills, Personas, Hotkeys, or UI.
+- Transport: `OpenAIChatTransport` is the only concrete `_ChatTransport`. The
+  protocol exists solely for test injection — production has exactly one
+  conformer.
+
 ### Screenshot (`Sources/KeyMic/Screenshot/`)
 
 `ScreenshotController` orchestrates: `ScreenCapturer` (ScreenCaptureKit) → `SelectionOverlayPanel`/`SelectionOverlayView` → `OverlayState`+`SelectionHandle` → `EditorToolbarPanel`/`EditorToolbarView` → `AnnotationModel`/`AnnotationRenderer`/`Pixelator` → `ScreenshotExporter` (PNG to disk + clipboard, prefix `KeyMic-`). `ToolbarPositioner` keeps the toolbar visible against screen edges.
@@ -119,9 +149,10 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 
 ## Conventions
 
-- Swift 5.9, target macOS 14. Source root: `Sources/KeyMic/`.
+- Swift 5 language mode (swift-tools-version 6.0 with `.swiftLanguageMode(.v5)`), target macOS 14. Source root: `Sources/KeyMic/`.
 - One SwiftPM dependency: Sparkle 2 (`2.6.0..<3.0.0`).
 - Logging: `os.Logger` with subsystem `io.keymic.app`. `LLMRefiner` additionally writes to `~/Library/Logs/KeyMic.log` for offline debugging.
 - Singletons (`KeyMappingManager.shared`, `LLMRefiner.shared`) for cross-cutting state; everything else is owned by `AppDelegate`.
 - Persistent locations: SwiftData store + lock file under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.
+- Agent tools follow Claude-Code-compatible naming (`Read`/`Write`/`Edit`/`Bash`/`Glob`/`Grep`/...) and exchange JSON `Data` as input + string output, allowing `[any Tool]` arrays without associatedtype gymnastics. The `Tool` protocol lives in `Sources/KeyMic/Tools/Protocol/`; concrete tools live in sibling directories (`Tools/Bash/`, `Tools/File/`, `Tools/Search/`, `Tools/MCP/`, `Tools/Skill/`). The agent loop that drives those tools lives in `Sources/KeyMic/Agent/`. File tools share a `FileSystemActor` (in `Tools/File/`) that enforces a symlink-tolerant path-safe sandbox against `ToolContext.workingDirectory` and dispatches blocking IO off the cooperative pool. Search tools (`Glob` for filename patterns, `Grep` for regex content search) build on the same actor and re-validate every emitted path via `isPathSafe` to defeat symlink escapes.
 - `AGENTS.md` (repo root) documents non-obvious macOS HID + TCC gotchas — read it before editing `KeyMonitor.swift` or codesign/Info.plist plumbing.

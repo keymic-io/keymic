@@ -5,11 +5,17 @@ enum HotkeyAction: Equatable {
     case keyPress(keyCode: UInt16, modifiers: UInt64)
     case wait(ms: Int)
     case shell(String)
+    /// Run the registered skill named `name` via SkillHotkeyBridge.
+    /// The name is the skill's `metadata.name` (slug; `[a-z0-9-]+`).
+    case runSkill(name: String)
+    /// Run an ad-hoc AgentSession with `prompt` as the user message and a
+    /// default system prompt. No skill context; full tool set.
+    case runAgent(prompt: String)
 }
 
 extension HotkeyAction: Codable {
     private enum CodingKeys: String, CodingKey {
-        case type, text, keyCode, modifiers, ms, command
+        case type, text, keyCode, modifiers, ms, command, name, prompt
     }
 
     func encode(to encoder: Encoder) throws {
@@ -28,6 +34,12 @@ extension HotkeyAction: Codable {
         case .shell(let cmd):
             try c.encode("shell", forKey: .type)
             try c.encode(cmd, forKey: .command)
+        case .runSkill(let name):
+            try c.encode("runSkill", forKey: .type)
+            try c.encode(name, forKey: .name)
+        case .runAgent(let prompt):
+            try c.encode("runAgent", forKey: .type)
+            try c.encode(prompt, forKey: .prompt)
         }
     }
 
@@ -46,6 +58,10 @@ extension HotkeyAction: Codable {
             self = .wait(ms: try c.decode(Int.self, forKey: .ms))
         case "shell":
             self = .shell(try c.decode(String.self, forKey: .command))
+        case "runSkill":
+            self = .runSkill(name: try c.decode(String.self, forKey: .name))
+        case "runAgent":
+            self = .runAgent(prompt: try c.decode(String.self, forKey: .prompt))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c,

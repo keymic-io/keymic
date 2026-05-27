@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-final class ShellRunner {
+final class ShellRunner: @unchecked Sendable {
     static let shared = ShellRunner()
 
     typealias SnapshotProvider = () -> URL?
@@ -42,6 +42,42 @@ final class ShellRunner {
     }
 
     func run(_ command: String) -> Int32 {
+        runAndLog(command, cwd: nil, isCancelled: { false }).exitCode
+    }
+
+    /// Like `run(_:)` but returns stdout / stderr separately. Used by any
+    /// consumer that needs to surface command output (e.g. agent tools
+    /// feeding shell results back to an LLM). The synchronous `run(_:)`
+    /// is preserved for hotkey shell-action callers that only need the
+    /// exit code.
+    ///
+    /// The body runs the blocking subprocess work on a global background
+    /// queue via `withCheckedContinuation`, so awaiting from `@MainActor`
+    /// or the cooperative pool will not block the caller's executor.
+    ///
+    /// - Parameters:
+    ///   - cwd: Working directory for the child process. Nil = inherit.
+    ///   - isCancelled: Polled while the child is alive. Returning true
+    ///     SIGTERMs the process tree the same way the timeout path does.
+    func runAndCapture(
+        _ command: String,
+        cwd: String? = nil,
+        isCancelled: @escaping @Sendable () -> Bool = { false }
+    ) async -> (exitCode: Int32, stdout: String, stderr: String) {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
+                continuation.resume(returning: runAndLog(command, cwd: cwd, isCancelled: isCancelled))
+            }
+        }
+    }
+
+    /// Shared implementation for `run(_:)` and `runAndCapture(_:)`.
+    /// Synchronous — caller is responsible for off-thread dispatch if needed.
+    private func runAndLog(
+        _ command: String,
+        cwd: String?,
+        isCancelled: @Sendable () -> Bool
+    ) -> (exitCode: Int32, stdout: String, stderr: String) {
         let t0 = Date()
         let snapshot = snapshotProvider()
         let fallback = (snapshot == nil)
@@ -55,20 +91,27 @@ final class ShellRunner {
             args = ["-l", "-c", wrapped]
         }
 
-        let (exit, stdout, stderr) = runProcess(args: args)
+        let (exit, stdout, stderr) = runProcess(args: args, cwd: cwd, isCancelled: isCancelled)
         let durationMs = Int(Date().timeIntervalSince(t0) * 1000)
         logger.log(ShellLogEntry(
             timestamp: t0, command: command, exitCode: exit,
             stdout: stdout, stderr: stderr,
             durationMs: durationMs, fallback: fallback
         ))
-        return exit
+        return (exit, stdout, stderr)
     }
 
-    private func runProcess(args: [String]) -> (Int32, String, String) {
+    private func runProcess(
+        args: [String],
+        cwd: String?,
+        isCancelled: @Sendable () -> Bool
+    ) -> (Int32, String, String) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: shellPath)
         p.arguments = args
+        if let cwd, !cwd.isEmpty {
+            p.currentDirectoryURL = URL(fileURLWithPath: cwd)
+        }
 
         let outPipe = Pipe()
         let errPipe = Pipe()
@@ -93,7 +136,7 @@ final class ShellRunner {
         }
 
         let deadline = Date().addingTimeInterval(commandTimeout)
-        while p.isRunning && Date() < deadline {
+        while p.isRunning && Date() < deadline && !isCancelled() {
             Thread.sleep(forTimeInterval: 0.05)
         }
         if p.isRunning {
