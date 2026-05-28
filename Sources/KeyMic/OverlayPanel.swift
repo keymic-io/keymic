@@ -153,6 +153,49 @@ final class OverlayPanel: NSPanel {
         }
     }
 
+    /// Surfaces an OutputRouter result. Silent on success; transient toast on fallback / error.
+    func showRouteResult(_ result: RouteResult) {
+        switch result {
+        case .injected, .userCancelled:
+            return
+        case .fellBackToClipboard(let reason):
+            let label: String
+            switch reason {
+            case .selectionNotEditable:
+                label = String(localized: "Copied — couldn't edit in place")
+            case .noFocusedElement:
+                label = String(localized: "Copied — no focused field")
+            case .axPermissionMissing:
+                label = String(localized: "Copied — Accessibility permission needed")
+            case .strategyNotImplemented:
+                label = String(localized: "Copied — strategy coming soon")
+            }
+            showTransientToast(label, durationSeconds: 2.5)
+        case .failed(let message):
+            showTransientToast(String(localized: "Error: \(message)"), durationSeconds: 3.0)
+        }
+    }
+
+    /// Reuses showSecretToast's dismiss-after-N pattern but with arbitrary text and duration.
+    func showTransientToast(_ label: String, durationSeconds: Double) {
+        if isShowingTranscript { return }
+        state.isAnimating = false
+        resetAudioLevel()
+        if isVisible {
+            updateText(label)
+        } else {
+            show(text: label)
+            state.isAnimating = false
+        }
+        toastDismissWorkItem?.cancel()
+        let wi = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            if !self.isShowingTranscript { self.dismiss() }
+        }
+        toastDismissWorkItem = wi
+        DispatchQueue.main.asyncAfter(deadline: .now() + durationSeconds, execute: wi)
+    }
+
     private var isShowingTranscript: Bool {
         // Voice flow drives `state.isAnimating == true` while listening, and uses `show()` and `updateText()` calls.
         // We treat the panel as busy with transcription whenever it's visible AND animating.
