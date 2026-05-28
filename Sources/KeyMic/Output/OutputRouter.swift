@@ -212,12 +212,16 @@ final class OutputRouter {
                 await activateOriginatingApp(output.originatingApp)
                 inject(cleanStdout)
             }
-            if !result.stderr.isEmpty {
-                routerLogger.error("runShell stderr present exit=\(result.exitCode, privacy: .public)")
-                let truncated = result.stderr.count > 200
-                    ? String(result.stderr.prefix(200)) + "…"
-                    : result.stderr
-                return .failed(message: truncated)
+            if result.exitCode != 0 {
+                let msg: String
+                if result.stderr.isEmpty {
+                    msg = "shell command exited with code \(result.exitCode)"
+                } else {
+                    msg = result.stderr.count > 200
+                        ? String(result.stderr.prefix(200)) + "…"
+                        : result.stderr
+                }
+                return .failed(message: msg)
             }
             return .injected
         } catch ShellOutputRunnerError.timeout {

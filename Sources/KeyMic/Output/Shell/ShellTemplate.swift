@@ -10,25 +10,35 @@ import Foundation
 enum ShellTemplate {
     static func substitute(template: String, text: String, context: PersonaContext?) -> String? {
         var out = template
-        out = out.replacingOccurrences(of: "{query}", with: text)
-        out = out.replacingOccurrences(of: "{selection}", with: context?.selection ?? "")
-        out = out.replacingOccurrences(of: "{clipboardTop}", with: context?.clipboardTop ?? "")
-        out = out.replacingOccurrences(of: "{clipboard}", with: context?.clipboardTop ?? "")
+        out = out.replacingOccurrences(of: "{query}", with: shellEscape(text))
+        out = out.replacingOccurrences(of: "{selection}", with: shellEscape(context?.selection ?? ""))
+        out = out.replacingOccurrences(of: "{clipboardTop}", with: shellEscape(context?.clipboardTop ?? ""))
+        out = out.replacingOccurrences(of: "{clipboard}", with: shellEscape(context?.clipboardTop ?? ""))
         return out
+    }
+
+    /// Wraps a string in single quotes, escaping embedded single quotes via the standard
+    /// `'\''` idiom. Produces a safe shell word for `/bin/zsh -c`.
+    static func shellEscape(_ s: String) -> String {
+        "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
     /// Returns `true` if at least one placeholder resolved to non-empty content,
     /// OR if the template had no placeholders at all (literal command).
     ///
     /// Returning `false` short-circuits `OutputRouter` BEFORE the confirmation sheet
-    /// to prevent surprises like `rm -rf {selection}` becoming `rm -rf ` when nothing
-    /// is selected.
+    /// to prevent surprises like `rm -rf {selection}` becoming `rm -rf ''` when nothing
+    /// is selected. Empty-input placeholders produce `''` (safe but meaningless).
     static func hasResolvedSubstantialContent(original: String, resolved: String) -> Bool {
         var stripped = original
         for placeholder in ["{query}", "{selection}", "{clipboardTop}", "{clipboard}"] {
             stripped = stripped.replacingOccurrences(of: placeholder, with: "")
         }
         if stripped == original { return true }
-        return resolved != stripped
+        // After shell escaping, empty inputs become `''`. Check if any placeholder
+        // resolved to something beyond the empty-quote token.
+        let bare = resolved
+            .replacingOccurrences(of: "''", with: "")
+        return bare != stripped
     }
 }

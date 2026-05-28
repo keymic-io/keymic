@@ -128,10 +128,6 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
-        case .screenshot: ScreenshotSettingsView()
-        }
-    }
-}
 
 private func hotkeyBinding(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> Binding<String> {
     Binding(
@@ -155,47 +151,6 @@ private func resetHotkey(_ store: HotkeySettingsStore, for feature: HotkeyFeatur
         return error.message
     } catch {
         return error.localizedDescription
-    }
-}
-
-    }
-
-    var body: some View {
-        Form {
-            Section {
-                Toggle("Enable screenshot", isOn: $screenshotEnabled)
-                LabeledContent("Hotkey:") {
-                    HStack(spacing: 8) {
-                        HotkeyRecorderField(
-                            encoded: screenshotHotkey,
-                            mode: .combo,
-                            validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.screenshot)) },
-                            showsClearButton: false
-                        )
-                        .frame(width: 160, height: 24)
-                        Button("Reset") {
-                            hotkeyResetError = resetHotkey(hotkeyStore, for: .screenshot)
-                        }
-                        .controlSize(.small)
-                    }
-                }
-                .disabled(!screenshotEnabled)
-                if let hotkeyResetError {
-                    Text(hotkeyResetError)
-                        .font(.callout)
-                        .foregroundStyle(.red)
-                }
-            } header: {
-                Text("Screenshot")
-            } footer: {
-                Text(
-                    "Press \(hotkeyDisplayString) to capture a region of the screen and open it in the annotation editor."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-        }
-        .formStyle(.grouped)
     }
 }
 
@@ -699,15 +654,16 @@ struct HotkeyRecorderField: View {
     let validator: HotkeyRecorder.Validator
     let displayName: DisplayName?
     let showsClearButton: Bool
-            config: Binding(
-                get: { HotkeyConfig.parse(encoded.wrappedValue) },
-                set: { encoded.wrappedValue = $0?.encode() ?? "" }
-            ),
-            mode: mode,
-            validator: validator,
-            displayName: nil,
-            showsClearButton: showsClearButton
+
+    init(encoded: Binding<String>, mode: HotkeyRecorder.Mode, validator: @escaping HotkeyRecorder.Validator, showsClearButton: Bool) {
+        self._config = Binding(
+            get: { HotkeyConfig.parse(encoded.wrappedValue) },
+            set: { encoded.wrappedValue = $0?.encode() ?? "" }
         )
+        self.mode = mode
+        self.validator = validator
+        self.displayName = nil
+        self.showsClearButton = showsClearButton
     }
 
     var body: some View {
@@ -794,6 +750,23 @@ struct HotkeyRecorderWithClear: View {
     let validator: HotkeyRecorder.Validator
     let recorderWidth: CGFloat
     let resetAction: () -> Void
+
+    private var canReset: Bool {
+        guard let def = defaultEncoded, let cfg = HotkeyConfig.parse(def) else {
+            return encoded != ""
+        }
+        guard let cur = HotkeyConfig.parse(encoded) else { return true }
+        return cur != cfg
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            HotkeyRecorderField(
+                encoded: $encoded,
+                mode: mode,
+                validator: validator,
+                showsClearButton: false
+            )
                 .frame(width: recorderWidth, height: 24)
 
             ClearHotkeyButton(
