@@ -559,6 +559,7 @@ final class PersonasViewModel: ObservableObject {
     func deleteSelected() {
         guard let id = selectedId else { return }
         store.delete(id: id)
+        personas.removeAll { $0.id == id }
         selectedId = personas.first?.id
     }
 

@@ -31,7 +31,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.clipboardPanel.rawValue: "alt+v",             // Open the clipboard history panel.
         HotkeyFeature.vaultPanel.rawValue: "alt+b",                 // Open the Vault panel.
         HotkeyFeature.settingsWindow.rawValue: "cmd+shift+,",       // Open the Settings window.
-        HotkeyFeature.screenshot.rawValue: "cmd+shift+a",           // Open screenshot selection and annotation.
+        HotkeyFeature.screenshot.rawValue: "ctrl+alt+a",            // Open screenshot selection and annotation.
         HotkeyFeature.selectedTextEditor.rawValue: "alt+e",         // Open Selected Text Editor panel.
         HotkeyFeature.clipboardTransform.rawValue: "alt+l",         // Transform selected clipboard items via LLM.
     ]

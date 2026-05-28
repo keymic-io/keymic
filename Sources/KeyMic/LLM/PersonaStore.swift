@@ -118,6 +118,10 @@ final class PersonaStore {
             }
         } catch {
             logger.error("load failed: \(error.localizedDescription, privacy: .public). Re-seeding.")
+            // Back up corrupt file before overwriting
+            if let data = try? Data(contentsOf: storeURL) {
+                try? data.write(to: storeURL.appendingPathExtension("corrupt"))
+            }
             seedFirstLaunch()
         }
     }

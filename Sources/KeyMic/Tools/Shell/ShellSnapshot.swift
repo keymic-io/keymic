@@ -47,26 +47,29 @@ final class ShellSnapshot {
 
     func ensureFresh() -> URL? {
         lock.lock()
-        defer { lock.unlock() }
-
         if let path = currentPath, !FileManager.default.fileExists(atPath: path.path) {
             currentPath = nil
             sourceMtimes = [:]
         }
-
         let needsRebuild = currentPath == nil || mtimesChanged()
-        guard needsRebuild else { return currentPath }
+        if !needsRebuild {
+            let path = currentPath
+            lock.unlock()
+            return path
+        }
+        lock.unlock()
 
-        do {
-            let newPath = try rebuild()
+        // Rebuild outside the lock so callers don't block during subprocess spawn
+        let newPath = try? rebuild()
+
+        lock.lock()
+        defer { lock.unlock() }
+        if let newPath {
             sourceMtimes = currentMtimes()
             cleanupOld(keeping: newPath)
             currentPath = newPath
-            return newPath
-        } catch {
-            osLogger.warning("snapshot rebuild failed: \(error.localizedDescription, privacy: .public)")
-            return currentPath
         }
+        return currentPath
     }
 
     private func rebuild() throws -> URL {
@@ -197,6 +200,8 @@ final class ShellSnapshot {
         do {
             try p.run()
         } catch {
+            outPipe.fileHandleForReading.readabilityHandler = nil
+            errPipe.fileHandleForReading.readabilityHandler = nil
             return (-1, "", "Process.run failed: \(error.localizedDescription)")
         }
 
@@ -213,7 +218,13 @@ final class ShellSnapshot {
             }
             outPipe.fileHandleForReading.readabilityHandler = nil
             errPipe.fileHandleForReading.readabilityHandler = nil
-            return (-1, "", "snapshot dump timeout")
+            let remaining = outPipe.fileHandleForReading.readDataToEndOfFile()
+            let errRemaining = errPipe.fileHandleForReading.readDataToEndOfFile()
+            stdoutData.append(remaining)
+            stderrData.append(errRemaining)
+            let outStr = outQ.sync { String(data: stdoutData, encoding: .utf8) ?? "" }
+            let errStr = errQ.sync { String(data: stderrData, encoding: .utf8) ?? "" }
+            return (-1, outStr, "snapshot dump timeout: \(errStr)")
         }
 
         outPipe.fileHandleForReading.readabilityHandler = nil

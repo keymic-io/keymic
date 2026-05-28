@@ -81,27 +81,16 @@ struct ClipboardMonitorTestRunner {
         monitor.tickForTesting()
         expect(store.fetchAll().count == 1, "confidential drop")
 
-        // ignoredText drop (simulate KeyMic's own write)
-        monitor.markIgnored(text: "self-paste")
+        // Counter-based ignore: markIgnoredChangeCount suppresses the next tick with that changeCount
         fake.simulate(text: "self-paste")
+        let selfPasteCC = fake.changeCount
+        monitor.markIgnoredChangeCount(selfPasteCC)
         monitor.tickForTesting()
         expect(store.fetchAll().count == 1, "self-paste ignored")
-        // marker should clear after one observation
+        // marker clears after one observation — next change is captured
         fake.simulate(text: "after-self")
         monitor.tickForTesting()
         expect(store.fetchAll().map(\.text).first == "after-self", "next change captured")
-
-        // marker must not linger across an external copy that doesn't match it
-        monitor.markIgnored(text: "keymic-write")
-        fake.simulate(text: "user-typed")
-        monitor.tickForTesting()
-        expect(
-            store.fetchAll().map(\.text).first == "user-typed",
-            "non-matching marker is consumed and external copy captured")
-        // and the same text the marker once held must now be capturable when copied externally
-        fake.simulate(text: "keymic-write")
-        monitor.tickForTesting()
-        expect(store.fetchAll().map(\.text).first == "keymic-write", "stale marker does not block later legitimate copy")
 
         // own bundle source skipped
         let keymicMonitor = ClipboardMonitor(

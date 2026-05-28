@@ -138,7 +138,7 @@ final class ClipboardController {
     /// Hook for other components (e.g. TextInjector) that write to the pasteboard themselves
     /// and want their writes excluded from clipboard history.
     func markPasteboardWrite(_ text: String) {
-        monitor.markIgnored(text: text)
+        monitor.markIgnoredChangeCount(pasteboard.changeCount)
     }
 
     @objc private func preferencesChanged() {
@@ -175,34 +175,30 @@ final class ClipboardController {
 
     private func pasteVault(_ item: VaultItem) {
         let savedItems = pasteboard.copyItems()
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            let plain: String
-            do {
-                plain = try self.vaultStore.reveal(item)
-            } catch {
-                DispatchQueue.main.async { [weak self] in
-                    self?.panel.dismiss()
-                }
-                return
-            }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                let writeChangeCount = self.pasteboard.write(plain)
-                self.monitor.markIgnored(text: plain)
-                self.panel.dismiss()
-                self.activateTargetAndSendCommandV()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
-                    if let savedItems {
-                        self.pasteboard.writeItems(savedItems)
-                        if let savedText = self.pasteboard.string() {
-                            self.monitor.markIgnored(text: savedText)
-                        }
-                    } else {
-                        self.pasteboard.clear()
-                    }
-                }
+        // Bug 1 fix: call vaultStore.reveal() directly on main thread instead of
+        // DispatchQueue.global, because VaultStore is @MainActor and its
+        // ModelContext (mainContext) is not thread-safe. The biometric prompt
+        // inside KeychainVault.read blocks briefly (semaphore), which is
+        // acceptable for this user-initiated action.
+        let plain: String
+        do {
+            plain = try vaultStore.reveal(item)
+        } catch {
+            panel.dismiss()
+            return
+        }
+        let writeChangeCount = pasteboard.write(plain)
+        monitor.markIgnoredChangeCount(writeChangeCount)
+        panel.dismiss()
+        activateTargetAndSendCommandV()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
+            if let savedItems {
+                let restoreCount = self.pasteboard.writeItems(savedItems)
+                self.monitor.markIgnoredChangeCount(restoreCount)
+            } else {
+                let clearCount = self.pasteboard.clear()
+                self.monitor.markIgnoredChangeCount(clearCount)
             }
         }
     }
@@ -222,8 +218,8 @@ final class ClipboardController {
 
     private func pasteText(_ item: ClipboardItem) {
         store.bumpToTop(id: item.id)
-        pasteboard.write(item.text)
-        monitor.markIgnored(token: item.text)
+        let cc = pasteboard.write(item.text)
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
@@ -242,10 +238,8 @@ final class ClipboardController {
         }
         let format: ImageFormat = url.pathExtension.lowercased() == "tiff" ? .tiff : .png
         store.bumpToTop(id: item.id)
-        pasteboard.write(payloads: [(type: format.pasteboardType, data: data)])
-        if let hash = item.contentHash {
-            monitor.markIgnored(token: hash)
-        }
+        let cc = pasteboard.write(payloads: [(type: format.pasteboardType, data: data)])
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
@@ -258,8 +252,8 @@ final class ClipboardController {
         }
         let url = URL(fileURLWithPath: path)
         store.bumpToTop(id: item.id)
-        pasteboard.write(fileURL: url)
-        monitor.markIgnored(token: path)
+        let cc = pasteboard.write(fileURL: url)
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
@@ -275,8 +269,8 @@ final class ClipboardController {
         ]
         payloads.append((type: "public.utf8-plain-text", data: Data(item.text.utf8)))
         store.bumpToTop(id: item.id)
-        pasteboard.write(payloads: payloads)
-        monitor.markIgnored(token: item.text)
+        let cc = pasteboard.write(payloads: payloads)
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
