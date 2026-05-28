@@ -55,7 +55,7 @@ struct HotkeySettingsStoreTests {
                 stylePrompt: "",
                 temperature: 0.3,
                 hotkey: "cmd+alt+1",
-                contextMode: .none,
+                contextSources: [],
                 builtIn: false,
                 createdAt: Date(),
                 updatedAt: Date()
