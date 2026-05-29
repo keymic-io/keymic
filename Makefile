@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait
 
 
 build:
@@ -190,8 +190,19 @@ test-hotkey-bindings-store:
 test-hotkey-settings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
-	       Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Tests/HotkeySettingsStoreTests.swift \
 	       -o .build/hotkey-settings-store-tests
@@ -286,10 +297,21 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
-	       Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
-	       Sources/KeyMic/Input/InputResetReason.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Sources/KeyMic/Input/InputState.swift \
+	       Sources/KeyMic/Input/InputResetReason.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorClipboardPanelTests.swift \
 	       -o .build/keymonitor-clipboard-panel-tests
@@ -376,18 +398,94 @@ test-overlay-state:
 
 test-persona:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaTests.swift \
 	       -o .build/persona-tests
 	.build/persona-tests
 
 test-persona-store:
 	mkdir -p .build
-	swiftc Sources/KeyMic/LLM/Persona.swift \
-	       Sources/KeyMic/LLM/PersonaStore.swift \
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaStore.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Tests/PersonaStoreTests.swift \
 	       -o .build/persona-store-tests
 	.build/persona-store-tests
+
+test-persona-context:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
+	       Tests/PersonaContextTests.swift \
+	       -o .build/persona-context-tests
+	.build/persona-context-tests
+
+test-persona-injection-strategy:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
+	       Tests/PersonaInjectionStrategyTests.swift \
+	       -o .build/persona-injection-tests
+	.build/persona-injection-tests
+
+test-output-router:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
+	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
+	       Sources/KeyMic/Output/OutputRouter.swift \
+	       Tests/OutputRouterTests.swift \
+	       -o .build/output-router-tests
+	.build/output-router-tests
 
 test-hotkey-registry:
 	mkdir -p .build
@@ -435,7 +533,76 @@ test-shell-runner:
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-voice-state-machine
+test-pasteboard-snapshot:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Tests/PasteboardSnapshotTests.swift \
+	       -o .build/pasteboard-snapshot-tests
+	.build/pasteboard-snapshot-tests
+
+test-selection-copy-wait:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Tests/SelectionCopyWaitTests.swift \
+	       -o .build/selection-copy-wait-tests
+	.build/selection-copy-wait-tests
+
+test-context-source:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Tests/ContextSourceTests.swift \
+	       -o .build/context-source-tests
+	.build/context-source-tests
+
+test-clipboard-transform:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Clipboard/ClipboardTransformPrompt.swift \
+	       Tests/ClipboardTransformPromptTests.swift \
+	       -o .build/clipboard-transform-prompt-tests
+	.build/clipboard-transform-prompt-tests
+
+test-selected-text-editor:
+	mkdir -p .build
+	swiftc Sources/KeyMic/SelectedTextEditor/EditorAction.swift \
+	       Sources/KeyMic/SelectedTextEditor/EditorPrompt.swift \
+	       Tests/SelectedTextEditorTests.swift \
+	       -o .build/selected-text-editor-tests
+	.build/selected-text-editor-tests
+
+test-shell-output:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
+	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
+	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Tests/ShellOutputTests.swift \
+	       -framework AppKit \
+	       -framework Carbon \
+	       -o .build/shell-output-tests
+	.build/shell-output-tests
+
+test-window-ocr:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Context/WindowOCRProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContextBuilder.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionTextProvider.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/PasteboardSnapshot.swift \
+	       Sources/KeyMic/PersonaPlatform/Persona/SelectionCopyWait.swift \
+	       Tests/WindowOCRTests.swift \
+	       -framework ScreenCaptureKit \
+	       -framework AppKit \
+	       -framework Vision \
+	       -framework Carbon \
+	       -o .build/window-ocr-tests
+	.build/window-ocr-tests
+
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)

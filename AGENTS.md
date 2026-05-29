@@ -93,6 +93,7 @@ IOHIDSetModifierLockState(connect, Int32(kIOHIDCapsLockState), !state)
   events from the session tap. `SecureInputMonitor` polls every 200ms and tells
   `KeyMonitor` to suspend hotkey dispatch until Secure Input exits.
 
+
 ## Modifier keys reference
 
 | Key             | keyCode | Flag                |
@@ -107,6 +108,7 @@ IOHIDSetModifierLockState(connect, Int32(kIOHIDCapsLockState), !state)
 | Left Command    | 0x37    | `.maskCommand`      |
 | Right Command   | 0x36    | `.maskCommand`      |
 | Fn              | 0x3F    | `.maskSecondaryFn`  |
+
 
 ## Github
 - always switch to `lorne-luo` first before run gh cmd

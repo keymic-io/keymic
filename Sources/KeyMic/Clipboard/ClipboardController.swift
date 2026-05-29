@@ -5,7 +5,7 @@ import os
 @MainActor
 final class ClipboardController {
     private static let logger = Logger(subsystem: "io.keymic.app", category: "ClipboardController")
-    private let store: ClipboardStore
+    let store: ClipboardStore
     let vaultStore: VaultStore
     private let scanner: SecretScanner
     weak var overlayPanel: OverlayPanel?
@@ -13,6 +13,13 @@ final class ClipboardController {
     private let monitor: ClipboardMonitor
     private lazy var panel: ClipboardPanel = makePanel()
     private weak var pasteTargetApplication: NSRunningApplication?
+
+    /// Multi-selection bridge between ClipboardPanel and external triggers (hotkey, magic-wand).
+    let selectionBridge = ClipboardPanelSelectionBridge()
+
+    /// Injected by AppDelegate after construction. Optional so the controller is testable
+    /// without an LLM dependency.
+    var transformController: ClipboardTransformController?
 
     private static let pasteSourceID: CGEventSourceStateID = .combinedSessionState
 
@@ -90,6 +97,44 @@ final class ClipboardController {
         panel.quickPaste(index: index)
     }
 
+    /// Triggered by ⌥L hotkey, the Transform button, and the per-row magic-wand button.
+    func transformSelected() {
+        guard let transformer = transformController else { return }
+
+        // panel closed → open it + toast; do not invoke LLM
+        if !isPanelVisible {
+            toggle(initialTab: .clipboard)
+            overlayPanel?.showTransientToast(
+                String(localized: "Select items to transform"),
+                durationSeconds: 2.0
+            )
+            return
+        }
+
+        let items = currentSelectedItems()
+        transformer.transform(items: items)
+    }
+
+    private func currentSelectedItems() -> [ClipboardItem] {
+        let visible = selectionBridge.visibleOrderedIDs
+        let selected = selectionBridge.selectedIDs
+
+        let idsToTransform: [UUID]
+        if !selected.isEmpty {
+            idsToTransform = visible.filter { selected.contains($0) }
+        } else if let cursor = selectionBridge.lastClickedID {
+            idsToTransform = [cursor]
+        } else if let firstVisible = visible.first {
+            idsToTransform = [firstVisible]
+        } else {
+            idsToTransform = []
+        }
+
+        return idsToTransform.compactMap { id in
+            store.item(id: id)
+        }
+    }
+
     /// Hook for other components (e.g. TextInjector) that write to the pasteboard themselves
     /// and want their writes excluded from clipboard history.
     func markPasteboardWrite(_ text: String) {
@@ -117,12 +162,14 @@ final class ClipboardController {
         ClipboardPanel(
             modelContainer: store.modelContainer,
             clipboardCacheURL: store.clipboardCacheURL,
+            selectionBridge: selectionBridge,
             onPaste: { [weak self] item in self?.paste(item) },
             onDelete: { [weak self] id in self?.store.delete(id: id) },
             onTogglePin: { [weak self] id in self?.store.togglePin(id: id) },
             onVaultPaste: { [weak self] item in self?.pasteVault(item) },
             onVaultDelete: { [weak self] item in self?.vaultStore.delete(item) },
-            onDismiss: { [weak self] in self?.panel.dismiss() }
+            onDismiss: { [weak self] in self?.panel.dismiss() },
+            onTransformSelected: { [weak self] in self?.transformSelected() }
         )
     }
 
@@ -229,9 +276,7 @@ final class ClipboardController {
     }
 
     private func activateTargetAndSendCommandV() {
-        if let target = pasteTargetApplication, !target.isTerminated {
-            target.activate(options: [])
-        }
+        OutputRouter.shared.activateOriginatingAppSync(pasteTargetApplication)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Self.synthesizeCommandV()
         }
