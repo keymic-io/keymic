@@ -54,12 +54,12 @@ struct ShellOutputTestRunner {
 
     static func testSubstituteQuery() {
         let got = ShellTemplate.substitute(template: "{query}", text: "foo", context: nil)
-        expect(got == "foo", "{query} should substitute to text, got: \(got ?? "nil")")
+        expect(got == "'foo'", "{query} should shell-escape text, got: \(got ?? "nil")")
     }
 
     static func testSubstituteEcho() {
         let got = ShellTemplate.substitute(template: "echo {query}", text: "hi there", context: nil)
-        expect(got == "echo hi there", "echo passthrough mismatch, got: \(got ?? "nil")")
+        expect(got == "echo 'hi there'", "echo shell escaping mismatch, got: \(got ?? "nil")")
     }
 
     static func testSubstituteUnknownPlaceholderLiteral() {
@@ -69,15 +69,15 @@ struct ShellOutputTestRunner {
 
     static func testSubstituteUnicode() {
         let got = ShellTemplate.substitute(template: "echo {query}", text: "héllo 🌍", context: nil)
-        expect(got == "echo héllo 🌍", "unicode passthrough failed, got: \(got ?? "nil")")
+        expect(got == "echo 'héllo 🌍'", "unicode shell escaping failed, got: \(got ?? "nil")")
     }
 
     static func testSubstituteSelectionAndClipboard() {
         let ctx = PersonaContext(selection: "SEL", clipboardTop: "CLIP", clipboardHistory: nil, windowOCR: nil)
         let got = ShellTemplate.substitute(
             template: "cmd {selection} {clipboard}", text: "Q", context: ctx)
-        expect(got == "cmd SEL CLIP",
-               "selection+clipboard passthrough failed, got: \(got ?? "nil")")
+        expect(got == "cmd 'SEL' 'CLIP'",
+               "selection+clipboard shell escaping failed, got: \(got ?? "nil")")
     }
 
     static func testLiteralTemplateAlwaysSubstantial() {
