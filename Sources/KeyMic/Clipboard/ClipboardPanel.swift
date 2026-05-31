@@ -52,6 +52,9 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         titlebarAppearsTransparent = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         hidesOnDeactivate = false
+        // Appear/disappear instantly: suppress the default window fade-in/out so the
+        // panel shows the moment the hotkey is pressed.
+        animationBehavior = .none
 
         contentView = hostingController.view
         contentView?.wantsLayer = true
