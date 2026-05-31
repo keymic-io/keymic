@@ -79,17 +79,31 @@ final class ClipboardController {
     }
 
     func toggle(initialTab: PanelTab = .clipboard) {
+        let trace = ClipboardOpenTrace.shared
+        trace.begin(reason: "toggle(\(initialTab))")
+
+        // First access to the lazy `panel` triggers makePanel() on the very first
+        // open (one-time NSHostingController construction); mark it explicitly.
+        let panel = self.panel
+        trace.mark("panel.ready")
+
         if panel.isVisible {
             if panel.currentTab == initialTab {
                 panel.dismiss()
             } else {
                 panel.switchTab(to: initialTab)
             }
+            trace.end("toggle no-op (already visible)")
             return
         }
-        guard ClipboardPreferences.enabled else { return }
+        guard ClipboardPreferences.enabled else {
+            trace.end("disabled")
+            return
+        }
         pasteTargetApplication = NSWorkspace.shared.frontmostApplication
+        trace.mark("frontmostApplication")
         panel.showAtCursor(initialTab: initialTab)
+        trace.mark("showAtCursor returned")
     }
 
     func quickPaste(index: Int) {
@@ -159,7 +173,10 @@ final class ClipboardController {
     }
 
     private func makePanel() -> ClipboardPanel {
-        ClipboardPanel(
+        let trace = ClipboardOpenTrace.shared
+        trace.mark("makePanel begin (first-open hosting init)")
+        defer { trace.mark("makePanel end") }
+        return ClipboardPanel(
             modelContainer: store.modelContainer,
             clipboardCacheURL: store.clipboardCacheURL,
             selectionBridge: selectionBridge,

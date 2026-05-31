@@ -97,8 +97,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Clear any stale HID-level mappings left by a previous crash/SIGKILL.
         // `applicationWillTerminate` calls reset() on clean quit, but force-quit
-        // or crash leaves hidutil UserKeyMapping active. Reset-then-reapply is idempotent.
+        // or crash leaves hidutil UserKeyMapping active.
         HIDRemapper.reset()
+        // `KeyMappingManager`'s singleton was already initialized via `keyMonitor`'s
+        // stored property (default arg `.shared`), so its init-time `apply` was enqueued
+        // and ran *before* the reset above on HIDRemapper's shared serial queue — leaving
+        // the (empty) reset as the last write. Reapply now so our mappings land *after*
+        // the reset; otherwise Caps Lock→Ctrl silently does nothing until the user toggles
+        // key mapping off/on.
+        KeyMappingManager.shared.reapplyHIDMappings()
 
         AppScreen.refresh()
 

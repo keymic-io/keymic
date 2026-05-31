@@ -90,7 +90,10 @@ struct ClipboardHistoryView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .onAppear {
+            let trace = ClipboardOpenTrace.shared
+            trace.mark("view.onAppear (first body + @Query fetch done)")
             filtered = computeFiltered()
+            trace.mark("computeFiltered (\(items.count) items)")
             if let id = filtered.all.first?.id {
                 selectionBridge.selectedIDs = [id]
                 selectionBridge.lastClickedID = id
@@ -99,10 +102,14 @@ struct ClipboardHistoryView: View {
             }
             selectionBridge.visibleOrderedIDs = filtered.all.map(\.id)
             focusedField = .search
+            trace.end("view.onAppear done")
         }
         .onChange(of: focus.requestID) { _, _ in
+            let trace = ClipboardOpenTrace.shared
+            trace.mark("view.refresh (requestID — reuse open)")
             query = ""
             filtered = computeFiltered()
+            trace.mark("computeFiltered (\(items.count) items)")
             if let id = filtered.all.first?.id {
                 selectionBridge.selectedIDs = [id]
                 selectionBridge.lastClickedID = id
@@ -110,6 +117,7 @@ struct ClipboardHistoryView: View {
                 selectionBridge.selectedIDs.removeAll()
             }
             focusedField = .search
+            trace.end("view.refresh done")
         }
         .onChange(of: focus.quickPasteRequestID) { _, _ in
             triggerQuickPaste(focus.quickPasteIndex)

@@ -129,6 +129,42 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
 }
 
 
+// MARK: - Root
+
+struct SettingsRootView: View {
+    @State private var selection: SettingsSection = .general
+
+    var body: some View {
+        NavigationSplitView {
+            List(SettingsSection.allCases, selection: $selection) { section in
+                Label(section.title, systemImage: section.symbol).tag(section)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 170, ideal: 180, max: 220)
+        } detail: {
+            detail
+                .frame(minWidth: 480, idealWidth: 560, minHeight: 420)
+                .navigationTitle(selection.title)
+        }
+        .frame(minWidth: 720, minHeight: 480)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection {
+        case .general: GeneralSettingsView()
+        case .voice: VoiceSettingsView()
+        case .llm: LLMSettingsView()
+        case .personas: PersonasView()
+        case .clipboard: ClipboardSettingsView()
+        case .keyMapping: KeyMappingSettingsSection()
+        case .shortcuts: ShortcutsSettingsSection()
+        case .screenshot: ScreenshotSettingsView()
+        }
+    }
+}
+
+
 private func hotkeyBinding(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> Binding<String> {
     Binding(
         get: { store.rawHotkey(for: feature) },
@@ -151,6 +187,58 @@ private func resetHotkey(_ store: HotkeySettingsStore, for feature: HotkeyFeatur
         return error.message
     } catch {
         return error.localizedDescription
+    }
+}
+
+// MARK: - Screenshot
+
+private struct ScreenshotSettingsView: View {
+    @AppStorage("screenshotEnabled") private var screenshotEnabled: Bool = true
+    @State private var hotkeyStore = HotkeySettingsStore.shared
+    @State private var hotkeyResetError: String?
+
+    private var screenshotHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .screenshot) }
+
+    private var hotkeyDisplayString: String {
+        HotkeyConfig.parse(screenshotHotkey.wrappedValue)?.displayString() ?? "⌘⇧A"
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Enable screenshot", isOn: $screenshotEnabled)
+                LabeledContent("Hotkey:") {
+                    HStack(spacing: 8) {
+                        HotkeyRecorderField(
+                            encoded: screenshotHotkey,
+                            mode: .combo,
+                            validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.screenshot)) },
+                            showsClearButton: false
+                        )
+                        .frame(width: 160, height: 24)
+                        Button("Reset") {
+                            hotkeyResetError = resetHotkey(hotkeyStore, for: .screenshot)
+                        }
+                        .controlSize(.small)
+                    }
+                }
+                .disabled(!screenshotEnabled)
+                if let hotkeyResetError {
+                    Text(hotkeyResetError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                }
+            } header: {
+                Text("Screenshot")
+            } footer: {
+                Text(
+                    "Press \(hotkeyDisplayString) to capture a region of the screen and open it in the annotation editor."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+        }
+        .formStyle(.grouped)
     }
 }
 
@@ -216,8 +304,15 @@ private struct GeneralSettingsView: View {
             }
 
             Section {
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                Toggle("Automatically check and install updates", isOn: $automaticallyUpdates)
+            } header: {
+                Text("Updates")
+            } footer: {
+                Text(
+                    "When enabled, KeyMic checks for updates daily at 11:00 AM and installs them silently. When disabled, you'll be prompted to review updates before installing."
+                )
+                .font(.callout)
+                .foregroundStyle(.secondary)
             }
 
             Section {
@@ -654,6 +749,20 @@ struct HotkeyRecorderField: View {
     let validator: HotkeyRecorder.Validator
     let displayName: DisplayName?
     let showsClearButton: Bool
+
+    init(
+        config: Binding<HotkeyConfig?>,
+        mode: HotkeyRecorder.Mode,
+        validator: @escaping HotkeyRecorder.Validator,
+        displayName: DisplayName? = nil,
+        showsClearButton: Bool = true
+    ) {
+        self._config = config
+        self.mode = mode
+        self.validator = validator
+        self.displayName = displayName
+        self.showsClearButton = showsClearButton
+    }
 
     init(encoded: Binding<String>, mode: HotkeyRecorder.Mode, validator: @escaping HotkeyRecorder.Validator, showsClearButton: Bool) {
         self._config = Binding(
