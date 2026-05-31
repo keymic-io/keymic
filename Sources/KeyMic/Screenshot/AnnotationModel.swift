@@ -109,7 +109,6 @@ class Annotation: NSCopying {
 
     func copy(with zone: NSZone? = nil) -> Any {
         let copy = Annotation(
-            id: id,
             kind: kind,
             startPoint: startPoint,
             endPoint: endPoint,

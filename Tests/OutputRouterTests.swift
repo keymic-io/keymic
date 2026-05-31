@@ -37,7 +37,7 @@ struct OutputRouterTestRunner {
             onMarkIgnored: { _ in },
             confirmShellRun: { _ in true })
         router.runShellExecutor = { command in
-            expect(command == "ls", "command after substitution mismatch: \(command)")
+            expect(command == "'ls'", "command after substitution mismatch: \(command)")
             return ShellOutputResult(stdout: "\u{001B}[32mok\u{001B}[0m\n", stderr: "", exitCode: 0)
         }
         let output = PersonaOutput(

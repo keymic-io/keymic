@@ -47,23 +47,17 @@ final class ShellSnapshot {
 
     func ensureFresh() -> URL? {
         lock.lock()
+        defer { lock.unlock() }
+
         if let path = currentPath, !FileManager.default.fileExists(atPath: path.path) {
             currentPath = nil
             sourceMtimes = [:]
         }
         let needsRebuild = currentPath == nil || mtimesChanged()
-        if !needsRebuild {
-            let path = currentPath
-            lock.unlock()
-            return path
-        }
-        lock.unlock()
+        guard needsRebuild else { return currentPath }
 
-        // Rebuild outside the lock so callers don't block during subprocess spawn
+        // Keep rebuild serialized so concurrent callers share one dump process.
         let newPath = try? rebuild()
-
-        lock.lock()
-        defer { lock.unlock() }
         if let newPath {
             sourceMtimes = currentMtimes()
             cleanupOld(keeping: newPath)

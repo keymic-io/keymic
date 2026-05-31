@@ -400,9 +400,7 @@ final class ClipboardStore {
     private func saveDedup(newest: ClipboardItem) -> Bool {
         do {
             try context.save()
-            Self.logger.info(
-                "dedup saved — count=\(self.fetchAll().count, privacy: .public) newestLen=\(newest.text.count, privacy: .public)"
-            )
+            Self.logger.info("dedup saved — newestLen=\(newest.text.count, privacy: .public)")
             return true
         } catch {
             Self.logger.error("dedup save failed — \(error.localizedDescription, privacy: .public)")
@@ -413,10 +411,7 @@ final class ClipboardStore {
     private func saveInserted(text: String) -> Bool {
         do {
             try context.save()
-            let newest = fetchAll().first
-            Self.logger.info(
-                "add saved — count=\(self.fetchAll().count, privacy: .public) newestLen=\(newest?.text.count ?? -1, privacy: .public) newestMatches=\(newest?.text == text, privacy: .public)"
-            )
+            Self.logger.info("add saved — insertedLen=\(text.count, privacy: .public)")
             return true
         } catch {
             Self.logger.error("add save failed — \(error.localizedDescription, privacy: .public)")

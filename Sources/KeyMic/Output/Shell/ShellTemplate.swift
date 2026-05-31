@@ -1,8 +1,7 @@
 import Foundation
 
 /// Pure helper for the `.runShell` injection strategy. Mirrors `URLTemplate.substitute`
-/// shape but performs NO URL encoding — shell quoting is the persona author's job,
-/// and the confirmation sheet is the safety net.
+/// shape but shell-escapes placeholder values instead of URL-encoding them.
 ///
 /// Supported placeholders: `{query}`, `{selection}`, `{clipboard}` (aliases of
 /// `{clipboardTop}`). Unknown placeholders are left LITERAL so they show up

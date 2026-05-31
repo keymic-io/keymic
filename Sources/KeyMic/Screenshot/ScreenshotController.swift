@@ -245,16 +245,10 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
                 self.permissionPollTimer = nil
                 return
             }
-            Task { @MainActor in
-                do {
-                    _ = try await self.capturer.captureAllScreens()
-                    timer.invalidate()
-                    self.permissionPollTimer = nil
-                    self.start()
-                } catch {
-                    // still no permission, keep polling
-                }
-            }
+            guard CGPreflightScreenCaptureAccess() else { return }
+            timer.invalidate()
+            self.permissionPollTimer = nil
+            self.start()
         }
     }
 }

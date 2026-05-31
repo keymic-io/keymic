@@ -43,17 +43,64 @@ struct ClipboardHistoryView: View {
         case search
     }
 
+    private enum SelectionRefreshMode {
+        case selectFirst
+        case selectFirstIfPrimaryChanged
+        case pruneInvisible
+    }
+
     private func computeFiltered() -> FilteredItems {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pool: [ClipboardItem] =
-            trimmed.isEmpty
-            ? items
-            : items.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
-        let pinned = pool.filter { $0.isPinned }
-            .sorted { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
-        let history = pool.filter { !$0.isPinned }
-            .sorted { $0.createdAt > $1.createdAt }
+        var pinned: [ClipboardItem] = []
+        var history: [ClipboardItem] = []
+
+        for item in items {
+            if !trimmed.isEmpty, !item.text.localizedCaseInsensitiveContains(trimmed) {
+                continue
+            }
+            if item.isPinned {
+                pinned.append(item)
+            } else {
+                history.append(item)
+            }
+        }
+
+        pinned.sort { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
         return FilteredItems(pinned: pinned, history: history)
+    }
+
+    private func refreshFiltered(selection mode: SelectionRefreshMode) {
+        filtered = computeFiltered()
+        let visibleIDs = filtered.all.map(\.id)
+        selectionBridge.visibleOrderedIDs = visibleIDs
+
+        switch mode {
+        case .selectFirst:
+            selectOnly(visibleIDs.first)
+        case .selectFirstIfPrimaryChanged:
+            let firstID = visibleIDs.first
+            if primaryID != firstID {
+                selectOnly(firstID)
+            }
+        case .pruneInvisible:
+            let visibleSet = Set(visibleIDs)
+            let pruned = selectionBridge.selectedIDs.intersection(visibleSet)
+            if pruned != selectionBridge.selectedIDs {
+                selectionBridge.selectedIDs = pruned
+            }
+            if selectionBridge.selectedIDs.isEmpty {
+                selectOnly(visibleIDs.first)
+            }
+        }
+    }
+
+    private func selectOnly(_ id: UUID?) {
+        if let id {
+            selectionBridge.selectedIDs = [id]
+            selectionBridge.lastClickedID = id
+        } else {
+            selectionBridge.selectedIDs.removeAll()
+        }
     }
 
     var body: some View {
@@ -92,15 +139,8 @@ struct ClipboardHistoryView: View {
         .onAppear {
             let trace = ClipboardOpenTrace.shared
             trace.mark("view.onAppear (first body + @Query fetch done)")
-            filtered = computeFiltered()
+            refreshFiltered(selection: .selectFirst)
             trace.mark("computeFiltered (\(items.count) items)")
-            if let id = filtered.all.first?.id {
-                selectionBridge.selectedIDs = [id]
-                selectionBridge.lastClickedID = id
-            } else {
-                selectionBridge.selectedIDs.removeAll()
-            }
-            selectionBridge.visibleOrderedIDs = filtered.all.map(\.id)
             focusedField = .search
             trace.end("view.onAppear done")
         }
@@ -108,14 +148,8 @@ struct ClipboardHistoryView: View {
             let trace = ClipboardOpenTrace.shared
             trace.mark("view.refresh (requestID — reuse open)")
             query = ""
-            filtered = computeFiltered()
+            refreshFiltered(selection: .selectFirst)
             trace.mark("computeFiltered (\(items.count) items)")
-            if let id = filtered.all.first?.id {
-                selectionBridge.selectedIDs = [id]
-                selectionBridge.lastClickedID = id
-            } else {
-                selectionBridge.selectedIDs.removeAll()
-            }
             focusedField = .search
             trace.end("view.refresh done")
         }
@@ -136,31 +170,10 @@ struct ClipboardHistoryView: View {
             focus.currentTab = newTab
         }
         .onChange(of: query) { _, _ in
-            filtered = computeFiltered()
-            selectionBridge.visibleOrderedIDs = filtered.all.map(\.id)
-            let firstID = filtered.all.first?.id
-            if primaryID != firstID {
-                if let id = firstID {
-                    selectionBridge.selectedIDs = [id]
-                    selectionBridge.lastClickedID = id
-                } else {
-                    selectionBridge.selectedIDs.removeAll()
-                }
-            }
+            refreshFiltered(selection: .selectFirstIfPrimaryChanged)
         }
         .onChange(of: items) { _, _ in
-            filtered = computeFiltered()
-            selectionBridge.visibleOrderedIDs = filtered.all.map(\.id)
-            // Drop any selected IDs that are no longer visible.
-            let visibleSet = Set(filtered.all.map(\.id))
-            let pruned = selectionBridge.selectedIDs.intersection(visibleSet)
-            if pruned != selectionBridge.selectedIDs {
-                selectionBridge.selectedIDs = pruned
-            }
-            if selectionBridge.selectedIDs.isEmpty, let id = filtered.all.first?.id {
-                selectionBridge.selectedIDs = [id]
-                selectionBridge.lastClickedID = id
-            }
+            refreshFiltered(selection: .pruneInvisible)
         }
         .background(
             KeyEventMonitor(
@@ -569,7 +582,7 @@ private struct FileRow: View {
     private var fileIcon: some View {
         Group {
             if let path = item.fileURLPath {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                Image(nsImage: FileIconCache.shared.image(forPath: path))
                     .resizable()
             } else {
                 Image(systemName: "doc")
