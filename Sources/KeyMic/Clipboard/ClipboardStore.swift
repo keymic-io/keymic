@@ -18,10 +18,12 @@ final class ClipboardStore {
     private var addCount: Int = 0
     var insertHook: ((ClipboardItem) -> Void)?
 
-    private static let logger = Logger(subsystem: "io.keymic.app", category: "ClipboardStore")
+    // `nonisolated` so `prepareImage` (which runs off the main actor) can log too;
+    // the static is immutable and `Logger` is Sendable, so this is safe.
+    nonisolated private static let logger = Logger(subsystem: "io.keymic.app", category: "ClipboardStore")
 
     /// Single-image size cap. Pasteboard payloads above this are dropped entirely.
-    static let maxImageBytes: Int = 20 * 1024 * 1024
+    nonisolated static let maxImageBytes: Int = 20 * 1024 * 1024
 
     var clipboardCacheURL: URL { cacheDirectory }
 
@@ -147,6 +149,84 @@ final class ClipboardStore {
         }
     }
 
+    /// Output of the main-thread-free image preparation phase. `Sendable` so it can
+    /// hop from a background task back to the main actor for the SwiftData commit.
+    struct PreparedImage: Sendable {
+        let id: UUID
+        let filename: String
+        let hash: String
+        let width: Int
+        let height: Int
+        let byteSize: Int
+    }
+
+    /// CPU/IO-heavy phase that touches NO SwiftData: hash the bytes and write the blob
+    /// to the cache dir. `nonisolated` so callers can run it off the main thread — a
+    /// 20 MB SHA-256 + atomic write on main would stall the run loop that also drives
+    /// the `CGEvent` tap, briefly dropping every global hotkey. Returns nil if the
+    /// data is oversized or the write fails.
+    nonisolated func prepareImage(
+        data: Data,
+        format: ImageFormat,
+        width: Int,
+        height: Int
+    ) -> PreparedImage? {
+        guard data.count <= Self.maxImageBytes else {
+            Self.logger.info("prepareImage skip oversized bytes=\(data.count, privacy: .public)")
+            return nil
+        }
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let id = UUID()
+        let filename = "\(id.uuidString).\(format.fileExtension)"
+        let target = cacheDirectory.appendingPathComponent(filename)
+        do {
+            try data.write(to: target, options: .atomic)
+        } catch {
+            Self.logger.error("prepareImage write failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        return PreparedImage(id: id, filename: filename, hash: hash, width: width, height: height, byteSize: data.count)
+    }
+
+    /// Main-actor commit of a `PreparedImage`: dedup by contentHash (discarding the
+    /// freshly-written file on a hit) then insert + save.
+    func commitImage(_ prepared: PreparedImage, sourceBundleID: String?, sourceAppName: String?) {
+        // Dedup by contentHash — bump createdAt, reuse the existing cache file, and
+        // drop the redundant file prepareImage just wrote.
+        if let existing = findExistingImage(hash: prepared.hash) {
+            existing.createdAt = Date()
+            try? context.save()
+            try? FileManager.default.removeItem(at: cacheDirectory.appendingPathComponent(prepared.filename))
+            return
+        }
+
+        let item = ClipboardItem(
+            text: "Image \(prepared.width)×\(prepared.height)",
+            sourceBundleID: sourceBundleID,
+            sourceAppName: sourceAppName,
+            kind: .image
+        )
+        item.id = prepared.id
+        item.imageRelativePath = prepared.filename
+        item.imageWidth = prepared.width
+        item.imageHeight = prepared.height
+        item.byteSize = prepared.byteSize
+        item.contentHash = prepared.hash
+        context.insert(item)
+        do {
+            try context.save()
+        } catch {
+            try? FileManager.default.removeItem(at: cacheDirectory.appendingPathComponent(prepared.filename))
+            context.delete(item)
+            Self.logger.error("commitImage save failed: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        finalizeInsert(item)
+    }
+
+    /// Synchronous convenience used by tests and any non-hot-path caller: prepare +
+    /// commit on the current (main) actor. The ⌥V capture path uses the split
+    /// `prepareImage` (off-main) + `commitImage` (main) instead — see ClipboardMonitor.
     func add(
         image data: Data,
         format: ImageFormat,
@@ -155,51 +235,8 @@ final class ClipboardStore {
         sourceBundleID: String?,
         sourceAppName: String?
     ) {
-        guard data.count <= Self.maxImageBytes else {
-            Self.logger.info("add(image:) skip oversized bytes=\(data.count, privacy: .public)")
-            return
-        }
-        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-
-        // Dedup by contentHash — bump createdAt and reuse existing cache file.
-        if let existing = findExistingImage(hash: hash) {
-            existing.createdAt = Date()
-            try? context.save()
-            return
-        }
-
-        let id = UUID()
-        let filename = "\(id.uuidString).\(format.fileExtension)"
-        let target = cacheDirectory.appendingPathComponent(filename)
-        do {
-            try data.write(to: target, options: .atomic)
-        } catch {
-            Self.logger.error("add(image:) write failed: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-
-        let item = ClipboardItem(
-            text: "Image \(width)×\(height)",
-            sourceBundleID: sourceBundleID,
-            sourceAppName: sourceAppName,
-            kind: .image
-        )
-        item.id = id
-        item.imageRelativePath = filename
-        item.imageWidth = width
-        item.imageHeight = height
-        item.byteSize = data.count
-        item.contentHash = hash
-        context.insert(item)
-        do {
-            try context.save()
-        } catch {
-            try? FileManager.default.removeItem(at: target)
-            context.delete(item)
-            Self.logger.error("add(image:) save failed: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-        finalizeInsert(item)
+        guard let prepared = prepareImage(data: data, format: format, width: width, height: height) else { return }
+        commitImage(prepared, sourceBundleID: sourceBundleID, sourceAppName: sourceAppName)
     }
 
     private func findExistingImage(hash: String) -> ClipboardItem? {

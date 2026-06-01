@@ -66,9 +66,9 @@ final class VaultStore {
         }
     }
 
-    func reveal(_ item: VaultItem) throws -> String {
+    func reveal(_ item: VaultItem) async throws -> String {
         do {
-            let plain = try keychain.read(account: item.keychainAccount)
+            let plain = try await keychain.read(account: item.keychainAccount)
             item.lastUsedAt = Date()
             try? context.save()
             return plain

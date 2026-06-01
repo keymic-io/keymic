@@ -57,6 +57,21 @@ final class ClipboardController {
     func start() {
         guard ClipboardPreferences.enabled else { return }
         monitor.start()
+        // Pre-warm the panel during idle. The first ⌥V press otherwise pays the
+        // one-time NSHostingController + SwiftUI graph construction synchronously on
+        // the main thread (see `makePanel`'s "first-open hosting init" trace marks).
+        // That stall can exceed the event-tap timeout — and the tap shares the main
+        // run loop — silently dropping every global hotkey (incl. ⌥V) until recovery.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.prewarm()
+        }
+    }
+
+    /// Build the lazy clipboard panel (and its NSHostingController) ahead of first
+    /// use so the construction cost lands during idle, not on the ⌥V hotkey press.
+    /// Idempotent — resolving the lazy `panel` again is a no-op.
+    func prewarm() {
+        _ = panel
     }
 
     /// One-time schema upgrade. Drops every ClipboardItem (preserving VaultItem
@@ -191,31 +206,36 @@ final class ClipboardController {
     }
 
     private func pasteVault(_ item: VaultItem) {
+        // Snapshot the current pasteboard *now*, before the biometric prompt.
         let savedItems = pasteboard.copyItems()
-        // Bug 1 fix: call vaultStore.reveal() directly on main thread instead of
-        // DispatchQueue.global, because VaultStore is @MainActor and its
-        // ModelContext (mainContext) is not thread-safe. The biometric prompt
-        // inside KeychainVault.read blocks briefly (semaphore), which is
-        // acceptable for this user-initiated action.
-        let plain: String
-        do {
-            plain = try vaultStore.reveal(item)
-        } catch {
-            panel.dismiss()
-            return
-        }
-        let writeChangeCount = pasteboard.write(plain)
-        monitor.markIgnoredChangeCount(writeChangeCount)
-        panel.dismiss()
-        activateTargetAndSendCommandV()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
-            if let savedItems {
-                let restoreCount = self.pasteboard.writeItems(savedItems)
-                self.monitor.markIgnoredChangeCount(restoreCount)
-            } else {
-                let clearCount = self.pasteboard.clear()
-                self.monitor.markIgnoredChangeCount(clearCount)
+        // `vaultStore.reveal` awaits a TouchID/passcode prompt. Running it inside a
+        // Task (rather than a synchronous call) keeps the main thread — and the
+        // `CGEvent` tap on its run loop — responsive while the prompt is up; a prior
+        // implementation blocked main on a semaphore, which froze every global hotkey
+        // (incl. ⌥V) until the user answered. VaultStore is @MainActor, so the
+        // continuation and the pasteboard/Cmd+V work below resume on the main thread.
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let plain: String
+            do {
+                plain = try await self.vaultStore.reveal(item)
+            } catch {
+                self.panel.dismiss()
+                return
+            }
+            let writeChangeCount = self.pasteboard.write(plain)
+            self.monitor.markIgnoredChangeCount(writeChangeCount)
+            self.panel.dismiss()
+            self.activateTargetAndSendCommandV()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
+                if let savedItems {
+                    let restoreCount = self.pasteboard.writeItems(savedItems)
+                    self.monitor.markIgnoredChangeCount(restoreCount)
+                } else {
+                    let clearCount = self.pasteboard.clear()
+                    self.monitor.markIgnoredChangeCount(clearCount)
+                }
             }
         }
     }

@@ -5,7 +5,7 @@ import SwiftData
 @main
 struct VaultStoreTestRunner {
     @MainActor
-    static func main() throws {
+    static func main() async throws {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: ClipboardItem.self, VaultItem.self, configurations: config)
         let backend = InMemoryKeychainBackend()
@@ -22,7 +22,7 @@ struct VaultStoreTestRunner {
         let v = store.ingest(match: match, copiedFrom: "com.example.app")!
         expect(store.fetchAll().count == 1, "one vault item after ingest")
         expect(v.maskedPreview == "AKIA****MNOP", "mask formatted")
-        let plain = try store.reveal(v)
+        let plain = try await store.reveal(v)
         expect(plain == "AKIAABCDEFGHIJKLMNOP", "reveal returns plaintext")
 
         let firstCopiedAt = v.copiedAt
@@ -35,7 +35,7 @@ struct VaultStoreTestRunner {
         store.delete(target)
         expect(store.fetchAll().isEmpty, "vault empty after delete")
         do {
-            _ = try backend.read(account: target.keychainAccount)
+            _ = try await backend.read(account: target.keychainAccount)
             fatalError("expected missing")
         } catch KeychainError.missing {
             // expected
@@ -44,7 +44,7 @@ struct VaultStoreTestRunner {
         let v2 = store.ingest(match: match, copiedFrom: nil)!
         try backend.delete(account: v2.keychainAccount)
         do {
-            _ = try store.reveal(v2)
+            _ = try await store.reveal(v2)
             fatalError("expected throw")
         } catch KeychainError.missing {
             expect(store.fetchAll().isEmpty, "orphan metadata cleaned up")
