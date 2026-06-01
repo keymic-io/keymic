@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.object(forKey: AppDelegate.voiceEnabledKey) as? Bool ?? true
 
     private var voiceEnabledMenuItem: NSMenuItem!
+    private weak var voiceToggleView: ToggleMenuItemView?
     private var personasRootMenuItem: NSMenuItem!
     private var personasMenu: NSMenu?
     private var keyMappingMenuItem: NSMenuItem!
@@ -367,12 +368,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        voiceEnabledMenuItem = NSMenuItem(
-            title: voiceEnabledMenuTitle, action: #selector(toggleVoiceEnabled), keyEquivalent: "")
-        voiceEnabledMenuItem.target = self
-        voiceEnabledMenuItem.state = isVoiceEnabled ? .on : .off
-        voiceEnabledMenuItem.image = symbolImage("mic.fill")
-        applyVoiceShortcut(to: voiceEnabledMenuItem)
+        // Group 1: voice, persona, clipboard
+        voiceEnabledMenuItem = NSMenuItem(title: voiceEnabledMenuTitle, action: nil, keyEquivalent: "")
+        let voiceView = ToggleMenuItemView(
+            title: voiceEnabledMenuTitle,
+            hotkeyText: HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString(),
+            icon: symbolImage("mic.fill"),
+            isOn: { [weak self] in self?.isVoiceEnabled ?? false },
+            onToggle: { [weak self] in self?.toggleVoiceEnabled() }
+        )
+        voiceEnabledMenuItem.view = voiceView
+        // Keep `.state` pinned to `.on` so NSMenu always reserves a state column
+        // and the non-toggle rows below keep a constant indentation. The actual
+        // on/off status is drawn by the view, not the system checkmark.
+        voiceEnabledMenuItem.state = .on
+        voiceToggleView = voiceView
         menu.addItem(voiceEnabledMenuItem)
 
         personasRootMenuItem = NSMenuItem(title: String(localized: "Default Persona"), action: nil, keyEquivalent: "")
@@ -383,34 +393,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildPersonasMenu()
         menu.addItem(personasRootMenuItem)
 
-        menu.addItem(.separator())
-
-        keyMappingMenuItem = NSMenuItem(title: String(localized: "Key Mapping"), action: #selector(toggleKeyMapping), keyEquivalent: "")
-        keyMappingMenuItem.target = self
-        keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
-        keyMappingMenuItem.image = symbolImage("keyboard")
-        menu.addItem(keyMappingMenuItem)
-
-        clipboardMenuItem = NSMenuItem(
-            title: String(localized: "Clipboard History"), action: #selector(toggleClipboard), keyEquivalent: "")
-        clipboardMenuItem.target = self
-        clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
-        clipboardMenuItem.image = symbolImage("doc.on.clipboard")
+        clipboardMenuItem = NSMenuItem(title: String(localized: "Clipboard History"), action: nil, keyEquivalent: "")
+        clipboardMenuItem.view = ToggleMenuItemView(
+            title: String(localized: "Clipboard History"),
+            hotkeyText: nil,
+            icon: symbolImage("doc.on.clipboard"),
+            isOn: { ClipboardPreferences.enabled },
+            onToggle: { [weak self] in self?.toggleClipboard() }
+        )
+        clipboardMenuItem.state = .on
         menu.addItem(clipboardMenuItem)
 
-        shortcutsMenuItem = NSMenuItem(title: String(localized: "Shortcuts"), action: #selector(toggleShortcuts), keyEquivalent: "")
-        shortcutsMenuItem.target = self
-        shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
-        shortcutsMenuItem.image = symbolImage("bolt.horizontal")
+        menu.addItem(.separator())
+
+        // Group 2: keyboard remapping + shortcuts
+        keyMappingMenuItem = NSMenuItem(title: String(localized: "Key Mapping"), action: nil, keyEquivalent: "")
+        keyMappingMenuItem.view = ToggleMenuItemView(
+            title: String(localized: "Key Mapping"),
+            hotkeyText: nil,
+            icon: symbolImage("keyboard"),
+            isOn: { KeyMappingManager.shared.isEnabled },
+            onToggle: { [weak self] in self?.toggleKeyMapping() }
+        )
+        keyMappingMenuItem.state = .on
+        menu.addItem(keyMappingMenuItem)
+
+        shortcutsMenuItem = NSMenuItem(title: String(localized: "Shortcuts"), action: nil, keyEquivalent: "")
+        shortcutsMenuItem.view = ToggleMenuItemView(
+            title: String(localized: "Shortcuts"),
+            hotkeyText: nil,
+            icon: symbolImage("bolt.horizontal"),
+            isOn: { HotkeyPreferences.enabled },
+            onToggle: { [weak self] in self?.toggleShortcuts() }
+        )
+        shortcutsMenuItem.state = .on
         menu.addItem(shortcutsMenuItem)
 
+        menu.addItem(.separator())
+
+        // Group 3: settings, updates, quit
         settingsMenuItem = NSMenuItem(title: String(localized: "Settings..."), action: #selector(openSettings), keyEquivalent: "")
         settingsMenuItem.target = self
         settingsMenuItem.image = symbolImage("gearshape")
         applySettingsShortcut(to: settingsMenuItem)
         menu.addItem(settingsMenuItem)
-
-        menu.addItem(.separator())
 
         let checkUpdateItem = NSMenuItem(
             title: String(localized: "Check for Updates…"),
@@ -420,8 +446,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         checkUpdateItem.target = self
         checkUpdateItem.image = symbolImage("arrow.down.circle")
         menu.addItem(checkUpdateItem)
-
-        menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: String(localized: "Quit KeyMic"), action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -474,7 +498,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard enabled != isVoiceEnabled else { return }
         isVoiceEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.voiceEnabledKey)
-        voiceEnabledMenuItem.state = enabled ? .on : .off
+        voiceToggleView?.needsDisplay = true
 
         if !enabled, let voiceTrigger {
             Task { @MainActor in voiceTrigger.onTriggerInterrupted() }
@@ -482,21 +506,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleKeyMapping() {
-        let manager = KeyMappingManager.shared
-        manager.isEnabled.toggle()
-        keyMappingMenuItem.state = manager.isEnabled ? .on : .off
+        KeyMappingManager.shared.isEnabled.toggle()
     }
 
     @objc private func toggleClipboard() {
         let newValue = !ClipboardPreferences.enabled
         UserDefaults.standard.set(newValue, forKey: ClipboardPreferences.enabledKey)
-        clipboardMenuItem.state = newValue ? .on : .off
     }
 
     @objc private func toggleShortcuts() {
         let newValue = !HotkeyPreferences.enabled
         UserDefaults.standard.set(newValue, forKey: HotkeyPreferences.enabledKey)
-        shortcutsMenuItem.state = newValue ? .on : .off
     }
 
     @objc private func workspaceDidActivateApplication(_ notification: Notification) {
@@ -506,10 +526,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func syncMenuStates() {
         // Mirror runtime state from UserDefaults whenever any preference changes
-        // (SwiftUI Settings writes directly via @AppStorage).
-        clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
-        shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
-        keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
+        // (SwiftUI Settings writes directly via @AppStorage). The toggle rows use
+        // custom views that read live state at draw time, so they refresh on the
+        // next menu open — no `.state` mirroring needed here (and `.state` stays
+        // pinned to `.on` to keep the state column reserved).
         applySettingsShortcut(to: settingsMenuItem)
 
         let defaultsVoice = UserDefaults.standard.object(forKey: Self.voiceEnabledKey) as? Bool ?? true
@@ -523,32 +543,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             speechEngine.locale = newLocale
         }
 
-        applyVoiceShortcut(to: voiceEnabledMenuItem)
+        voiceToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString())
         rebuildPersonasMenu()
 
         // Voice trigger key may have changed — clear any stuck trigger state.
         keyMonitor.resetAllInputState(reason: .settingsReload)
-    }
-
-    private func applyVoiceShortcut(to item: NSMenuItem) {
-        guard let cfg = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger) else {
-            item.title = voiceEnabledMenuTitle
-            item.keyEquivalent = ""
-            item.keyEquivalentModifierMask = []
-            return
-        }
-
-        let rep = cfg.menuRepresentation
-        if rep.key.isEmpty {
-            item.keyEquivalent = ""
-            item.keyEquivalentModifierMask = []
-            item.title = "\(voiceEnabledMenuTitle)\t\(cfg.displayString())"
-            return
-        }
-
-        item.title = voiceEnabledMenuTitle
-        item.keyEquivalent = rep.key
-        item.keyEquivalentModifierMask = rep.modifiers
     }
 
     private func rebuildPersonasMenu() {
