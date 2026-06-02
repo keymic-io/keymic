@@ -104,10 +104,19 @@ final class ClipboardMonitor {
             : ("public.tiff", .tiff)
         guard let data = pasteboard.data(forType: preferType) else { return }
 
-        let (w, h) = decodeImageDimensions(data: data)
-        store.add(
-            image: data, format: format, width: w, height: h,
-            sourceBundleID: source.bundleID, sourceAppName: source.name)
+        // Dimension decode + SHA-256 + the (up to 20 MB) atomic disk write are heavy
+        // enough to stall the main thread — and the event tap lives on its run loop,
+        // so a stall briefly drops every global hotkey. Do that work off-main, then
+        // commit to SwiftData back on the main actor (mainContext is main-affine).
+        let store = self.store
+        let src = source
+        Task.detached(priority: .utility) {
+            let (w, h) = Self.decodeImageDimensions(data: data)
+            guard let prepared = store.prepareImage(data: data, format: format, width: w, height: h) else { return }
+            await MainActor.run {
+                store.commitImage(prepared, sourceBundleID: src.bundleID, sourceAppName: src.name)
+            }
+        }
     }
 
     private func captureFile(source: (bundleID: String?, name: String?)) {
@@ -135,7 +144,7 @@ final class ClipboardMonitor {
         store.add(text: text, sourceBundleID: source.bundleID, sourceAppName: source.name)
     }
 
-    private func decodeImageDimensions(data: Data) -> (Int, Int) {
+    nonisolated private static func decodeImageDimensions(data: Data) -> (Int, Int) {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
             let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
             let w = props[kCGImagePropertyPixelWidth] as? Int,

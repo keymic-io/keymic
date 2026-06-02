@@ -2,7 +2,10 @@ import Foundation
 
 protocol KeychainBackend {
     func write(account: String, secret: String) throws
-    func read(account: String) throws -> String
+    /// Reads a secret. `async` because the concrete backend may show a biometric
+    /// prompt — awaiting it must never block the caller's thread (the event tap
+    /// lives on the main run loop and would be starved by a synchronous wait).
+    func read(account: String) async throws -> String
     func delete(account: String) throws
 }
 
