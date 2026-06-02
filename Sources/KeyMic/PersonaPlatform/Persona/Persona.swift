@@ -79,7 +79,7 @@ struct Persona: Codable, Identifiable, Equatable {
         return [
             Persona(
                 id: "builtin-default",
-                name: "Default",
+                name: String(localized: "Speech Polish"),
                 icon: "sparkles",
                 stylePrompt: """
                     You are a conservative speech recognition error corrector. \

@@ -129,8 +129,10 @@ final class PersonaStore {
         var result: [Persona] = []
         for seed in seeds {
             if var existing = loaded.first(where: { $0.id == seed.id }) {
-                // Built-in identity fields (incl. injectionStrategy) follow the seed.
+                // Built-in identity fields follow the seed: injectionStrategy (destination)
+                // and name (immutable in UI + localized, so it tracks the current language).
                 existing.injectionStrategy = seed.injectionStrategy
+                existing.name = seed.name
                 result.append(existing)
             } else {
                 result.append(seed)
