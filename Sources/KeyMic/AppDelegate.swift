@@ -60,6 +60,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var personasMenu: NSMenu?
     private var keyMappingMenuItem: NSMenuItem!
     private var clipboardMenuItem: NSMenuItem!
+    private weak var clipboardToggleView: ToggleMenuItemView?
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
     private lazy var settingsWindow = SwiftUISettingsWindow()
@@ -368,7 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        // Group 1: voice, persona, clipboard
+        // Group 1: voice, persona
         voiceEnabledMenuItem = NSMenuItem(title: voiceEnabledMenuTitle, action: nil, keyEquivalent: "")
         let voiceView = ToggleMenuItemView(
             title: voiceEnabledMenuTitle,
@@ -385,7 +386,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voiceToggleView = voiceView
         menu.addItem(voiceEnabledMenuItem)
 
-        personasRootMenuItem = NSMenuItem(title: String(localized: "Default Persona"), action: nil, keyEquivalent: "")
+        personasRootMenuItem = NSMenuItem(title: String(localized: "Set Voice Persona"), action: nil, keyEquivalent: "")
         personasRootMenuItem.image = symbolImage("person.crop.circle.badge.checkmark")
         let personasMenu = NSMenu()
         personasRootMenuItem.submenu = personasMenu
@@ -393,20 +394,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildPersonasMenu()
         menu.addItem(personasRootMenuItem)
 
-        clipboardMenuItem = NSMenuItem(title: String(localized: "Clipboard History"), action: nil, keyEquivalent: "")
-        clipboardMenuItem.view = ToggleMenuItemView(
-            title: String(localized: "Clipboard History"),
-            hotkeyText: nil,
-            icon: symbolImage("doc.on.clipboard"),
-            isOn: { ClipboardPreferences.enabled },
-            onToggle: { [weak self] in self?.toggleClipboard() }
-        )
-        clipboardMenuItem.state = .on
-        menu.addItem(clipboardMenuItem)
-
         menu.addItem(.separator())
 
-        // Group 2: keyboard remapping + shortcuts
+        // Group 2: key mapping, shortcuts, clipboard history
         keyMappingMenuItem = NSMenuItem(title: String(localized: "Key Mapping"), action: nil, keyEquivalent: "")
         keyMappingMenuItem.view = ToggleMenuItemView(
             title: String(localized: "Key Mapping"),
@@ -428,6 +418,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         shortcutsMenuItem.state = .on
         menu.addItem(shortcutsMenuItem)
+
+        clipboardMenuItem = NSMenuItem(title: String(localized: "Clipboard History"), action: nil, keyEquivalent: "")
+        let clipboardView = ToggleMenuItemView(
+            title: String(localized: "Clipboard History"),
+            hotkeyText: HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString(),
+            icon: symbolImage("doc.on.clipboard"),
+            isOn: { ClipboardPreferences.enabled },
+            onToggle: { [weak self] in self?.toggleClipboard() }
+        )
+        clipboardMenuItem.view = clipboardView
+        clipboardToggleView = clipboardView
+        clipboardMenuItem.state = .on
+        menu.addItem(clipboardMenuItem)
 
         menu.addItem(.separator())
 
@@ -544,6 +547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         voiceToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString())
+        clipboardToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString())
         rebuildPersonasMenu()
 
         // Voice trigger key may have changed — clear any stuck trigger state.
@@ -553,6 +557,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func rebuildPersonasMenu() {
         guard let personasMenu else { return }
         let personas = PersonaStore.shared.personas
+
+        // The root item shows the active persona's name, or the default label when none.
+        personasRootMenuItem?.title = PersonaStore.shared.activePersona?.name
+            ?? String(localized: "Set Voice Persona")
 
         // Fast path: if persona identity + title + hotkey are unchanged, just redraw
         // existing views (preserves NSMenu tracking state while the submenu is open).

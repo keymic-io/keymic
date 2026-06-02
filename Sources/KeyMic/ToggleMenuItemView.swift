@@ -26,6 +26,11 @@ final class ToggleMenuItemView: NSView {
     private static let iconColumnWidth: CGFloat = 22
     private static let rightPadding: CGFloat = 14
     private static let hotkeyGap: CGFloat = 18
+    // Trailing inset for the shortcut text. Larger than `rightPadding` because the
+    // menu reserves a trailing gutter for the submenu-disclosure arrow (the "Set
+    // Voice Persona" row has a submenu), and the system right-aligns the other rows'
+    // key-equivalents to the LEFT of that gutter. Match it so all shortcuts line up.
+    private static let shortcutTrailingInset: CGFloat = 24
 
     private static var titleX: CGFloat { stateColumnWidth + iconColumnWidth }
 
@@ -70,12 +75,11 @@ final class ToggleMenuItemView: NSView {
 
     static func measureWidth(title: String, hotkeyText: String?) -> CGFloat {
         let titleSize = (title as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)])
-        var width = titleX + titleSize.width + rightPadding
         if let hk = hotkeyText {
             let hkSize = (hk as NSString).size(withAttributes: [.font: NSFont.menuFont(ofSize: 0)])
-            width += hotkeyGap + hkSize.width
+            return ceil(titleX + titleSize.width + hotkeyGap + hkSize.width + shortcutTrailingInset)
         }
-        return ceil(width)
+        return ceil(titleX + titleSize.width + rightPadding)
     }
 
     override func updateTrackingAreas() {
@@ -145,7 +149,7 @@ final class ToggleMenuItemView: NSView {
 
         if let hk = hotkeyText {
             let size = (hk as NSString).size(withAttributes: hkAttrs)
-            let x = bounds.width - size.width - Self.rightPadding
+            let x = bounds.width - size.width - Self.shortcutTrailingInset
             (hk as NSString).draw(at: NSPoint(x: x, y: textY), withAttributes: hkAttrs)
         }
     }
