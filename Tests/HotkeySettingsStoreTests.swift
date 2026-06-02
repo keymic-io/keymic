@@ -55,7 +55,7 @@ struct HotkeySettingsStoreTests {
                 stylePrompt: "",
                 temperature: 0.3,
                 hotkey: "cmd+alt+1",
-                contextMode: .none,
+                contextSources: [],
                 builtIn: false,
                 createdAt: Date(),
                 updatedAt: Date()
@@ -66,7 +66,7 @@ struct HotkeySettingsStoreTests {
         assert(store.rawHotkey(for: .clipboardPanel) == "alt+v", "clipboard default should be alt+v")
         assert(store.rawHotkey(for: .vaultPanel) == "alt+b", "vault default should be alt+b")
         assert(store.rawHotkey(for: .settingsWindow) == "cmd+shift+,", "settings default should be cmd+shift+,")
-        assert(store.rawHotkey(for: .screenshot) == "cmd+shift+a", "screenshot default should be cmd+shift+a")
+        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "screenshot default should be ctrl+alt+a")
         for feature in HotkeyFeature.allCases {
             assert(store.hotkey(for: feature) != nil, "default hotkey for \(feature.rawValue) should parse")
         }
@@ -112,7 +112,7 @@ struct HotkeySettingsStoreTests {
         defaults.set(try JSONEncoder().encode(snapshot), forKey: HotkeySettingsStore.userDefaultsKey)
 
         let store = makeStore(defaults: defaults)
-        assert(store.rawHotkey(for: .screenshot) == "cmd+shift+a", "invalid feature hotkey should fall back to default")
+        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "invalid feature hotkey should fall back to default")
     }
 
     private static func testRejectsDuplicateAcrossFeatures() throws {
@@ -235,7 +235,7 @@ struct HotkeySettingsStoreTests {
         defaults.set(try JSONEncoder().encode(snapshot), forKey: HotkeySettingsStore.userDefaultsKey)
 
         let store = makeStore(defaults: defaults)
-        assert(store.rawHotkey(for: .screenshot) == "cmd+shift+a", "stored pure-modifier feature hotkey should fall back to default")
+        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "stored pure-modifier feature hotkey should fall back to default")
         assert(store.rawHotkey(for: .clipboardPanel) == "alt+v", "stored single-key feature hotkey should fall back to default")
     }
 
@@ -261,13 +261,13 @@ struct HotkeySettingsStoreTests {
         try store.resetHotkey(for: .screenshot)
 
         store = makeStore(defaults: defaults)
-        assert(store.rawHotkey(for: .screenshot) == "cmd+shift+a", "reset feature hotkey should persist default")
+        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "reset feature hotkey should persist default")
     }
 
     private static func testResetHotkeyRejectsConflictingDefault() throws {
         let store = makeStore()
         try store.setHotkey(HotkeyConfig.parse("ctrl+shift+a")!, for: .screenshot)
-        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+shift+a")!, personaId: "p1")
+        try store.setPersonaHotkey(HotkeyConfig.parse("ctrl+alt+a")!, personaId: "p1")
 
         do {
             try store.resetHotkey(for: .screenshot)

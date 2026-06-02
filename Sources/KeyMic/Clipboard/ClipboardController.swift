@@ -5,7 +5,7 @@ import os
 @MainActor
 final class ClipboardController {
     private static let logger = Logger(subsystem: "io.keymic.app", category: "ClipboardController")
-    private let store: ClipboardStore
+    let store: ClipboardStore
     let vaultStore: VaultStore
     private let scanner: SecretScanner
     weak var overlayPanel: OverlayPanel?
@@ -13,6 +13,13 @@ final class ClipboardController {
     private let monitor: ClipboardMonitor
     private lazy var panel: ClipboardPanel = makePanel()
     private weak var pasteTargetApplication: NSRunningApplication?
+
+    /// Multi-selection bridge between ClipboardPanel and external triggers (hotkey, magic-wand).
+    let selectionBridge = ClipboardPanelSelectionBridge()
+
+    /// Injected by AppDelegate after construction. Optional so the controller is testable
+    /// without an LLM dependency.
+    var transformController: ClipboardTransformController?
 
     private static let pasteSourceID: CGEventSourceStateID = .combinedSessionState
 
@@ -50,6 +57,21 @@ final class ClipboardController {
     func start() {
         guard ClipboardPreferences.enabled else { return }
         monitor.start()
+        // Pre-warm the panel during idle. The first ⌥V press otherwise pays the
+        // one-time NSHostingController + SwiftUI graph construction synchronously on
+        // the main thread (see `makePanel`'s "first-open hosting init" trace marks).
+        // That stall can exceed the event-tap timeout — and the tap shares the main
+        // run loop — silently dropping every global hotkey (incl. ⌥V) until recovery.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.prewarm()
+        }
+    }
+
+    /// Build the lazy clipboard panel (and its NSHostingController) ahead of first
+    /// use so the construction cost lands during idle, not on the ⌥V hotkey press.
+    /// Idempotent — resolving the lazy `panel` again is a no-op.
+    func prewarm() {
+        _ = panel
     }
 
     /// One-time schema upgrade. Drops every ClipboardItem (preserving VaultItem
@@ -72,17 +94,31 @@ final class ClipboardController {
     }
 
     func toggle(initialTab: PanelTab = .clipboard) {
+        let trace = ClipboardOpenTrace.shared
+        trace.begin(reason: "toggle(\(initialTab))")
+
+        // First access to the lazy `panel` triggers makePanel() on the very first
+        // open (one-time NSHostingController construction); mark it explicitly.
+        let panel = self.panel
+        trace.mark("panel.ready")
+
         if panel.isVisible {
             if panel.currentTab == initialTab {
                 panel.dismiss()
             } else {
                 panel.switchTab(to: initialTab)
             }
+            trace.end("toggle no-op (already visible)")
             return
         }
-        guard ClipboardPreferences.enabled else { return }
+        guard ClipboardPreferences.enabled else {
+            trace.end("disabled")
+            return
+        }
         pasteTargetApplication = NSWorkspace.shared.frontmostApplication
+        trace.mark("frontmostApplication")
         panel.showAtCursor(initialTab: initialTab)
+        trace.mark("showAtCursor returned")
     }
 
     func quickPaste(index: Int) {
@@ -90,10 +126,48 @@ final class ClipboardController {
         panel.quickPaste(index: index)
     }
 
+    /// Triggered by ⌥L hotkey, the Transform button, and the per-row magic-wand button.
+    func transformSelected() {
+        guard let transformer = transformController else { return }
+
+        // panel closed → open it + toast; do not invoke LLM
+        if !isPanelVisible {
+            toggle(initialTab: .clipboard)
+            overlayPanel?.showTransientToast(
+                String(localized: "Select items to transform"),
+                durationSeconds: 2.0
+            )
+            return
+        }
+
+        let items = currentSelectedItems()
+        transformer.transform(items: items)
+    }
+
+    private func currentSelectedItems() -> [ClipboardItem] {
+        let visible = selectionBridge.visibleOrderedIDs
+        let selected = selectionBridge.selectedIDs
+
+        let idsToTransform: [UUID]
+        if !selected.isEmpty {
+            idsToTransform = visible.filter { selected.contains($0) }
+        } else if let cursor = selectionBridge.lastClickedID {
+            idsToTransform = [cursor]
+        } else if let firstVisible = visible.first {
+            idsToTransform = [firstVisible]
+        } else {
+            idsToTransform = []
+        }
+
+        return idsToTransform.compactMap { id in
+            store.item(id: id)
+        }
+    }
+
     /// Hook for other components (e.g. TextInjector) that write to the pasteboard themselves
     /// and want their writes excluded from clipboard history.
     func markPasteboardWrite(_ text: String) {
-        monitor.markIgnored(text: text)
+        monitor.markIgnoredChangeCount(pasteboard.changeCount)
     }
 
     @objc private func preferencesChanged() {
@@ -114,47 +188,53 @@ final class ClipboardController {
     }
 
     private func makePanel() -> ClipboardPanel {
-        ClipboardPanel(
+        let trace = ClipboardOpenTrace.shared
+        trace.mark("makePanel begin (first-open hosting init)")
+        defer { trace.mark("makePanel end") }
+        return ClipboardPanel(
             modelContainer: store.modelContainer,
             clipboardCacheURL: store.clipboardCacheURL,
+            selectionBridge: selectionBridge,
             onPaste: { [weak self] item in self?.paste(item) },
             onDelete: { [weak self] id in self?.store.delete(id: id) },
             onTogglePin: { [weak self] id in self?.store.togglePin(id: id) },
             onVaultPaste: { [weak self] item in self?.pasteVault(item) },
             onVaultDelete: { [weak self] item in self?.vaultStore.delete(item) },
-            onDismiss: { [weak self] in self?.panel.dismiss() }
+            onDismiss: { [weak self] in self?.panel.dismiss() },
+            onTransformSelected: { [weak self] in self?.transformSelected() }
         )
     }
 
     private func pasteVault(_ item: VaultItem) {
+        // Snapshot the current pasteboard *now*, before the biometric prompt.
         let savedItems = pasteboard.copyItems()
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        // `vaultStore.reveal` awaits a TouchID/passcode prompt. Running it inside a
+        // Task (rather than a synchronous call) keeps the main thread — and the
+        // `CGEvent` tap on its run loop — responsive while the prompt is up; a prior
+        // implementation blocked main on a semaphore, which froze every global hotkey
+        // (incl. ⌥V) until the user answered. VaultStore is @MainActor, so the
+        // continuation and the pasteboard/Cmd+V work below resume on the main thread.
+        Task { @MainActor [weak self] in
             guard let self else { return }
             let plain: String
             do {
-                plain = try self.vaultStore.reveal(item)
+                plain = try await self.vaultStore.reveal(item)
             } catch {
-                DispatchQueue.main.async { [weak self] in
-                    self?.panel.dismiss()
-                }
+                self.panel.dismiss()
                 return
             }
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                let writeChangeCount = self.pasteboard.write(plain)
-                self.monitor.markIgnored(text: plain)
-                self.panel.dismiss()
-                self.activateTargetAndSendCommandV()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                    guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
-                    if let savedItems {
-                        self.pasteboard.writeItems(savedItems)
-                        if let savedText = self.pasteboard.string() {
-                            self.monitor.markIgnored(text: savedText)
-                        }
-                    } else {
-                        self.pasteboard.clear()
-                    }
+            let writeChangeCount = self.pasteboard.write(plain)
+            self.monitor.markIgnoredChangeCount(writeChangeCount)
+            self.panel.dismiss()
+            self.activateTargetAndSendCommandV()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self, self.pasteboard.changeCount == writeChangeCount else { return }
+                if let savedItems {
+                    let restoreCount = self.pasteboard.writeItems(savedItems)
+                    self.monitor.markIgnoredChangeCount(restoreCount)
+                } else {
+                    let clearCount = self.pasteboard.clear()
+                    self.monitor.markIgnoredChangeCount(clearCount)
                 }
             }
         }
@@ -175,8 +255,8 @@ final class ClipboardController {
 
     private func pasteText(_ item: ClipboardItem) {
         store.bumpToTop(id: item.id)
-        pasteboard.write(item.text)
-        monitor.markIgnored(token: item.text)
+        let cc = pasteboard.write(item.text)
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
@@ -195,10 +275,8 @@ final class ClipboardController {
         }
         let format: ImageFormat = url.pathExtension.lowercased() == "tiff" ? .tiff : .png
         store.bumpToTop(id: item.id)
-        pasteboard.write(payloads: [(type: format.pasteboardType, data: data)])
-        if let hash = item.contentHash {
-            monitor.markIgnored(token: hash)
-        }
+        let cc = pasteboard.write(payloads: [(type: format.pasteboardType, data: data)])
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
@@ -211,8 +289,8 @@ final class ClipboardController {
         }
         let url = URL(fileURLWithPath: path)
         store.bumpToTop(id: item.id)
-        pasteboard.write(fileURL: url)
-        monitor.markIgnored(token: path)
+        let cc = pasteboard.write(fileURL: url)
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
@@ -228,16 +306,14 @@ final class ClipboardController {
         ]
         payloads.append((type: "public.utf8-plain-text", data: Data(item.text.utf8)))
         store.bumpToTop(id: item.id)
-        pasteboard.write(payloads: payloads)
-        monitor.markIgnored(token: item.text)
+        let cc = pasteboard.write(payloads: payloads)
+        monitor.markIgnoredChangeCount(cc)
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
 
     private func activateTargetAndSendCommandV() {
-        if let target = pasteTargetApplication, !target.isTerminated {
-            target.activate(options: [])
-        }
+        OutputRouter.shared.activateOriginatingAppSync(pasteTargetApplication)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             Self.synthesizeCommandV()
         }

@@ -53,6 +53,10 @@ enum HIDRemapper {
                 task.waitUntilExit()
                 if task.terminationStatus != 0 {
                     log.error("hidutil returned \(task.terminationStatus, privacy: .public) for \(json, privacy: .public)")
+                } else {
+                    log.info(
+                        "hidutil set \(entries.count, privacy: .public) mapping(s) [\(synchronously ? "sync" : "async", privacy: .public)]"
+                    )
                 }
             } catch {
                 log.error("hidutil launch failed: \(error.localizedDescription, privacy: .public)")

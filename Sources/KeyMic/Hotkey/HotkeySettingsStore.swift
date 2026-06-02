@@ -11,6 +11,8 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
     case vaultPanel
     case settingsWindow
     case screenshot
+    case selectedTextEditor
+    case clipboardTransform
 
     var displayName: String {
         switch self {
@@ -19,6 +21,8 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         case .vaultPanel: return String(localized: "Vault panel")
         case .settingsWindow: return String(localized: "Settings window")
         case .screenshot: return String(localized: "Screenshot")
+        case .selectedTextEditor: return String(localized: "Selected text editor")
+        case .clipboardTransform: return String(localized: "Clipboard transformer")
         }
     }
 
@@ -27,7 +31,9 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.clipboardPanel.rawValue: "alt+v",             // Open the clipboard history panel.
         HotkeyFeature.vaultPanel.rawValue: "alt+b",                 // Open the Vault panel.
         HotkeyFeature.settingsWindow.rawValue: "cmd+shift+,",       // Open the Settings window.
-        HotkeyFeature.screenshot.rawValue: "cmd+shift+a",           // Open screenshot selection and annotation.
+        HotkeyFeature.screenshot.rawValue: "ctrl+alt+a",            // Open screenshot selection and annotation.
+        HotkeyFeature.selectedTextEditor.rawValue: "alt+e",         // Open Selected Text Editor panel.
+        HotkeyFeature.clipboardTransform.rawValue: "alt+l",         // Transform selected clipboard items via LLM.
     ]
 }
 

@@ -4,6 +4,7 @@ import os.log
 
 private let logger = Logger(subsystem: "io.keymic.app", category: "AppDelegate")
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
@@ -60,14 +61,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
+    private var selectedTextEditorController: SelectedTextEditorController!
+    private var clipboardTransformController: ClipboardTransformController!
 
-    private var voice = VoiceStateMachine()
-    private var graceTimer: Timer?
-    private var recordingTimeoutTimer: Timer?
-    private static let recordingMaxDuration: TimeInterval = 6 * 60
-    private static let graceDuration: TimeInterval = 2.0
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
+
+    private var personaEngine: PersonaEngine!
+    private var voiceTrigger: VoiceTrigger!
+    private var speechSessionHost: DefaultSpeechSessionHost!
+    private var llmClient: OpenAICompatibleLLMClient!
 
     /// Cached frontmost-app bundle ID. Updated via `NSWorkspace.didActivateApplicationNotification`.
     /// KeyMonitor's event-tap callback reads this O(1); calling
@@ -86,10 +89,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.object(forKey: AppDelegate.voiceEnabledKey) as? Bool ?? true
 
     private var voiceEnabledMenuItem: NSMenuItem!
+    private weak var voiceToggleView: ToggleMenuItemView?
     private var personasRootMenuItem: NSMenuItem!
     private var personasMenu: NSMenu?
     private var keyMappingMenuItem: NSMenuItem!
     private var clipboardMenuItem: NSMenuItem!
+    private weak var clipboardToggleView: ToggleMenuItemView?
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
     private lazy var settingsWindow = SwiftUISettingsWindow(
@@ -129,6 +134,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if activateExistingInstanceIfNeeded() { return }
 
+        // Clear any stale HID-level mappings left by a previous crash/SIGKILL.
+        // `applicationWillTerminate` calls reset() on clean quit, but force-quit
+        // or crash leaves hidutil UserKeyMapping active.
+        HIDRemapper.reset()
+        // `KeyMappingManager`'s singleton was already initialized via `keyMonitor`'s
+        // stored property (default arg `.shared`), so its init-time `apply` was enqueued
+        // and ran *before* the reset above on HIDRemapper's shared serial queue — leaving
+        // the (empty) reset as the last write. Reapply now so our mappings land *after*
+        // the reset; otherwise Caps Lock→Ctrl silently does nothing until the user toggles
+        // key mapping off/on.
+        KeyMappingManager.shared.reapplyHIDMappings()
+
         AppScreen.refresh()
 
         setupMainMenu()
@@ -159,17 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyMonitor.currentFrontBundleID = { [weak self] in self?.cachedFrontBundleID }
 
-        keyMonitor.onTriggerDown = { [weak self] in self?.triggerDown() }
-        keyMonitor.onTriggerUp = { [weak self] in self?.triggerUp() }
-        keyMonitor.onTriggerInterrupted = { [weak self] in self?.cancelRecording() }
-        keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in self?.extraneousKeyDuringVoice() }
-        keyMonitor.isVoiceActive = { [weak self] in self?.voice.state.isActive ?? false }
         // Wire `onAction` synchronously right after `keyMonitor.start()` so a
         // hotkey pressed during the first ~10–100ms of launch isn't matched by
         // the tap (consuming the keystroke) only to then dispatch into a nil
         // `onAction`. `actionRunner` resolves `agentRunner` lazily via
         // `agentRunnerProvider`, so it's safe to wire before the runtime is
-        // fully constructed.
+        // fully constructed. (Voice trigger callbacks are wired below, after the
+        // PersonaPlatform graph — VoiceTrigger — is constructed.)
         keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
 
         Task { @MainActor in
@@ -195,6 +208,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textInjector.onMarkIgnored = { [weak self] text in
             self?.clipboardController.markPasteboardWrite(text)
         }
+        SelectionTextProvider.onMarkIgnored = { [weak self] text in
+            self?.clipboardController.markPasteboardWrite(text)
+        }
+        OutputRouter.shared = OutputRouter(
+            inject: { [weak self] text in self?.textInjector.inject(text) },
+            onMarkIgnored: { [weak self] text in
+                self?.clipboardController.markPasteboardWrite(text)
+            },
+            confirmShellRun: { command in
+                await ShellConfirmationSheet.present(command: command)
+            })
+
+        llmClient = OpenAICompatibleLLMClient()
+        personaEngine = PersonaEngine(
+            llmClient: llmClient,
+            clipboardStore: clipboardController.store,
+            outputRouter: OutputRouter.shared
+        )
+        speechSessionHost = DefaultSpeechSessionHost(speechEngine: speechEngine)
+        voiceTrigger = VoiceTrigger(
+            engine: personaEngine,
+            sessionHost: speechSessionHost,
+            overlayPanel: overlayPanel,
+            personaStore: PersonaStore.shared,
+            textInjector: textInjector
+        )
+        keyMonitor.onTriggerDown = { [weak self] in
+            guard let self, self.isVoiceEnabled else { return }
+            Task { @MainActor in self.voiceTrigger.onTriggerDown() }
+        }
+        keyMonitor.onTriggerUp = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onTriggerUp() }
+        }
+        keyMonitor.onTriggerInterrupted = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onTriggerInterrupted() }
+        }
+        keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in
+            Task { @MainActor in self?.voiceTrigger.onExtraneousKeyDuringVoice() }
+        }
+        keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isActive ?? false }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onVaultHotkey = { [weak self] in
             self?.clipboardController.toggle(initialTab: .vault)
@@ -204,6 +257,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
+        selectedTextEditorController = SelectedTextEditorController(
+            speechEngine: speechEngine,
+            overlayPanel: overlayPanel
+        )
+        keyMonitor.onSelectedTextEditorHotkey = { [weak self] in
+            self?.selectedTextEditorController.open()
+        }
+        clipboardTransformController = ClipboardTransformController(
+            store: clipboardController.store,
+            overlayPanel: overlayPanel
+        )
+        clipboardController.transformController = clipboardTransformController
+        keyMonitor.onClipboardTransformHotkey = { [weak self] in
+            self?.clipboardController.transformSelected()
+        }
         secureInputMonitor.onEnter = { [weak self] in self?.keyMonitor.onSecureInputEnter() }
         secureInputMonitor.onExit = { [weak self] in self?.keyMonitor.onSecureInputExit() }
         secureInputMonitor.start()
@@ -221,6 +289,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (.vaultPanel, .vaultPanel, "Vault panel"),
             (.settingsWindow, .settingsWindow, "Settings window"),
             (.screenshot, .screenshot, "Screenshot"),
+            (.selectedTextEditor, .selectedTextEditor, "Selected text editor"),
+            (.clipboardTransform, .clipboardTransform, "Clipboard transformer"),
         ]
         for (feature, owner, purpose) in builtIns {
             if let cfg = hotkeys.hotkey(for: feature) {
@@ -259,13 +329,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        HIDRemapper.reset()
+        // Only the primary instance (lock holder) owns the hidutil UserKeyMapping.
+        // A second instance terminating itself in activateExistingInstanceIfNeeded()
+        // must not reset, or it wipes the running primary's mapping.
+        if let singleInstanceLockURL {
+            HIDRemapper.reset()
+            SingleInstance.releaseLock(at: singleInstanceLockURL)
+        }
         if let token = personaObserverToken {
             NotificationCenter.default.removeObserver(token)
             personaObserverToken = nil
-        }
-        if let singleInstanceLockURL {
-            SingleInstance.releaseLock(at: singleInstanceLockURL)
         }
     }
 
@@ -284,185 +357,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    // MARK: - Key events
-
-    private func triggerDown() {
-        guard isVoiceEnabled else { return }
-        guard !voice.state.isListening else { return }
-        LLMRefiner.shared.cancel()
-        do {
-            let session = try speechEngine.startSession()
-            let effects = voice.handle(.triggerDown(session: session))
-            apply(effects)
-        } catch let err as VoiceError {
-            apply(voice.handle(.error(err)))
-        } catch {
-            apply(voice.handle(.error(.audioEngineFailed(error.localizedDescription))))
-        }
-    }
-
-    private func triggerUp() {
-        guard voice.state.isActive else { return }
-        speechEngine.endAudio()
-        apply(voice.handle(.triggerUp))
-    }
-
-    private func cancelRecording() {
-        guard voice.state.isActive else { return }
-        apply(voice.handle(.extraneousKey))
-    }
-
-    private func extraneousKeyDuringVoice() {
-        guard voice.state.isActive else { return }
-        apply(voice.handle(.extraneousKey))
-    }
-
-    private func apply(_ effects: [VoiceSideEffect]) {
-        for e in effects {
-            switch e {
-            case .cancelSession(let s):
-                s.cancel()
-            case .stopAudio(_):
-                speechEngine.endAudio()
-            case .startGraceTimer:
-                graceTimer?.invalidate()
-                graceTimer = Timer.scheduledTimer(withTimeInterval: Self.graceDuration, repeats: false) { [weak self] _ in
-                    self?.apply(self?.voice.handle(.graceTimeout) ?? [])
-                }
-            case .cancelGraceTimer:
-                graceTimer?.invalidate(); graceTimer = nil
-            case .startRecordingTimeoutTimer(_):
-                recordingTimeoutTimer?.invalidate()
-                recordingTimeoutTimer = Timer.scheduledTimer(withTimeInterval: Self.recordingMaxDuration, repeats: false) { [weak self] _ in
-                    self?.apply(self?.voice.handle(.recordingTimeout) ?? [])
-                }
-            case .cancelRecordingTimeoutTimer:
-                recordingTimeoutTimer?.invalidate(); recordingTimeoutTimer = nil
-            case .updateStatusIcon(let on):
-                updateStatusIcon(recording: on)
-            case .overlayShow(let t):
-                overlayPanel.show(text: t)
-            case .overlayUpdate(let t):
-                overlayPanel.updateText(t)
-            case .overlayShowRefining:
-                overlayPanel.showRefining()
-            case .overlayDismiss:
-                overlayPanel.dismiss()
-            case .overlayShowCanceled:
-                overlayPanel.showMessage(String(localized: "Voice canceled"))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in self?.overlayPanel.dismiss() }
-            case .overlayShowError(let err):
-                overlayPanel.showMessage(err.displayMessage)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in self?.overlayPanel.dismiss() }
-            case .injectAndFinish(let text):
-                finishTranscription(text: text)
-            case .playSound(let name):
-                NSSound(named: .init(name))?.play()
-            case .bufferPartial, .clearPartial:
-                break  // lastPartial lives in the reducer; runtime doesn't duplicate it
-            }
-        }
-    }
+    // Voice pipeline lives in PersonaPlatform/Triggers/VoiceTrigger.
 
     // MARK: - Speech callbacks
 
     private func setupSpeechCallbacks() {
         speechEngine.onPartialResult = { [weak self] text in
             DispatchQueue.main.async { [weak self] in
-                self?.apply(self?.voice.handle(.partialResult(text)) ?? [])
+                self?.speechSessionHost?.routePartial(text)
             }
         }
         speechEngine.onFinalResult = { [weak self] text in
             DispatchQueue.main.async { [weak self] in
-                self?.apply(self?.voice.handle(.finalResult(text)) ?? [])
+                self?.speechSessionHost?.routeFinal(text)
             }
         }
         speechEngine.onError = { [weak self] msg in
             DispatchQueue.main.async { [weak self] in
-                self?.apply(self?.voice.handle(.error(.audioEngineFailed(msg))) ?? [])
+                self?.speechSessionHost?.routeError(msg)
             }
         }
         speechEngine.onAudioLevel = { [weak self] level in
-            self?.overlayPanel.updateAudioLevel(level)
+            DispatchQueue.main.async { [weak self] in
+                self?.speechSessionHost?.routeAudioLevel(level)
+            }
         }
         speechEngine.onLocaleUnavailable = { [weak self] msg in
             DispatchQueue.main.async { [weak self] in
                 self?.showAlert(title: String(localized: "Language Unavailable"), message: msg)
             }
         }
-    }
-
-    private func finishTranscription(text: String) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { overlayPanel.dismiss(); return }
-
-        let persona = PersonaStore.shared.activePersona
-        let refiner = LLMRefiner.shared
-        guard let persona, refiner.isReady else {
-            overlayPanel.dismiss()
-            injectAfterPop(trimmed)
-            return
-        }
-
-        let userText = buildUserText(transcript: trimmed, contextMode: persona.contextMode)
-        overlayPanel.showRefining()
-        refiner.refine(userText, systemPrompt: persona.stylePrompt, temperature: persona.temperature) { [weak self] result in
-            guard let self else { return }
-            switch result {
-            case .success(let refined):
-                let finalText = refined.isEmpty ? trimmed : refined
-                self.overlayPanel.dismiss()
-                self.injectAfterPop(finalText)
-            case .failure(let error):
-                logger.error("Refine failed: \(error.localizedDescription, privacy: .public)")
-                self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-                    self?.overlayPanel.dismiss()
-                    self?.injectAfterPop(trimmed)
-                }
-            }
-        }
-    }
-
-    /// Builds the LLM user prompt, injecting selected text + clipboard as context
-    /// when the persona's contextMode is `.selectionAndClipboard`.
-    private func buildUserText(transcript: String, contextMode: ContextMode) -> String {
-        guard contextMode == .selectionAndClipboard else { return transcript }
-
-        let selection =
-            SelectionTextProvider.currentSelection()?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let clipboard =
-            NSPasteboard.general.string(forType: .string)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        var sections: [String] = []
-        var includeTranscript = true
-
-        if !selection.isEmpty {
-            sections.append("[Selected text]\n\(selection)")
-            if transcript == selection || selection.utf16.count > 2000 {
-                includeTranscript = false
-            }
-        }
-        if !clipboard.isEmpty && clipboard != selection {
-            sections.append("[Recent clipboard]\n\(clipboard)")
-        }
-        if includeTranscript {
-            sections.append("[User said]\n\(transcript)")
-        }
-
-        let result = sections.joined(separator: "\n\n")
-        // Cap at 7500 UTF-16 units, snapped to character boundary (avoids splitting surrogate pairs).
-        if result.utf16.count > 7500 {
-            var trimmed = ""
-            for ch in result {
-                if trimmed.utf16.count + ch.utf16.count > 7500 { break }
-                trimmed.append(ch)
-            }
-            return trimmed
-        }
-        return result
     }
 
     private func injectAfterPop(_ text: String) {
@@ -498,15 +422,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        voiceEnabledMenuItem = NSMenuItem(
-            title: voiceEnabledMenuTitle, action: #selector(toggleVoiceEnabled), keyEquivalent: "")
-        voiceEnabledMenuItem.target = self
-        voiceEnabledMenuItem.state = isVoiceEnabled ? .on : .off
-        voiceEnabledMenuItem.image = symbolImage("mic.fill")
-        applyVoiceShortcut(to: voiceEnabledMenuItem)
+        // Group 1: voice, persona
+        voiceEnabledMenuItem = NSMenuItem(title: voiceEnabledMenuTitle, action: nil, keyEquivalent: "")
+        let voiceView = ToggleMenuItemView(
+            title: voiceEnabledMenuTitle,
+            hotkeyText: HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString(),
+            icon: symbolImage("mic.fill"),
+            isOn: { [weak self] in self?.isVoiceEnabled ?? false },
+            onToggle: { [weak self] in self?.toggleVoiceEnabled() }
+        )
+        voiceEnabledMenuItem.view = voiceView
+        // Keep `.state` pinned to `.on` so NSMenu always reserves a state column
+        // and the non-toggle rows below keep a constant indentation. The actual
+        // on/off status is drawn by the view, not the system checkmark.
+        voiceEnabledMenuItem.state = .on
+        voiceToggleView = voiceView
         menu.addItem(voiceEnabledMenuItem)
 
-        personasRootMenuItem = NSMenuItem(title: String(localized: "Default Persona"), action: nil, keyEquivalent: "")
+        personasRootMenuItem = NSMenuItem(title: String(localized: "Set Voice Persona"), action: nil, keyEquivalent: "")
         personasRootMenuItem.image = symbolImage("person.crop.circle.badge.checkmark")
         let personasMenu = NSMenu()
         personasRootMenuItem.submenu = personasMenu
@@ -516,32 +449,50 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(.separator())
 
-        keyMappingMenuItem = NSMenuItem(title: String(localized: "Key Mapping"), action: #selector(toggleKeyMapping), keyEquivalent: "")
-        keyMappingMenuItem.target = self
-        keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
-        keyMappingMenuItem.image = symbolImage("keyboard")
+        // Group 2: key mapping, shortcuts, clipboard history
+        keyMappingMenuItem = NSMenuItem(title: String(localized: "Key Mapping"), action: nil, keyEquivalent: "")
+        keyMappingMenuItem.view = ToggleMenuItemView(
+            title: String(localized: "Key Mapping"),
+            hotkeyText: nil,
+            icon: symbolImage("keyboard"),
+            isOn: { KeyMappingManager.shared.isEnabled },
+            onToggle: { [weak self] in self?.toggleKeyMapping() }
+        )
+        keyMappingMenuItem.state = .on
         menu.addItem(keyMappingMenuItem)
 
-        clipboardMenuItem = NSMenuItem(
-            title: String(localized: "Clipboard History"), action: #selector(toggleClipboard), keyEquivalent: "")
-        clipboardMenuItem.target = self
-        clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
-        clipboardMenuItem.image = symbolImage("doc.on.clipboard")
-        menu.addItem(clipboardMenuItem)
-
-        shortcutsMenuItem = NSMenuItem(title: String(localized: "Shortcuts"), action: #selector(toggleShortcuts), keyEquivalent: "")
-        shortcutsMenuItem.target = self
-        shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
-        shortcutsMenuItem.image = symbolImage("bolt.horizontal")
+        shortcutsMenuItem = NSMenuItem(title: String(localized: "Shortcuts"), action: nil, keyEquivalent: "")
+        shortcutsMenuItem.view = ToggleMenuItemView(
+            title: String(localized: "Shortcuts"),
+            hotkeyText: nil,
+            icon: symbolImage("bolt.horizontal"),
+            isOn: { HotkeyPreferences.enabled },
+            onToggle: { [weak self] in self?.toggleShortcuts() }
+        )
+        shortcutsMenuItem.state = .on
         menu.addItem(shortcutsMenuItem)
 
+        clipboardMenuItem = NSMenuItem(title: String(localized: "Clipboard History"), action: nil, keyEquivalent: "")
+        let clipboardView = ToggleMenuItemView(
+            title: String(localized: "Clipboard History"),
+            hotkeyText: HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString(),
+            icon: symbolImage("doc.on.clipboard"),
+            isOn: { ClipboardPreferences.enabled },
+            onToggle: { [weak self] in self?.toggleClipboard() }
+        )
+        clipboardMenuItem.view = clipboardView
+        clipboardToggleView = clipboardView
+        clipboardMenuItem.state = .on
+        menu.addItem(clipboardMenuItem)
+
+        menu.addItem(.separator())
+
+        // Group 3: settings, updates, quit
         settingsMenuItem = NSMenuItem(title: String(localized: "Settings..."), action: #selector(openSettings), keyEquivalent: "")
         settingsMenuItem.target = self
         settingsMenuItem.image = symbolImage("gearshape")
         applySettingsShortcut(to: settingsMenuItem)
         menu.addItem(settingsMenuItem)
-
-        menu.addItem(.separator())
 
         let checkUpdateItem = NSMenuItem(
             title: String(localized: "Check for Updates…"),
@@ -551,8 +502,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         checkUpdateItem.target = self
         checkUpdateItem.image = symbolImage("arrow.down.circle")
         menu.addItem(checkUpdateItem)
-
-        menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: String(localized: "Quit KeyMic"), action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -605,29 +554,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard enabled != isVoiceEnabled else { return }
         isVoiceEnabled = enabled
         UserDefaults.standard.set(enabled, forKey: Self.voiceEnabledKey)
-        voiceEnabledMenuItem.state = enabled ? .on : .off
+        voiceToggleView?.needsDisplay = true
 
-        if !enabled, voice.state.isActive {
-            apply(voice.handle(.voiceDisabled))
+        if !enabled, let voiceTrigger {
+            Task { @MainActor in voiceTrigger.onTriggerInterrupted() }
         }
     }
 
     @objc private func toggleKeyMapping() {
-        let manager = KeyMappingManager.shared
-        manager.isEnabled.toggle()
-        keyMappingMenuItem.state = manager.isEnabled ? .on : .off
+        KeyMappingManager.shared.isEnabled.toggle()
     }
 
     @objc private func toggleClipboard() {
         let newValue = !ClipboardPreferences.enabled
         UserDefaults.standard.set(newValue, forKey: ClipboardPreferences.enabledKey)
-        clipboardMenuItem.state = newValue ? .on : .off
     }
 
     @objc private func toggleShortcuts() {
         let newValue = !HotkeyPreferences.enabled
         UserDefaults.standard.set(newValue, forKey: HotkeyPreferences.enabledKey)
-        shortcutsMenuItem.state = newValue ? .on : .off
     }
 
     @objc private func workspaceDidActivateApplication(_ notification: Notification) {
@@ -637,10 +582,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func syncMenuStates() {
         // Mirror runtime state from UserDefaults whenever any preference changes
-        // (SwiftUI Settings writes directly via @AppStorage).
-        clipboardMenuItem.state = ClipboardPreferences.enabled ? .on : .off
-        shortcutsMenuItem.state = HotkeyPreferences.enabled ? .on : .off
-        keyMappingMenuItem.state = KeyMappingManager.shared.isEnabled ? .on : .off
+        // (SwiftUI Settings writes directly via @AppStorage). The toggle rows use
+        // custom views that read live state at draw time, so they refresh on the
+        // next menu open — no `.state` mirroring needed here (and `.state` stays
+        // pinned to `.on` to keep the state column reserved).
         applySettingsShortcut(to: settingsMenuItem)
 
         let defaultsVoice = UserDefaults.standard.object(forKey: Self.voiceEnabledKey) as? Bool ?? true
@@ -654,37 +599,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             speechEngine.locale = newLocale
         }
 
-        applyVoiceShortcut(to: voiceEnabledMenuItem)
+        voiceToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString())
+        clipboardToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString())
         rebuildPersonasMenu()
 
         // Voice trigger key may have changed — clear any stuck trigger state.
         keyMonitor.resetAllInputState(reason: .settingsReload)
     }
 
-    private func applyVoiceShortcut(to item: NSMenuItem) {
-        guard let cfg = HotkeySettingsStore.shared.hotkey(for: .voiceTrigger) else {
-            item.title = voiceEnabledMenuTitle
-            item.keyEquivalent = ""
-            item.keyEquivalentModifierMask = []
-            return
-        }
-
-        let rep = cfg.menuRepresentation
-        if rep.key.isEmpty {
-            item.keyEquivalent = ""
-            item.keyEquivalentModifierMask = []
-            item.title = "\(voiceEnabledMenuTitle)\t\(cfg.displayString())"
-            return
-        }
-
-        item.title = voiceEnabledMenuTitle
-        item.keyEquivalent = rep.key
-        item.keyEquivalentModifierMask = rep.modifiers
-    }
-
     private func rebuildPersonasMenu() {
         guard let personasMenu else { return }
         let personas = PersonaStore.shared.personas
+
+        // The root item shows the active persona's name, or the default label when none.
+        personasRootMenuItem?.title = PersonaStore.shared.activePersona?.name
+            ?? String(localized: "Set Voice Persona")
 
         // Fast path: if persona identity + title + hotkey are unchanged, just redraw
         // existing views (preserves NSMenu tracking state while the submenu is open).

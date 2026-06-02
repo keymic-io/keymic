@@ -24,6 +24,8 @@ final class KeyMonitor {
     var isClipboardPanelVisible: (() -> Bool)?
     var onSettingsHotkey: (() -> Void)?
     var onScreenshotHotkey: (() -> Void)?
+    var onSelectedTextEditorHotkey: (() -> Void)?
+    var onClipboardTransformHotkey: (() -> Void)?
     var onAction: (([HotkeyAction]) -> Void)?
     /// Synchronous, O(1) lookup of the bundle ID KeyMic believes is frontmost.
     /// MUST NOT call into LaunchServices — this runs in the event-tap callback on the
@@ -53,6 +55,8 @@ final class KeyMonitor {
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
+    private var selectedTextEditorHotkey: HotkeyConfig?
+    private var clipboardTransformHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
     private var repeatTimers: [CGKeyCode: DispatchSourceTimer] = [:]
@@ -227,6 +231,8 @@ final class KeyMonitor {
         vaultHotkey = hotkeys.hotkey(for: .vaultPanel)
         settingsHotkey = hotkeys.hotkey(for: .settingsWindow)
         screenshotHotkey = hotkeys.hotkey(for: .screenshot)
+        selectedTextEditorHotkey = hotkeys.hotkey(for: .selectedTextEditor)
+        clipboardTransformHotkey = hotkeys.hotkey(for: .clipboardTransform)
         voiceTriggerHotkey = hotkeys.hotkey(for: .voiceTrigger)
         actionBindings = HotkeyBindingsStore.shared.bindings.compactMap { b in
             guard b.enabled,
@@ -294,6 +300,19 @@ final class KeyMonitor {
             return Unmanaged.passRetained(event)
         }
 
+        // Recorder capture must take precedence over remap: the user is trying
+        // to register the *physical* keystroke they just pressed, not whatever
+        // it gets rewritten to (e.g. Right Cmd → Forward Delete). Without this
+        // ordering the recorder either records the remapped key or never sees
+        // the keystroke at all because remapIfNeeded swallowed it.
+        if HotkeyRecorder.isAnyRecording {
+            if let recorder = HotkeyRecorder.activeRecorder,
+               recorder.handleCGEvent(type: type, event: event) {
+                return nil
+            }
+            return Unmanaged.passRetained(event)
+        }
+
         if let remapped = remapIfNeeded(type: type, event: event) {
             return remapped
         }
@@ -307,19 +326,6 @@ final class KeyMonitor {
         // a session stuck) only applies to the voice-trigger and persona push-to-talk
         // state machines, so we now gate just those two activation paths below and let
         // single-shot dispatch run normally.
-
-        // Bypass app-level hotkey dispatch while a HotkeyRecorder is capturing input.
-        // Forward the raw CGEvent directly to the active recorder — this is more
-        // reliable than NSEvent.addLocalMonitorForEvents, which silently drops bare
-        // F-row keyDowns and some media-key systemDefined events even when the app
-        // is frontmost. Mirrors how skhd captures F1-F12.
-        if HotkeyRecorder.isAnyRecording {
-            if let recorder = HotkeyRecorder.activeRecorder,
-               recorder.handleCGEvent(type: type, event: event) {
-                return nil
-            }
-            return Unmanaged.passRetained(event)
-        }
 
         // Persona push-to-talk: while a persona hotkey is held, every event for
         // its primary key (auto-repeat keyDowns and the final keyUp) must be
@@ -432,6 +438,22 @@ final class KeyMonitor {
                 return nil
             }
 
+            // Selected Text Editor hotkey
+            if let cfg = selectedTextEditorHotkey,
+               !cfg.isPureModifier,
+               cfg.matches(keyCode: keyCode, flags: event.flags) {
+                DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
+                return nil
+            }
+
+            // Clipboard Transform hotkey
+            if let cfg = clipboardTransformHotkey,
+               !cfg.isPureModifier,
+               cfg.matches(keyCode: keyCode, flags: event.flags) {
+                DispatchQueue.main.async { [weak self] in self?.onClipboardTransformHotkey?() }
+                return nil
+            }
+
             // Persona hotkeys: push-to-talk per persona. Activate the persona and
             // start a voice session; the matching keyUp ends it. Swallow the event
             // to prevent dead-key side effects (e.g. ⌥E → ´). Gate on no other
@@ -521,6 +543,16 @@ final class KeyMonitor {
            cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld),
            UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
             DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
+            return true
+        }
+        if let cfg = selectedTextEditorHotkey, !cfg.isPureModifier,
+           cfg.matches(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
+            return true
+        }
+        if let cfg = clipboardTransformHotkey, !cfg.isPureModifier,
+           cfg.matches(keyCode: keyCode, flags: flags) {
+            DispatchQueue.main.async { [weak self] in self?.onClipboardTransformHotkey?() }
             return true
         }
         return false

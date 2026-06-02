@@ -9,11 +9,12 @@ private struct FilteredItems {
 }
 
 struct ClipboardHistoryView: View {
+    @Bindable var selectionBridge: ClipboardPanelSelectionBridge
+
     @Query(sort: \ClipboardItem.createdAt, order: .reverse) private var items: [ClipboardItem]
 
     @State private var query: String = ""
     @State private var tab: PanelTab = .clipboard
-    @State private var selectedID: UUID?
     @State private var filtered: FilteredItems = FilteredItems(pinned: [], history: [])
     @State private var suppressScrollOnce: Bool = false
     @State private var keyboardNavMouseLock: NSPoint?
@@ -27,6 +28,10 @@ struct ClipboardHistoryView: View {
     let onVaultPaste: (VaultItem) -> Void
     let onVaultDelete: (VaultItem) -> Void
     let onDismiss: () -> Void
+    let onTransformSelected: () -> Void
+
+    private var selectedIDs: Set<UUID> { selectionBridge.selectedIDs }
+    private var primaryID: UUID? { selectionBridge.primarySelection }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -38,17 +43,64 @@ struct ClipboardHistoryView: View {
         case search
     }
 
+    private enum SelectionRefreshMode {
+        case selectFirst
+        case selectFirstIfPrimaryChanged
+        case pruneInvisible
+    }
+
     private func computeFiltered() -> FilteredItems {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pool: [ClipboardItem] =
-            trimmed.isEmpty
-            ? items
-            : items.filter { $0.text.localizedCaseInsensitiveContains(trimmed) }
-        let pinned = pool.filter { $0.isPinned }
-            .sorted { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
-        let history = pool.filter { !$0.isPinned }
-            .sorted { $0.createdAt > $1.createdAt }
+        var pinned: [ClipboardItem] = []
+        var history: [ClipboardItem] = []
+
+        for item in items {
+            if !trimmed.isEmpty, !item.text.localizedCaseInsensitiveContains(trimmed) {
+                continue
+            }
+            if item.isPinned {
+                pinned.append(item)
+            } else {
+                history.append(item)
+            }
+        }
+
+        pinned.sort { ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast) }
         return FilteredItems(pinned: pinned, history: history)
+    }
+
+    private func refreshFiltered(selection mode: SelectionRefreshMode) {
+        filtered = computeFiltered()
+        let visibleIDs = filtered.all.map(\.id)
+        selectionBridge.visibleOrderedIDs = visibleIDs
+
+        switch mode {
+        case .selectFirst:
+            selectOnly(visibleIDs.first)
+        case .selectFirstIfPrimaryChanged:
+            let firstID = visibleIDs.first
+            if primaryID != firstID {
+                selectOnly(firstID)
+            }
+        case .pruneInvisible:
+            let visibleSet = Set(visibleIDs)
+            let pruned = selectionBridge.selectedIDs.intersection(visibleSet)
+            if pruned != selectionBridge.selectedIDs {
+                selectionBridge.selectedIDs = pruned
+            }
+            if selectionBridge.selectedIDs.isEmpty {
+                selectOnly(visibleIDs.first)
+            }
+        }
+    }
+
+    private func selectOnly(_ id: UUID?) {
+        if let id {
+            selectionBridge.selectedIDs = [id]
+            selectionBridge.lastClickedID = id
+        } else {
+            selectionBridge.selectedIDs.removeAll()
+        }
     }
 
     var body: some View {
@@ -85,15 +137,21 @@ struct ClipboardHistoryView: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .onAppear {
-            filtered = computeFiltered()
-            selectedID = filtered.all.first?.id
+            let trace = ClipboardOpenTrace.shared
+            trace.mark("view.onAppear (first body + @Query fetch done)")
+            refreshFiltered(selection: .selectFirst)
+            trace.mark("computeFiltered (\(items.count) items)")
             focusedField = .search
+            trace.end("view.onAppear done")
         }
         .onChange(of: focus.requestID) { _, _ in
+            let trace = ClipboardOpenTrace.shared
+            trace.mark("view.refresh (requestID — reuse open)")
             query = ""
-            filtered = computeFiltered()
-            selectedID = filtered.all.first?.id
+            refreshFiltered(selection: .selectFirst)
+            trace.mark("computeFiltered (\(items.count) items)")
             focusedField = .search
+            trace.end("view.refresh done")
         }
         .onChange(of: focus.quickPasteRequestID) { _, _ in
             triggerQuickPaste(focus.quickPasteIndex)
@@ -112,15 +170,10 @@ struct ClipboardHistoryView: View {
             focus.currentTab = newTab
         }
         .onChange(of: query) { _, _ in
-            filtered = computeFiltered()
-            let firstID = filtered.all.first?.id
-            if selectedID != firstID { selectedID = firstID }
+            refreshFiltered(selection: .selectFirstIfPrimaryChanged)
         }
         .onChange(of: items) { _, _ in
-            filtered = computeFiltered()
-            if let id = selectedID, !filtered.all.contains(where: { $0.id == id }) {
-                selectedID = filtered.all.first?.id
-            }
+            refreshFiltered(selection: .pruneInvisible)
         }
         .background(
             KeyEventMonitor(
@@ -181,33 +234,67 @@ struct ClipboardHistoryView: View {
     }
 
     private var tabSwitcher: some View {
-        Picker("", selection: $tab) {
-            Text("📋 Clipboard").tag(PanelTab.clipboard)
-            Text("🔒 Vault").tag(PanelTab.vault)
+        HStack(spacing: 8) {
+            Picker("", selection: $tab) {
+                Text("📋 Clipboard").tag(PanelTab.clipboard)
+                Text("🔒 Vault").tag(PanelTab.vault)
+            }
+            .pickerStyle(.segmented)
+
+            if tab == .clipboard {
+                Button {
+                    onTransformSelected()
+                } label: {
+                    Label("Transform", systemImage: "wand.and.stars")
+                }
+                .keyboardShortcut("l", modifiers: .option)
+                .disabled(selectedIDs.isEmpty)
+                .help(String(localized: "Transform selected items via LLM (⌥L)"))
+            }
         }
-        .pickerStyle(.segmented)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
 
     private var list: some View {
-        ScrollViewReader { proxy in
+        let transformRow: (UUID) -> Void = { id in
+            selectionBridge.selectedIDs = [id]
+            selectionBridge.lastClickedID = id
+            onTransformSelected()
+        }
+        return ScrollViewReader { proxy in
             List {
                 if !filtered.pinned.isEmpty {
                     Section(header: sectionHeader("Pinned")) {
                         ForEach(Array(filtered.pinned.enumerated()), id: \.element.id) { index, item in
-                            row(item, quickKeyLabel: pinnedQuickKeyLabel(for: index))
+                            row(item, quickKeyLabel: pinnedQuickKeyLabel(for: index), onTransformRow: transformRow)
                                 .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(rowBackground(for: item))
                                 .contentShape(Rectangle())
                                 .onHover { hovering in
-                                    if hovering, selectedID != item.id {
+                                    if hovering, primaryID != item.id {
                                         suppressScrollOnce = true
-                                        selectedID = item.id
+                                        selectionBridge.selectedIDs = [item.id]
+                                        selectionBridge.lastClickedID = item.id
                                     }
                                 }
                                 .onTapGesture { onPaste(item) }
+                                .simultaneousGesture(
+                                    TapGesture(count: 1).modifiers(.command).onEnded {
+                                        if selectionBridge.selectedIDs.contains(item.id) {
+                                            selectionBridge.selectedIDs.remove(item.id)
+                                        } else {
+                                            selectionBridge.selectedIDs.insert(item.id)
+                                        }
+                                        selectionBridge.lastClickedID = item.id
+                                    }
+                                )
+                                .simultaneousGesture(
+                                    TapGesture(count: 1).modifiers(.shift).onEnded {
+                                        extendRange(to: item.id)
+                                    }
+                                )
                                 .id(item.id)
                         }
                     }
@@ -215,7 +302,7 @@ struct ClipboardHistoryView: View {
 
                 Section(header: sectionHeader("History")) {
                     ForEach(Array(filtered.history.enumerated()), id: \.element.id) { index, item in
-                        row(item, quickKeyLabel: historyQuickKeyLabel(for: index))
+                        row(item, quickKeyLabel: historyQuickKeyLabel(for: index), onTransformRow: transformRow)
                             .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                             .listRowSeparator(.hidden)
                             .listRowBackground(rowBackground(for: item))
@@ -224,6 +311,21 @@ struct ClipboardHistoryView: View {
                                 handleHover(hovering, item: item)
                             }
                             .onTapGesture { onPaste(item) }
+                            .simultaneousGesture(
+                                TapGesture(count: 1).modifiers(.command).onEnded {
+                                    if selectionBridge.selectedIDs.contains(item.id) {
+                                        selectionBridge.selectedIDs.remove(item.id)
+                                    } else {
+                                        selectionBridge.selectedIDs.insert(item.id)
+                                    }
+                                    selectionBridge.lastClickedID = item.id
+                                }
+                            )
+                            .simultaneousGesture(
+                                TapGesture(count: 1).modifiers(.shift).onEnded {
+                                    extendRange(to: item.id)
+                                }
+                            )
                             .id(item.id)
                     }
                 }
@@ -231,13 +333,17 @@ struct ClipboardHistoryView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.clear)
-            .onChange(of: selectedID) { _, new in
-                guard let new else { return }
+            .onChange(of: selectionBridge.selectedIDs) { _, newSet in
                 if suppressScrollOnce {
                     suppressScrollOnce = false
                     return
                 }
-                withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(new, anchor: .center) }
+                // Scroll to primary (single selection) or the most recently clicked anchor.
+                let target: UUID? = newSet.count == 1
+                    ? newSet.first
+                    : (selectionBridge.lastClickedID.flatMap { newSet.contains($0) ? $0 : nil })
+                guard let id = target else { return }
+                withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(id, anchor: .center) }
             }
         }
     }
@@ -250,53 +356,35 @@ struct ClipboardHistoryView: View {
     }
 
     @ViewBuilder
-    private func row(_ item: ClipboardItem, quickKeyLabel label: String) -> some View {
+    private func row(
+        _ item: ClipboardItem,
+        quickKeyLabel label: String,
+        onTransformRow: @escaping (UUID) -> Void
+    ) -> some View {
         switch item.kind {
         case .file:
             FileRow(
-                item: item, quickKeyLabel: label, isSelected: item.id == selectedID,
-                relativeTime: relativeTime)
+                item: item, quickKeyLabel: label, isSelected: selectedIDs.contains(item.id),
+                relativeTime: relativeTime,
+                onTransformRow: onTransformRow)
         case .image:
             ImageRow(
                 item: item, quickKeyLabel: label,
                 cacheURL: clipboardCacheURL,
-                relativeTime: relativeTime)
+                relativeTime: relativeTime,
+                onTransformRow: onTransformRow)
         default:
-            textRow(item, quickKeyLabel: label)
+            TextRow(
+                item: item,
+                quickKeyLabel: label,
+                query: query,
+                onTransformRow: onTransformRow)
         }
-    }
-
-    private func textRow(_ item: ClipboardItem, quickKeyLabel label: String) -> some View {
-        HStack(spacing: 10) {
-            Text(label)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 22, alignment: .leading)
-
-            if let symbol = item.kind.iconSymbolName {
-                Image(systemName: symbol)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
-            }
-
-            HighlightedText(source: item.displayPreview, query: query)
-                .foregroundStyle(.primary)
-                .font(.system(size: 14))
-                .lineLimit(1)
-
-            Spacer(minLength: 8)
-
-            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
     private func rowBackground(for item: ClipboardItem) -> some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(item.id == selectedID ? Color.accentColor.opacity(0.35) : Color.clear)
+            .fill(selectedIDs.contains(item.id) ? Color.accentColor.opacity(0.35) : Color.clear)
     }
 
     private func historyQuickKeyLabel(for index: Int) -> String {
@@ -318,9 +406,11 @@ struct ClipboardHistoryView: View {
         return {
             let list = filtered.all
             guard !list.isEmpty else { return }
-            let currentIndex = list.firstIndex(where: { $0.id == selectedID }) ?? 0
+            let currentIndex = list.firstIndex(where: { selectedIDs.contains($0.id) }) ?? 0
             let newIndex = (currentIndex + delta + list.count) % list.count
-            selectedID = list[newIndex].id
+            let newID = list[newIndex].id
+            selectionBridge.selectedIDs = [newID]
+            selectionBridge.lastClickedID = newID
             keyboardNavMouseLock = NSEvent.mouseLocation
         }
     }
@@ -331,25 +421,39 @@ struct ClipboardHistoryView: View {
             return
         }
         keyboardNavMouseLock = nil
-        if selectedID != item.id {
+        if primaryID != item.id {
             suppressScrollOnce = true
-            selectedID = item.id
+            selectionBridge.selectedIDs = [item.id]
+            selectionBridge.lastClickedID = item.id
         }
     }
 
     private func triggerPaste() {
-        guard let id = selectedID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        guard let id = primaryID, let item = filtered.all.first(where: { $0.id == id }) else { return }
         onPaste(item)
     }
 
     private func triggerDelete() {
-        guard let id = selectedID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        guard let id = primaryID, let item = filtered.all.first(where: { $0.id == id }) else { return }
         onDelete(item.id)
     }
 
     private func triggerTogglePin() {
-        guard let id = selectedID else { return }
+        guard let id = primaryID else { return }
         onTogglePin(id)
+    }
+
+    private func extendRange(to targetID: UUID) {
+        guard let anchor = selectionBridge.lastClickedID,
+              let aIdx = filtered.all.firstIndex(where: { $0.id == anchor }),
+              let tIdx = filtered.all.firstIndex(where: { $0.id == targetID }) else {
+            selectionBridge.selectedIDs = [targetID]
+            selectionBridge.lastClickedID = targetID
+            return
+        }
+        let range = aIdx <= tIdx ? aIdx...tIdx : tIdx...aIdx
+        let ids = filtered.all[range].map(\.id)
+        selectionBridge.selectedIDs.formUnion(ids)
     }
 
     private func triggerQuickPaste(_ index: Int) {
@@ -374,11 +478,74 @@ private struct AppIconView: View {
     }
 }
 
+private struct TransformRowButton: View {
+    let itemID: UUID
+    let isHovered: Bool
+    let onTransformRow: (UUID) -> Void
+
+    var body: some View {
+        Button {
+            onTransformRow(itemID)
+        } label: {
+            Image(systemName: "wand.and.stars")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+        .help(String(localized: "Transform this item"))
+        .opacity(isHovered ? 1.0 : 0.0)
+        .allowsHitTesting(isHovered)
+    }
+}
+
+private struct TextRow: View {
+    let item: ClipboardItem
+    let quickKeyLabel: String
+    let query: String
+    let onTransformRow: (UUID) -> Void
+
+    @State private var isHovered: Bool = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text(quickKeyLabel)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 22, alignment: .leading)
+
+            if let symbol = item.kind.iconSymbolName {
+                Image(systemName: symbol)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+            }
+
+            HighlightedText(source: item.displayPreview, query: query)
+                .foregroundStyle(.primary)
+                .font(.system(size: 14))
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            TransformRowButton(itemID: item.id, isHovered: isHovered, onTransformRow: onTransformRow)
+
+            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .onHover { isHovered = $0 }
+    }
+}
+
 private struct FileRow: View {
     let item: ClipboardItem
     let quickKeyLabel: String
     let isSelected: Bool
     let relativeTime: (Date) -> String
+    let onTransformRow: (UUID) -> Void
+
+    @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -403,16 +570,19 @@ private struct FileRow: View {
 
             Spacer(minLength: 8)
 
+            TransformRowButton(itemID: item.id, isHovered: isHovered, onTransformRow: onTransformRow)
+
             AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
+        .onHover { isHovered = $0 }
     }
 
     private var fileIcon: some View {
         Group {
             if let path = item.fileURLPath {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: path))
+                Image(nsImage: FileIconCache.shared.image(forPath: path))
                     .resizable()
             } else {
                 Image(systemName: "doc")
@@ -427,8 +597,10 @@ private struct ImageRow: View {
     let quickKeyLabel: String
     let cacheURL: URL
     let relativeTime: (Date) -> String
+    let onTransformRow: (UUID) -> Void
 
     @State private var thumbnail: NSImage?
+    @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -457,10 +629,13 @@ private struct ImageRow: View {
 
             Spacer(minLength: 8)
 
+            TransformRowButton(itemID: item.id, isHovered: isHovered, onTransformRow: onTransformRow)
+
             AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
+        .onHover { isHovered = $0 }
         .task { loadThumbnailIfNeeded() }
     }
 

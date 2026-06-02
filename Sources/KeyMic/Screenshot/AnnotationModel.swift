@@ -86,6 +86,7 @@ class Annotation: NSCopying {
     }
 
     init(
+        id: UUID = UUID(),
         kind: AnnotationTool,
         startPoint: CGPoint,
         endPoint: CGPoint = .zero,
@@ -95,7 +96,7 @@ class Annotation: NSCopying {
         fontSize: CGFloat = 18,
         hasDropShadow: Bool = false
     ) {
-        self.id = UUID()
+        self.id = id
         self.kind = kind
         self.startPoint = startPoint
         self.endPoint = endPoint

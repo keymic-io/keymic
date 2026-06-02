@@ -1,62 +1,55 @@
 import Foundation
 import os.log
 
-private let logger = Logger(subsystem: "io.keymic.app", category: "LLMRefiner")
+private let logger = Logger(subsystem: "io.keymic.app", category: "LLMClient")
 
-/// Stateless LLM endpoint config + per-call refinement.
-/// Persona-specific prompt + temperature are passed in by the caller.
-final class LLMRefiner {
-    static let shared = LLMRefiner()
+protocol LLMClient: AnyObject {
+    var isReady: Bool { get }
+    func complete(systemPrompt: String,
+                  userText: String,
+                  temperature: Double) async throws -> String
+    func cancel()
+}
+
+final class OpenAICompatibleLLMClient: LLMClient {
+    private let defaults: UserDefaults
+    private var currentTask: URLSessionDataTask?
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
 
     var apiBaseURL: String {
-        get { UserDefaults.standard.string(forKey: "llmAPIBaseURL") ?? "https://api.openai.com/v1" }
-        set { UserDefaults.standard.set(newValue, forKey: "llmAPIBaseURL") }
+        get { defaults.string(forKey: "llmAPIBaseURL") ?? "https://api.openai.com/v1" }
+        set { defaults.set(newValue, forKey: "llmAPIBaseURL") }
     }
-
     var apiKey: String {
-        get { UserDefaults.standard.string(forKey: "llmAPIKey") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "llmAPIKey") }
+        get { defaults.string(forKey: "llmAPIKey") ?? "" }
+        set { defaults.set(newValue, forKey: "llmAPIKey") }
     }
-
     var model: String {
-        get { UserDefaults.standard.string(forKey: "llmModel") ?? "gpt-4o-mini" }
-        set { UserDefaults.standard.set(newValue, forKey: "llmModel") }
+        get { defaults.string(forKey: "llmModel") ?? "gpt-4o-mini" }
+        set { defaults.set(newValue, forKey: "llmModel") }
     }
 
-    /// True iff endpoint is fully configured (URL + apiKey + model).
-    /// Cheap synchronous check — does not hit the network.
     var isReady: Bool {
         !apiKey.isEmpty && !apiBaseURL.isEmpty && !model.isEmpty
     }
 
-    private var currentTask: URLSessionDataTask?
+    func complete(systemPrompt: String,
+                  userText: String,
+                  temperature: Double) async throws -> String {
+        guard isReady else { throw LLMClientError.notReady }
 
-    /// Refine using a persona's stylePrompt + temperature. `userText` is the raw
-    /// transcript; for context-aware personas the caller pre-formats it with
-    /// [Selected text] / [Recent clipboard] / [User said] sections.
-    func refine(
-        _ userText: String,
-        systemPrompt: String,
-        temperature: Double,
-        completion: @escaping (Result<String, Error>) -> Void
-    ) {
-        guard isReady else {
-            completion(.failure(RefinerError.notReady))
-            return
+        let base = apiBaseURL.hasSuffix("/") ? String(apiBaseURL.dropLast()) : apiBaseURL
+        guard let url = URL(string: "\(base)/chat/completions") else {
+            throw LLMClientError.invalidURL
         }
-
-        let baseURL = apiBaseURL.hasSuffix("/") ? String(apiBaseURL.dropLast()) : apiBaseURL
-        guard let url = URL(string: "\(baseURL)/chat/completions") else {
-            completion(.failure(RefinerError.invalidURL))
-            return
-        }
-
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.timeoutInterval = 10
-
         let body: [String: Any] = [
             "model": model,
             "messages": [
@@ -65,35 +58,22 @@ final class LLMRefiner {
             ],
             "temperature": temperature,
         ]
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         logger.info("request — host=\(url.host ?? "?", privacy: .public) model=\(self.model, privacy: .public) temp=\(temperature, privacy: .public) userTextLen=\(userText.count, privacy: .public)")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
-        currentTask = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let error {
-                logger.error("network error: \(error.localizedDescription, privacy: .public)")
-                DispatchQueue.main.async { completion(.failure(error)) }
-                return
-            }
-            guard let data else {
-                logger.error("invalid response — no data")
-                DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
-                return
-            }
-            let status = (response as? HTTPURLResponse)?.statusCode ?? -1
-            let httpOK = (200..<300).contains(status)
-            if httpOK, let content = LLMRefiner.extractContent(from: data) {
-                let refined = content.trimmingCharacters(in: .whitespacesAndNewlines)
-                logger.info("response — len=\(refined.count, privacy: .public)")
-                DispatchQueue.main.async { completion(.success(refined)) }
-                return
-            }
-            let errMsg = LLMRefiner.extractErrorMessage(from: data) ?? ""
-            let preview = String(data: data.prefix(1024), encoding: .utf8) ?? "<non-utf8>"
-            logger.error("invalid response — status=\(status, privacy: .public) bytes=\(data.count, privacy: .public) err=\(errMsg, privacy: .public) preview=\(preview, privacy: .public)")
-            DispatchQueue.main.async { completion(.failure(RefinerError.invalidResponse)) }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? -1
+        let httpOK = (200..<300).contains(status)
+        if httpOK, let content = Self.extractContent(from: data) {
+            let refined = content.trimmingCharacters(in: .whitespacesAndNewlines)
+            logger.info("response — len=\(refined.count, privacy: .public)")
+            return refined
         }
-        currentTask?.resume()
+        let errMsg = Self.extractErrorMessage(from: data) ?? ""
+        let preview = String(data: data.prefix(1024), encoding: .utf8) ?? "<non-utf8>"
+        logger.error("invalid response — status=\(status, privacy: .public) bytes=\(data.count, privacy: .public) err=\(errMsg, privacy: .public) preview=\(preview, privacy: .public)")
+        throw LLMClientError.invalidResponse(message: errMsg.isEmpty ? nil : errMsg)
     }
 
     func cancel() {
@@ -101,16 +81,10 @@ final class LLMRefiner {
         currentTask = nil
     }
 
-    /// Extract assistant content from a variety of response shapes:
-    /// OpenAI chat (`choices[0].message.content`), legacy completions
-    /// (`choices[0].text`), streaming-style final (`choices[0].delta.content`),
-    /// Anthropic (`content[0].text`), SSE event streams, or a top-level
-    /// `content|output|response|text|message|result` string.
+    // MARK: - Parsers (verbatim from old LLMRefiner)
+
     static func extractContent(from data: Data) -> String? {
-        if let json = parseFirstJSONObject(data),
-           let s = pickContent(from: json) {
-            return s
-        }
+        if let json = parseFirstJSONObject(data), let s = pickContent(from: json) { return s }
         guard let text = String(data: data, encoding: .utf8) else { return nil }
         if text.contains("data:") && text.contains("\n") {
             var acc = ""
@@ -128,11 +102,8 @@ final class LLMRefiner {
             if !acc.isEmpty { return acc }
             if let fallback { return fallback }
         }
-        // Plain text body (not JSON, not SSE).
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty, !trimmed.hasPrefix("{"), !trimmed.hasPrefix("[") {
-            return trimmed
-        }
+        if !trimmed.isEmpty, !trimmed.hasPrefix("{"), !trimmed.hasPrefix("[") { return trimmed }
         return nil
     }
 
@@ -159,18 +130,13 @@ final class LLMRefiner {
         return nil
     }
 
-    /// Strict parse first, then fall back to scanning for the first balanced
-    /// `{ ... }` block. Tolerates leading/trailing whitespace, BOM, or
-    /// multiple-JSON-object bodies.
     private static func parseFirstJSONObject(_ data: Data) -> [String: Any]? {
         if let json = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? [String: Any] {
             return json
         }
         let bytes = [UInt8](data)
-        guard let start = bytes.firstIndex(of: 0x7B) else { return nil } // '{'
-        var depth = 0
-        var inStr = false
-        var esc = false
+        guard let start = bytes.firstIndex(of: 0x7B) else { return nil }
+        var depth = 0; var inStr = false; var esc = false
         for i in start..<bytes.count {
             let b = bytes[i]
             if esc { esc = false; continue }
@@ -203,17 +169,44 @@ final class LLMRefiner {
         if let s = json["message"] as? String { return s }
         return nil
     }
+}
 
-    enum RefinerError: LocalizedError {
-        case notReady
-        case invalidURL
-        case invalidResponse
+enum LLMClientError: LocalizedError {
+    case notReady
+    case invalidURL
+    case invalidResponse(message: String?)
 
-        var errorDescription: String? {
-            switch self {
-            case .notReady: return "LLM endpoint not configured"
-            case .invalidURL: return "Invalid API base URL"
-            case .invalidResponse: return "Invalid response from LLM API"
+    var errorDescription: String? {
+        switch self {
+        case .notReady: return "LLM endpoint not configured"
+        case .invalidURL: return "Invalid API base URL"
+        case .invalidResponse(let m):
+            return m.map { "Invalid response: \($0)" } ?? "Invalid response from LLM API"
+        }
+    }
+}
+
+typealias LLMRefiner = OpenAICompatibleLLMClient
+
+extension OpenAICompatibleLLMClient {
+    static let shared = OpenAICompatibleLLMClient()
+
+    func refine(
+        _ userText: String,
+        systemPrompt: String,
+        temperature: Double,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        Task {
+            do {
+                let refined = try await complete(
+                    systemPrompt: systemPrompt,
+                    userText: userText,
+                    temperature: temperature
+                )
+                completion(.success(refined))
+            } catch {
+                completion(.failure(error))
             }
         }
     }

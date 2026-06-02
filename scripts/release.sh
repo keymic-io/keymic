@@ -103,7 +103,11 @@ if git diff --cached --quiet; then
     echo "==> No Info.plist changes to commit"
 else
     git commit -m "release: v${VERSION}"
-    git push
+    # Push *only* the current branch — a bare `git push` honors push.default,
+    # and if that's set to "matching" (legacy Git default) git tries to push
+    # every local branch with a matching remote, failing the release if any
+    # unrelated branch (e.g. an old feature branch) is behind its remote.
+    git push origin HEAD
     echo "==> Info.plist committed and pushed"
 fi
 

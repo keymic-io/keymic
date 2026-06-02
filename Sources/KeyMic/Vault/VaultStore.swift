@@ -57,14 +57,18 @@ final class VaultStore {
         } catch {
             Self.logger.error("vault metadata save failed: \(error.localizedDescription, privacy: .public)")
             context.delete(item)
-            try? keychain.delete(account: item.keychainAccount)
+            do {
+                try keychain.delete(account: item.keychainAccount)
+            } catch {
+                Self.logger.error("keychain cleanup delete failed (orphaned entry \(item.keychainAccount, privacy: .public)): \(String(describing: error), privacy: .public)")
+            }
             return nil
         }
     }
 
-    func reveal(_ item: VaultItem) throws -> String {
+    func reveal(_ item: VaultItem) async throws -> String {
         do {
-            let plain = try keychain.read(account: item.keychainAccount)
+            let plain = try await keychain.read(account: item.keychainAccount)
             item.lastUsedAt = Date()
             try? context.save()
             return plain

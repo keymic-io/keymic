@@ -53,20 +53,17 @@ final class ShellSnapshot {
             currentPath = nil
             sourceMtimes = [:]
         }
-
         let needsRebuild = currentPath == nil || mtimesChanged()
         guard needsRebuild else { return currentPath }
 
-        do {
-            let newPath = try rebuild()
+        // Keep rebuild serialized so concurrent callers share one dump process.
+        let newPath = try? rebuild()
+        if let newPath {
             sourceMtimes = currentMtimes()
             cleanupOld(keeping: newPath)
             currentPath = newPath
-            return newPath
-        } catch {
-            osLogger.warning("snapshot rebuild failed: \(error.localizedDescription, privacy: .public)")
-            return currentPath
         }
+        return currentPath
     }
 
     private func rebuild() throws -> URL {
@@ -197,6 +194,8 @@ final class ShellSnapshot {
         do {
             try p.run()
         } catch {
+            outPipe.fileHandleForReading.readabilityHandler = nil
+            errPipe.fileHandleForReading.readabilityHandler = nil
             return (-1, "", "Process.run failed: \(error.localizedDescription)")
         }
 
@@ -213,7 +212,13 @@ final class ShellSnapshot {
             }
             outPipe.fileHandleForReading.readabilityHandler = nil
             errPipe.fileHandleForReading.readabilityHandler = nil
-            return (-1, "", "snapshot dump timeout")
+            let remaining = outPipe.fileHandleForReading.readDataToEndOfFile()
+            let errRemaining = errPipe.fileHandleForReading.readDataToEndOfFile()
+            stdoutData.append(remaining)
+            stderrData.append(errRemaining)
+            let outStr = outQ.sync { String(data: stdoutData, encoding: .utf8) ?? "" }
+            let errStr = errQ.sync { String(data: stderrData, encoding: .utf8) ?? "" }
+            return (-1, outStr, "snapshot dump timeout: \(errStr)")
         }
 
         outPipe.fileHandleForReading.readabilityHandler = nil

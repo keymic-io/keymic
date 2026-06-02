@@ -77,7 +77,7 @@ final class PersonaStore {
             stylePrompt: source.stylePrompt,
             temperature: source.temperature,
             hotkey: nil,    // never inherit hotkey — would conflict
-            contextMode: source.contextMode,
+            contextSources: source.contextSources,
             builtIn: false,
             createdAt: now,
             updatedAt: now
@@ -118,13 +118,21 @@ final class PersonaStore {
         }
     }
 
-    /// Ensures all 4 built-ins exist (preserves user edits to existing built-ins;
-    /// adds any built-in seed not yet on disk). Custom personas pass through unchanged.
+    /// Ensures every built-in seed exists. For each existing built-in, preserves user-editable
+    /// fields (stylePrompt, icon, temperature, hotkey, contextSources) but **promotes
+    /// `injectionStrategy` from the seed** — built-ins' destination is part of their identity,
+    /// not user-editable. This is what migrates legacy `builtin-cli.injectionStrategy =
+    /// .replaceFocusedText` installs onto the new `.runShell({query})` strategy without losing
+    /// the user's stylePrompt edits. Custom personas pass through unchanged.
     private func mergeWithBuiltIns(loaded: [Persona]) -> [Persona] {
         let seeds = Persona.builtInSeeds()
         var result: [Persona] = []
         for seed in seeds {
-            if let existing = loaded.first(where: { $0.id == seed.id }) {
+            if var existing = loaded.first(where: { $0.id == seed.id }) {
+                // Built-in identity fields follow the seed: injectionStrategy (destination)
+                // and name (immutable in UI + localized, so it tracks the current language).
+                existing.injectionStrategy = seed.injectionStrategy
+                existing.name = seed.name
                 result.append(existing)
             } else {
                 result.append(seed)

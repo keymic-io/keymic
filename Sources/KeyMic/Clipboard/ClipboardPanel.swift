@@ -10,14 +10,17 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
     init(
         modelContainer: ModelContainer,
         clipboardCacheURL: URL,
+        selectionBridge: ClipboardPanelSelectionBridge,
         onPaste: @escaping (ClipboardItem) -> Void,
         onDelete: @escaping (UUID) -> Void,
         onTogglePin: @escaping (UUID) -> Void,
         onVaultPaste: @escaping (VaultItem) -> Void,
         onVaultDelete: @escaping (VaultItem) -> Void,
-        onDismiss: @escaping () -> Void
+        onDismiss: @escaping () -> Void,
+        onTransformSelected: @escaping () -> Void
     ) {
         let view = ClipboardHistoryView(
+            selectionBridge: selectionBridge,
             focus: focus,
             clipboardCacheURL: clipboardCacheURL,
             onPaste: onPaste,
@@ -25,7 +28,8 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
             onTogglePin: onTogglePin,
             onVaultPaste: onVaultPaste,
             onVaultDelete: onVaultDelete,
-            onDismiss: onDismiss
+            onDismiss: onDismiss,
+            onTransformSelected: onTransformSelected
         )
         .modelContainer(modelContainer)
 
@@ -48,6 +52,9 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         titlebarAppearsTransparent = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         hidesOnDeactivate = false
+        // Appear/disappear instantly: suppress the default window fade-in/out so the
+        // panel shows the moment the hotkey is pressed.
+        animationBehavior = .none
 
         contentView = hostingController.view
         contentView?.wantsLayer = true
@@ -146,7 +153,13 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         let xOffset: CGFloat = 20
         let position = ClipboardPreferences.panelPosition
 
-        if position == .followCursor, let caret = ClipboardPanel.caretScreenRect() {
+        let trace = ClipboardOpenTrace.shared
+        // The caret lookup is a cross-process Accessibility query — a prime suspect for
+        // per-open lag in some apps; measure it on its own line.
+        let caret: NSRect? = position == .followCursor ? ClipboardPanel.caretScreenRect() : nil
+        trace.mark("caretScreenRect (position=\(position))")
+
+        if position == .followCursor, let caret {
             // Place panel just below the caret, AppKit coords (bottom-left origin). +118 nudges up.
             anchorPoint = NSPoint(x: caret.minX + xOffset, y: caret.minY - size.height - 6 + 118)
             screen =
@@ -174,7 +187,9 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
 
         focus.initialTab = initialTab
         focus.tabRequestID += 1
+        trace.mark("before makeKeyAndOrderFront")
         makeKeyAndOrderFront(nil)
+        trace.mark("after makeKeyAndOrderFront")
         focus.requestID += 1
     }
 

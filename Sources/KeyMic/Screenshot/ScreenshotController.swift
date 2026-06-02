@@ -147,6 +147,7 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
               let frame = frozenFrames[owner.owningScreen] else { return nil }
         let view = owner.overlayView
         let sel = view.selection
+        guard view.bounds.width > 0, view.bounds.height > 0 else { return nil }
         let scaleX = CGFloat(frame.width) / view.bounds.width
         let scaleY = CGFloat(frame.height) / view.bounds.height
         let pxRect = CGRect(
@@ -244,16 +245,10 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
                 self.permissionPollTimer = nil
                 return
             }
-            Task { @MainActor in
-                do {
-                    _ = try await self.capturer.captureAllScreens()
-                    timer.invalidate()
-                    self.permissionPollTimer = nil
-                    self.start()
-                } catch {
-                    // still no permission, keep polling
-                }
-            }
+            guard CGPreflightScreenCaptureAccess() else { return }
+            timer.invalidate()
+            self.permissionPollTimer = nil
+            self.start()
         }
     }
 }

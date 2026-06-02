@@ -2,14 +2,14 @@ import Foundation
 
 @main
 struct KeychainVaultTestRunner {
-    static func main() throws {
+    static func main() async throws {
         let backend = InMemoryKeychainBackend()
         try backend.write(account: "a", secret: "hello")
-        let r = try backend.read(account: "a")
+        let r = try await backend.read(account: "a")
         expect(r == "hello", "round trip works")
         try backend.delete(account: "a")
         do {
-            _ = try backend.read(account: "a")
+            _ = try await backend.read(account: "a")
             fatalError("expected missing error")
         } catch KeychainError.missing {
             // expected

@@ -104,6 +104,15 @@ final class KeyMappingManager {
         userDefaults.set(data, forKey: Self.mappingsKey)
     }
 
+    /// Re-install HID-level mappings for the current state. `AppDelegate` calls this at
+    /// launch *after* `HIDRemapper.reset()`: this singleton's init-time `apply` runs
+    /// *before* that reset on HIDRemapper's shared serial queue, so without an explicit
+    /// reapply the reset would be the last write and silently clobber Caps Lock-sourced
+    /// mappings until the user toggles key mapping off/on.
+    func reapplyHIDMappings() {
+        applyHIDMappings()
+    }
+
     private func applyHIDMappings() {
         HIDRemapper.apply(mappings, enabled: isEnabled)
     }

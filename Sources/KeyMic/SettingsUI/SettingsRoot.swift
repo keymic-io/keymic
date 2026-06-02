@@ -140,6 +140,7 @@ enum AppLanguage: String, CaseIterable, Identifiable, Hashable {
     }
 }
 
+
 // MARK: - Root
 
 struct SettingsRootView: View {
@@ -200,6 +201,7 @@ struct SettingsRootView: View {
         }
     }
 }
+
 
 private func hotkeyBinding(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> Binding<String> {
     Binding(
@@ -284,7 +286,9 @@ private struct GeneralSettingsView: View {
     @AppStorage("automaticallyUpdates") private var automaticallyUpdates: Bool = true
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
+    @State private var selectedTextEditorHotkeyResetError: String?
     private var settingsHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .settingsWindow) }
+    private var selectedTextEditorHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .selectedTextEditor) }
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var launchAtLoginError: String?
     @State private var accessibilityGranted: Bool = AXIsProcessTrusted()
@@ -350,25 +354,23 @@ private struct GeneralSettingsView: View {
             }
 
             Section {
-                LabeledContent("Open Settings:") {
+                LabeledContent("Selected Text Editor:") {
                     HotkeyRecorderWithClear(
-                        encoded: settingsHotkey,
-                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.settingsWindow.rawValue]!,
+                        encoded: selectedTextEditorHotkey,
+                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.selectedTextEditor.rawValue]!,
                         mode: .combo,
-                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.settingsWindow)) },
+                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.selectedTextEditor)) },
                         recorderWidth: 200,
-                        resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .settingsWindow) }
+                        resetAction: { selectedTextEditorHotkeyResetError = resetHotkey(hotkeyStore, for: .selectedTextEditor) }
                     )
                 }
-                if let hotkeyResetError {
-                    Text(hotkeyResetError)
+                if let selectedTextEditorHotkeyResetError {
+                    Text(selectedTextEditorHotkeyResetError)
                         .font(.callout)
                         .foregroundStyle(.red)
                 }
-            } header: {
-                Text("Hotkey")
             } footer: {
-                Text("Global shortcut to open this Settings window from anywhere.")
+                Text("Select text in any app, then press this hotkey to open an inline AI editor.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -542,6 +544,7 @@ private struct SpeechLanguageOption: Identifiable {
 
 private struct LLMSettingsView: View {
     @AppStorage("llmAPIBaseURL") private var apiBaseURL: String = "https://api.openai.com/v1"
+    // TODO: migrate API key from UserDefaults to Keychain for security
     @AppStorage("llmAPIKey") private var apiKey: String = ""
     @AppStorage("llmModel") private var model: String = "gpt-4o-mini"
 
@@ -624,22 +627,22 @@ private struct LLMSettingsView: View {
     }
 
     private func runTest() {
-        let refiner = LLMRefiner.shared
-        guard refiner.isReady else {
+        let client = OpenAICompatibleLLMClient()
+        guard client.isReady else {
             status = .fail("API key is empty")
             return
         }
         status = .testing
-        refiner.refine(
-            "Hello, this is a test.",
-            systemPrompt: "Return the input exactly as-is.",
-            temperature: 0.0
-        ) { result in
-            DispatchQueue.main.async {
-                switch result {
-                case .success(let text): status = .ok(text)
-                case .failure(let err): status = .fail(err.localizedDescription)
-                }
+        Task {
+            do {
+                let text = try await client.complete(
+                    systemPrompt: "Return the input exactly as-is.",
+                    userText: "Hello, this is a test.",
+                    temperature: 0.0
+                )
+                await MainActor.run { status = .ok(text) }
+            } catch {
+                await MainActor.run { status = .fail(error.localizedDescription) }
             }
         }
     }
@@ -658,6 +661,8 @@ private struct ClipboardSettingsView: View {
     @State private var hotkeyResetError: String?
     private var hotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .clipboardPanel) }
     private var vaultHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .vaultPanel) }
+    @State private var clipboardTransformHotkeyResetError: String?
+    private var clipboardTransformHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .clipboardTransform) }
 
     private var cleanupMode: Binding<CleanupMode> {
         Binding(
@@ -701,6 +706,21 @@ private struct ClipboardSettingsView: View {
                         recorderWidth: 160,
                         resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .vaultPanel) }
                     )
+                }
+                LabeledContent("Transform:") {
+                    HotkeyRecorderWithClear(
+                        encoded: clipboardTransformHotkey,
+                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.clipboardTransform.rawValue]!,
+                        mode: .combo,
+                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.clipboardTransform)) },
+                        recorderWidth: 200,
+                        resetAction: { clipboardTransformHotkeyResetError = resetHotkey(hotkeyStore, for: .clipboardTransform) }
+                    )
+                }
+                if let clipboardTransformHotkeyResetError {
+                    Text(clipboardTransformHotkeyResetError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
                 }
                 if let hotkeyResetError {
                     Text(hotkeyResetError)
@@ -782,23 +802,15 @@ struct HotkeyRecorderField: View {
         self.showsClearButton = showsClearButton
     }
 
-    /// Convenience initializer that bridges to a UserDefaults-backed encoded string.
-    init(
-        encoded: Binding<String>,
-        mode: HotkeyRecorder.Mode,
-        validator: @escaping HotkeyRecorder.Validator,
-        showsClearButton: Bool = true
-    ) {
-        self.init(
-            config: Binding(
-                get: { HotkeyConfig.parse(encoded.wrappedValue) },
-                set: { encoded.wrappedValue = $0?.encode() ?? "" }
-            ),
-            mode: mode,
-            validator: validator,
-            displayName: nil,
-            showsClearButton: showsClearButton
+    init(encoded: Binding<String>, mode: HotkeyRecorder.Mode, validator: @escaping HotkeyRecorder.Validator, showsClearButton: Bool) {
+        self._config = Binding(
+            get: { HotkeyConfig.parse(encoded.wrappedValue) },
+            set: { encoded.wrappedValue = $0?.encode() ?? "" }
         )
+        self.mode = mode
+        self.validator = validator
+        self.displayName = nil
+        self.showsClearButton = showsClearButton
     }
 
     var body: some View {
@@ -887,13 +899,21 @@ struct HotkeyRecorderWithClear: View {
     let resetAction: () -> Void
 
     private var canReset: Bool {
-        if let defaultEncoded { return encoded != defaultEncoded }
-        return !encoded.isEmpty
+        guard let def = defaultEncoded, let cfg = HotkeyConfig.parse(def) else {
+            return encoded != ""
+        }
+        guard let cur = HotkeyConfig.parse(encoded) else { return true }
+        return cur != cfg
     }
 
     var body: some View {
         HStack(spacing: 4) {
-            HotkeyRecorderField(encoded: $encoded, mode: mode, validator: validator, showsClearButton: false)
+            HotkeyRecorderField(
+                encoded: $encoded,
+                mode: mode,
+                validator: validator,
+                showsClearButton: false
+            )
                 .frame(width: recorderWidth, height: 24)
 
             ClearHotkeyButton(

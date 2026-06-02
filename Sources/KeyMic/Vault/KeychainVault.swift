@@ -32,31 +32,39 @@ struct KeychainVault: KeychainBackend {
         }
     }
 
-    func read(account: String) throws -> String {
+    /// Reads a secret from the keychain after biometric/passcode authentication.
+    ///
+    /// **Non-blocking**: the LAContext prompt is awaited via a continuation, so the
+    /// calling thread is never parked. This matters because the only caller runs on
+    /// the main thread, whose run loop also drives the `CGEvent` tap — a synchronous
+    /// wait here would freeze every global hotkey until the user answered the prompt.
+    func read(account: String) async throws -> String {
         let context = LAContext()
         context.touchIDAuthenticationAllowableReuseDuration = VaultConfig.touchIDReuseDuration
         let reason = String(localized: "Reveal secret from KeyMic Vault")
 
-        var evaluationSuccess = false
-        var evaluationError: Error?
-        let semaphore = DispatchSemaphore(value: 0)
-
-        // Evaluate policy explicitly to ensure TouchID or Passcode prompt is shown
-        context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
-            evaluationSuccess = success
-            evaluationError = error
-            semaphore.signal()
-        }
-        _ = semaphore.wait(timeout: .distantFuture)
-
-        if !evaluationSuccess {
-            if let err = evaluationError as? LAError {
-                if err.code == .userCancel || err.code == .appCancel || err.code == .systemCancel {
-                    throw KeychainError.userCancelled
+        // Map the (Bool, Error?) completion to a Sendable outcome inside the closure so
+        // no non-Sendable `Error` crosses the continuation boundary.
+        enum AuthOutcome { case success, cancelled, failed(OSStatus) }
+        let outcome: AuthOutcome = await withCheckedContinuation { cont in
+            context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, error in
+                if success {
+                    cont.resume(returning: .success)
+                } else if let err = error as? LAError,
+                          err.code == .userCancel || err.code == .appCancel || err.code == .systemCancel {
+                    cont.resume(returning: .cancelled)
+                } else if let err = error as? LAError {
+                    cont.resume(returning: .failed(OSStatus(err.code.rawValue)))
+                } else {
+                    cont.resume(returning: .failed(errSecAuthFailed))
                 }
-                throw KeychainError.readFailed(OSStatus(err.code.rawValue))
             }
-            throw KeychainError.readFailed(errSecAuthFailed)
+        }
+
+        switch outcome {
+        case .success: break
+        case .cancelled: throw KeychainError.userCancelled
+        case .failed(let status): throw KeychainError.readFailed(status)
         }
 
         var query = baseQuery(account: account)
@@ -74,6 +82,10 @@ struct KeychainVault: KeychainBackend {
             throw KeychainError.userCancelled
         case errSecItemNotFound:
             throw KeychainError.missing
+        case errSecInteractionNotAllowed:
+            // Keychain is locked (device just rebooted, not yet unlocked).
+            // Wrap with a distinct status so callers can show a "unlock your Mac" message.
+            throw KeychainError.readFailed(errSecInteractionNotAllowed)
         default:
             throw KeychainError.readFailed(status)
         }

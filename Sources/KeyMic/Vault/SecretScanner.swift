@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 struct SecretMatch {
     let rule: SecretRule
@@ -8,6 +9,7 @@ struct SecretMatch {
 final class SecretScanner {
     static let shared = SecretScanner()
 
+    private static let logger = Logger(subsystem: "io.keymic.app", category: "SecretScanner")
     private let queue = DispatchQueue(label: "io.keymic.app.secrets", qos: .utility)
     private let rules: [SecretRule]
 
@@ -18,6 +20,7 @@ final class SecretScanner {
     /// Async scan. Calls `completion` on the main queue.
     func scan(_ text: String, completion: @escaping (SecretMatch?) -> Void) {
         guard text.utf8.count <= VaultConfig.maxScanLength else {
+            Self.logger.warning("clipboard text (\(text.utf8.count) bytes) exceeds maxScanLength (\(VaultConfig.maxScanLength)), skipping secret scan")
             DispatchQueue.main.async { completion(nil) }
             return
         }
