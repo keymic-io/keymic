@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 
+@MainActor
 private final class SpeechEngineTests {
     static func main() {
         testStartCreatesFreshEngineForEachRecording()
@@ -14,7 +15,7 @@ private final class SpeechEngineTests {
 
     private static func testStartCreatesFreshEngineForEachRecording() {
         let factory = FakeAudioEngineFactory()
-        let engine = SpeechEngine(
+        let engine = AppleSpeechEngine(
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
@@ -35,7 +36,7 @@ private final class SpeechEngineTests {
 
     private static func testCancelRemovesTapAndStopsEngine() {
         let factory = FakeAudioEngineFactory()
-        let engine = SpeechEngine(
+        let engine = AppleSpeechEngine(
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
@@ -54,7 +55,7 @@ private final class SpeechEngineTests {
     private static func testStartFailureCancelsRecognitionTaskAndCleansUpAudioSession() {
         let factory = FakeAudioEngineFactory(nextEngine: FakeAudioEngine(startBehavior: .throwAfterStarting))
         let recognitionTask = FakeRecognitionTask()
-        let engine = SpeechEngine(
+        let engine = AppleSpeechEngine(
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
@@ -78,7 +79,7 @@ private final class SpeechEngineTests {
     private static func testStartRecognitionTaskUsesCurrentRecognizerAfterLocaleChange() {
         let factory = FakeAudioEngineFactory()
         var observedLocales: [String] = []
-        let engine = SpeechEngine(
+        let engine = AppleSpeechEngine(
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
@@ -99,7 +100,7 @@ private final class SpeechEngineTests {
 
     private static func testCancelingStaleSessionDoesNotTearDownNewSession() {
         let factory = FakeAudioEngineFactory()
-        let engine = SpeechEngine(
+        let engine = AppleSpeechEngine(
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
@@ -139,7 +140,7 @@ private final class SpeechEngineTests {
 
     private static func testStartSessionThrowsWhenMicDenied() {
         let factory = FakeAudioEngineFactory()
-        let engine = SpeechEngine(
+        let engine = AppleSpeechEngine(
             locale: Locale(identifier: "en_US"),
             audioEngineFactory: factory.makeEngine,
             speechRecognizerAvailability: { _ in true },
@@ -254,6 +255,7 @@ private final class FakeRecognitionTask: SpeechRecognitionTasking {
 
 @main
 private enum TestRunner {
+    @MainActor
     static func main() {
         SpeechEngineTests.main()
     }

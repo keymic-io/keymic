@@ -45,12 +45,12 @@ final class SpeechSession {
 
 @MainActor
 final class DefaultSpeechSessionHost: SpeechSessionHost {
-    private let speechEngine: SpeechEngine
+    private let speechEngine: any SpeechEngineProtocol
     private weak var currentClient: SpeechClient?
     private weak var currentSession: SpeechSession?
 
-    init(speechEngine: SpeechEngine) {
-        self.speechEngine = speechEngine
+    init(engine: any SpeechEngineProtocol) {
+        self.speechEngine = engine
     }
 
     func acquire(client: SpeechClient) throws -> SpeechSession {

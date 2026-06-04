@@ -69,7 +69,8 @@ private final class LiveSpeechAudioEngine: SpeechAudioEngineing {
     }
 }
 
-final class SpeechEngine {
+@MainActor
+final class AppleSpeechEngine: SpeechEngineProtocol {
     var onPartialResult: ((String) -> Void)?
     var onFinalResult: ((String) -> Void)?
     var onError: ((String) -> Void)?

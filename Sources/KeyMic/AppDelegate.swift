@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
     private let secureInputMonitor = SecureInputMonitor()
-    private let speechEngine: SpeechEngine = {
+    private let speechEngine: any SpeechEngineProtocol = {
         let saved = UserDefaults.standard.string(forKey: AppDelegate.selectedLocaleCodeKey)
         let code: String
         if let saved, !saved.isEmpty {
@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             code = AppDelegate.defaultSpeechLocaleCode()
             UserDefaults.standard.set(code, forKey: AppDelegate.selectedLocaleCodeKey)
         }
-        return SpeechEngine(locale: Locale(identifier: code))
+        return AppleSpeechEngine(locale: Locale(identifier: code))
     }()
     private let textInjector = TextInjector()
     private lazy var actionRunner = HotkeyActionRunner(
@@ -115,7 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusBar()
         setupSpeechCallbacks()
 
-        SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
+        AppleSpeechEngine.requestPermissions { [weak self] granted, errorMsg in
             if !granted, let msg = errorMsg {
                 self?.showAlert(title: String(localized: "Permission Required"), message: msg)
             }
@@ -173,7 +173,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clipboardStore: clipboardController.store,
             outputRouter: OutputRouter.shared
         )
-        speechSessionHost = DefaultSpeechSessionHost(speechEngine: speechEngine)
+        speechSessionHost = DefaultSpeechSessionHost(engine: speechEngine)
         voiceTrigger = VoiceTrigger(
             engine: personaEngine,
             sessionHost: speechSessionHost,

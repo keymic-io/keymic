@@ -13,7 +13,7 @@ final class SelectedTextEditorController {
 
     let state = SelectedTextEditorState()
 
-    private let speechEngine: SpeechEngine
+    private let speechEngine: any SpeechEngineProtocol
     private let llm: LLMRefiner
     private let outputRouter: () -> OutputRouter
     private weak var overlayPanel: OverlayPanel?
@@ -34,7 +34,7 @@ final class SelectedTextEditorController {
     private var savedOnAudioLevel: ((Float) -> Void)?
     private var didSaveCallbacks: Bool = false
 
-    init(speechEngine: SpeechEngine,
+    init(speechEngine: any SpeechEngineProtocol,
          llm: LLMRefiner = .shared,
          outputRouter: @autoclosure @escaping () -> OutputRouter = OutputRouter.shared,
          overlayPanel: OverlayPanel? = nil) {
