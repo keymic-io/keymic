@@ -9,7 +9,18 @@ final class SenseVoiceModelStore {
     enum State: Equatable { case notDownloaded, downloading(Double), ready, failed(String) }
 
     private let baseDir: URL
-    private(set) var state: State
+
+    // `state` is touched from both the caller thread and the URLSession background
+    // completion thread, so all access goes through `lock`.
+    private let lock = NSLock()
+    private var _state: State
+    var state: State {
+        lock.lock(); defer { lock.unlock() }
+        return _state
+    }
+    private func setState(_ s: State) {
+        lock.lock(); _state = s; lock.unlock()
+    }
 
     /// 默认 ~/Library/Application Support/KeyMic/models/
     init(baseDir: URL? = nil) {
@@ -19,7 +30,7 @@ final class SenseVoiceModelStore {
             self.baseDir = appSup.appendingPathComponent("KeyMic/models", isDirectory: true)
         }
         let modelURL = self.baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName)
-        state = FileManager.default.fileExists(atPath: modelURL.path) ? .ready : .notDownloaded
+        _state = FileManager.default.fileExists(atPath: modelURL.path) ? .ready : .notDownloaded
     }
 
     var modelURL: URL { baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName) }
@@ -31,6 +42,10 @@ final class SenseVoiceModelStore {
     }
 
     /// 首次下载 → 校验 → 解压。完成 onState(.ready);任何失败 onState(.failed)。
+    ///
+    /// 归档布局约定:下载的归档顶层条目必须正好是 `SenseVoiceConfig.modelDirName`
+    /// (`SenseVoiceSmall.mlmodelc`),因为它会被解压进 `baseDir`,随后 `modelURL`
+    /// 指向 `baseDir/<modelDirName>`。该约定待 Task 0 模型探针确认。
     func ensureDownloaded(onState: @escaping (State) -> Void) {
         if case .ready = state { onState(.ready); return }
         guard let url = URL(string: SenseVoiceConfig.modelDownloadURLString) else { fail("bad download URL", onState); return }
@@ -46,11 +61,15 @@ final class SenseVoiceModelStore {
             do {
                 try FileManager.default.moveItem(at: tmp, to: zip)
                 try self.unzip(zip, into: self.baseDir)
-                self.state = .ready
+                // 解压成功后清理中间产物 zip。
+                try? FileManager.default.removeItem(at: zip)
+                self.setState(.ready)
                 DispatchQueue.main.async { onState(.ready) }
             } catch { self.fail("unzip: \(error.localizedDescription)", onState) }
         }
-        state = .downloading(0)
+        setState(.downloading(0))
+        // TODO: 真实字节进度需要 URLSession delegate,延后到 settings 接线任务;现在先发一次 downloading 回调。
+        DispatchQueue.main.async { onState(.downloading(0)) }
         task.resume()
     }
 
@@ -72,7 +91,7 @@ final class SenseVoiceModelStore {
 
     private func fail(_ msg: String, _ onState: @escaping (State) -> Void) {
         logger.error("\(msg, privacy: .public)")
-        state = .failed(msg)
+        setState(.failed(msg))
         DispatchQueue.main.async { onState(.failed(msg)) }
     }
 }
