@@ -32,7 +32,7 @@ enum SenseVoiceConfig {
     ]
 
     // 模型分发
-    static let modelDownloadURL = URL(string: "REPLACE_WITH_RELEASE_ASSET_URL")!
+    static let modelDownloadURLString = "REPLACE_WITH_RELEASE_ASSET_URL"
     static let modelSHA256 = "REPLACE_WITH_SHA256"
     static let modelDirName = "SenseVoiceSmall.mlmodelc"
 }

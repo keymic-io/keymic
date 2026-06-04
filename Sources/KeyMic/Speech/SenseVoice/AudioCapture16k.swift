@@ -39,15 +39,9 @@ final class AudioCapture16k {
         DispatchQueue.main.async { [weak self] in self?.onAudioLevel?(level) }
     }
 
-    /// 测试入口:输入已是 16k 格式时直接累积,回调同步触发(便于同步断言)。
-    func appendForTest(_ buffer: AVAudioPCMBuffer) {
-        let level = accumulate(buffer)
-        onAudioLevel?(level)
-    }
-
     /// 累积样本并返回归一化 RMS level(0..1)。
     @discardableResult
-    private func accumulate(_ out: AVAudioPCMBuffer) -> Float {
+    func accumulate(_ out: AVAudioPCMBuffer) -> Float {
         guard let ch = out.floatChannelData?[0] else { return 0 }
         let n = Int(out.frameLength)
         samples.append(contentsOf: UnsafeBufferPointer(start: ch, count: n))
