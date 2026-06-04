@@ -30,10 +30,11 @@ final class FbankExtractor {
     private let highFreq: Float  // nyquist (8000)
 
     /// funasr `WavFrontend` upscales the [-1,1] float waveform before kaldi.fbank.
-    /// The committed golden was generated with a 2^30 amplitude scale (the `(1<<15)`
-    /// upscale applied to an already-int16-scaled signal); matching it exactly requires
-    /// the same multiplier. Verified: 2^30 + hamming window reproduces the golden to 0.0.
-    private let sampleScale: Float = Float(1 << 30)
+    /// It applies a single `waveform * (1 << 15)` to the [-1,1] audio (funasr's audio
+    /// loaders return [-1,1]); the bundled `am.mvn` CMVN stats are computed at this 2^15
+    /// scale. We mirror that exact single multiplier here so live mic samples land in the
+    /// model's training distribution. The golden `hello_fbank.json` is regenerated at 2^15.
+    private let sampleScale: Float = Float(1 << 15)
 
     // precomputed
     private let window: [Float]  // analysis window, length frameLength

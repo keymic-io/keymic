@@ -81,6 +81,17 @@ frame_length=25ms, frame_shift=10ms, window=hamming, lfr_m=7, lfr_n=6, dither=0,
 Output per frame is 560-dim (80 mel × 7 LFR stack), CMVN-normalized. This matches the values
 already in `SenseVoiceConfig.swift` (melBins=80, frame 25/10ms, lfrM=7, lfrN=6).
 
+**Amplitude scale (critical):** funasr `WavFrontend` (`upsacle_samples=True`) applies a
+**single `waveform * (1 << 15)`** to the **[-1,1]** float waveform before `kaldi.fbank`. funasr's
+audio loaders (and KeyMic's live mic / `AVAudioFile` path) both yield [-1,1] samples, so the
+correct multiplier is **2^15, applied once**. The bundled `am.mvn` CMVN stats are computed at this
+2^15 scale, so `FbankExtractor.sampleScale` MUST be `1 << 15`. (Historical note: an earlier golden
+was mistakenly generated at **2^30** — the export pre-scaled the wav to int16 range and then
+`WavFrontend` multiplied by 2^15 again. That double scale adds a uniform `2·ln(2^15) ≈ 20.7944`
+offset to every pre-CMVN log-mel bin, which post-CMVN re-centers features near **+3** instead of
+**~0** → out-of-distribution input → garbled transcription. Fixed: scale is 2^15, golden
+regenerated.)
+
 `am.mvn` is the kaldi CMVN text: `<AddShift>` (negated mean, 560 dims) + `<Rescale>`
 (inverse std, 560 dims); the 80-dim mel stats are tiled 7× across the LFR window.
 `am.mvn` SHA256 = `29b3c740a2c0cfc6b308126d31d7f265fa2be74f3bb095cd2f143ea970896ae5` (11203 bytes).
@@ -90,7 +101,7 @@ already in `SenseVoiceConfig.swift` (melBins=80, frame 25/10ms, lfrM=7, lfrN=6).
 | file | what | how |
 | --- | --- | --- |
 | `hello_16k.wav` | 16 kHz mono ~2 s | **SYNTHETIC** deterministic tone+sweep (seed 42), NOT real speech. No real zh/en sample was available offline. |
-| `hello_fbank.json` | `[33][560]` LFR-fbank | funasr `WavFrontend` (params above) on `hello_16k.wav`. Use for FbankExtractor (T3) golden test — note the synthetic input means values are golden-against-funasr, not against real speech. |
+| `hello_fbank.json` | `[33][560]` LFR-fbank | funasr `WavFrontend` (params above, **single 2^15 scale** on the [-1,1] wav) on `hello_16k.wav`. Use for FbankExtractor (T3) golden test — note the synthetic input means values are golden-against-funasr, not against real speech. frame0 post-CMVN ≈ `[-0.32, -0.13, -0.40, ...]` (centered near 0, confirming the correct 2^15 scale). |
 | `sample_ids.json` | per-frame argmax + collapsed ids/tokens | greedy argmax of the REAL `.mlmodelc` `ctc_logits` on `hello_fbank.json`. Use for CTCDecoder (T5) golden test. |
 | `sample_expected.txt` | empty | the synthetic WAV decodes to `<|nospeech|><|EMO_UNKNOWN|><|Event_UNK|><|woitn|>` → empty after tag-strip. CAVEAT: an empty expected string is a weak golden for the decoder; replace with a real-speech sample later for a stronger T5 assertion. |
 
