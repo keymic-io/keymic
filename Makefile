@@ -358,6 +358,13 @@ test-audio-capture-16k:
 	       -o .build/audio-capture-16k-tests
 	.build/audio-capture-16k-tests
 
+test-sensevoice-vocab:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
+	       Tests/SenseVoiceVocabTests.swift \
+	       -o .build/sensevoice-vocab-tests
+	.build/sensevoice-vocab-tests
+
 test-voice-state-machine:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/VoiceError.swift \
@@ -620,7 +627,7 @@ test-window-ocr:
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
