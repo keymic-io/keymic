@@ -18,6 +18,10 @@ final class SenseVoiceModelStore {
     // completion thread, so all access goes through `lock`.
     private let lock = NSLock()
     private var _state: State
+    /// The 432 MB `MLModel` is cached after the first successful load so toggling SenseVoice
+    /// off/on (or re-deciding the engine on every `UserDefaults` change) does not re-pay the
+    /// heavy disk read. Guarded by `lock`.
+    private var cachedModel: MLModel?
     var state: State {
         lock.lock(); defer { lock.unlock() }
         return _state
@@ -78,11 +82,26 @@ final class SenseVoiceModelStore {
     }
 
     /// 惰性加载 MLModel(主线程外调用)。失败返回 nil。
+    ///
+    /// 首次加载约 432 MB,耗时数百毫秒;**必须在主线程外调用**(否则会卡住 event-tap
+    /// 运行循环触发系统级键鼠冻结)。加载结果缓存,后续切换无需再读盘。
+    /// `MLModel(contentsOf:)` 本身在 `lock` 之外执行,避免持锁期间承担重 I/O。
     func loadModel() -> MLModel? {
-        guard case .ready = state else { return nil }
+        lock.lock()
+        let s = _state
+        let cached = cachedModel
+        lock.unlock()
+        guard case .ready = s else { return nil }
+        if let cached { return cached }
         let cfg = MLModelConfiguration()
         cfg.computeUnits = .all
-        return try? MLModel(contentsOf: modelURL, configuration: cfg)
+        let m = try? MLModel(contentsOf: modelURL, configuration: cfg)
+        if let m {
+            lock.lock()
+            cachedModel = m
+            lock.unlock()
+        }
+        return m
     }
 
     private func unzip(_ zip: URL, into dir: URL) throws {
