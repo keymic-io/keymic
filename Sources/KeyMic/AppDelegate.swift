@@ -9,17 +9,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
     private let secureInputMonitor = SecureInputMonitor()
-    private let speechEngine: any SpeechEngineProtocol = {
-        let saved = UserDefaults.standard.string(forKey: AppDelegate.selectedLocaleCodeKey)
-        let code: String
-        if let saved, !saved.isEmpty {
-            code = saved
-        } else {
-            code = AppDelegate.defaultSpeechLocaleCode()
-            UserDefaults.standard.set(code, forKey: AppDelegate.selectedLocaleCodeKey)
-        }
-        return AppleSpeechEngine(locale: Locale(identifier: code))
-    }()
+    /// Constructed in `applicationDidFinishLaunching` via `makeSpeechEngine()` (factory picks
+    /// SenseVoice vs Apple). Rebuilt live by `rebuildSpeechEngine()` when SenseVoice settings change.
+    private var speechEngine: (any SpeechEngineProtocol)!
+    private let senseVoiceModelStore = SenseVoiceModelStore.shared
+    /// Last-applied SenseVoice inputs, so `syncMenuStates()` only rebuilds the engine when they change.
+    private var lastSenseVoiceEnabled: Bool?
+    private var lastSenseVoiceLanguage: String?
+    private var lastSenseVoiceModelReady: Bool?
     private let textInjector = TextInjector()
     private lazy var actionRunner = HotkeyActionRunner(
         typeText: { [weak self] text in self?.textInjector.inject(text) }
@@ -47,6 +44,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let voiceEnabledKey = "voiceEnabled"
     private static let selectedLocaleCodeKey = "selectedLocaleCode"
+    private static let senseVoiceEnabledKey = "senseVoiceEnabled"
+    private static let senseVoiceLanguageKey = "senseVoiceLanguage"
     private static let clipboardSchemaVersionKey = "clipboardSchemaVersion"
     private static let clipboardSchemaVersion = 2
 
@@ -113,6 +112,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupMainMenu()
         setupStatusBar()
+        speechEngine = makeSpeechEngine()
+        recordSenseVoiceBaseline()
         setupSpeechCallbacks()
 
         AppleSpeechEngine.requestPermissions { [weak self] granted, errorMsg in
@@ -305,6 +306,85 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // Voice pipeline lives in PersonaPlatform/Triggers/VoiceTrigger.
+
+    // MARK: - Speech engine factory
+
+    /// Build the speech engine the factory selects. SenseVoice requires macOS 15, the user
+    /// toggle on, and a downloaded+loadable model; every other case falls back to Apple's
+    /// recognizer (identical to the previous property-initializer behavior).
+    private func makeSpeechEngine() -> any SpeechEngineProtocol {
+        let sonomaOrEarlier: Bool = {
+            if #available(macOS 15, *) { return false } else { return true }
+        }()
+        let enabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
+        let choice = SpeechEngineFactory.choose(
+            osIsSonomaOrEarlier: sonomaOrEarlier,
+            enabled: enabled,
+            modelReady: senseVoiceModelStore.state == .ready)
+
+        if choice == .senseVoice, #available(macOS 15, *),
+           let model = senseVoiceModelStore.loadModel(),
+           let mvnURL = Bundle.main.url(forResource: "am", withExtension: "mvn"),
+           let vocabURL = Bundle.main.url(forResource: "vocab", withExtension: "json") {
+            let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+            let languageId = SenseVoiceConfig.languageIds[langKey] ?? 0
+            logger.info("speech engine: SenseVoice (lang=\(langKey, privacy: .public))")
+            return SenseVoiceSpeechEngine(
+                model: SenseVoiceModel(model: model),
+                fbank: FbankExtractor(mvnPath: mvnURL.path),
+                decoder: CTCDecoder(
+                    vocab: SenseVoiceVocab(jsonPath: vocabURL.path),
+                    blankId: SenseVoiceConfig.blankId),
+                languageId: languageId,
+                textnormId: SenseVoiceConfig.defaultTextNorm)
+        }
+
+        // Fallback: Apple recognizer. Seed `selectedLocaleCode` on first launch (preserves the
+        // behavior of the old property initializer).
+        let saved = selectedLocaleCode
+        let code: String
+        if !saved.isEmpty {
+            code = saved
+        } else {
+            code = AppDelegate.defaultSpeechLocaleCode()
+            selectedLocaleCode = code
+        }
+        logger.info("speech engine: Apple (locale=\(code, privacy: .public))")
+        return AppleSpeechEngine(locale: Locale(identifier: code))
+    }
+
+    /// Tear down + rebuild the live speech engine, re-wire its callbacks, and hand the new
+    /// instance to the session host (which cancels any in-flight session first).
+    private func rebuildSpeechEngine() {
+        speechEngine = makeSpeechEngine()
+        setupSpeechCallbacks()
+        speechSessionHost?.replaceEngine(speechEngine)
+        selectedTextEditorController?.replaceEngine(speechEngine)
+        recordSenseVoiceBaseline()
+    }
+
+    /// Snapshot the SenseVoice inputs that determine engine selection, so the next
+    /// `syncMenuStates()` only rebuilds when one of them changes.
+    private func recordSenseVoiceBaseline() {
+        lastSenseVoiceEnabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
+        lastSenseVoiceLanguage = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        lastSenseVoiceModelReady = senseVoiceModelStore.state == .ready
+    }
+
+    /// Rebuild the speech engine iff a SenseVoice-relevant input changed (toggle, language,
+    /// or model readiness) versus the currently-constructed engine. Skips work otherwise so
+    /// the high-frequency `syncMenuStates()` stays cheap.
+    private func syncSenseVoiceEngineIfNeeded() {
+        let enabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
+        let language = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let modelReady = senseVoiceModelStore.state == .ready
+        if enabled == lastSenseVoiceEnabled,
+           language == lastSenseVoiceLanguage,
+           modelReady == lastSenseVoiceModelReady {
+            return
+        }
+        rebuildSpeechEngine()
+    }
 
     // MARK: - Speech callbacks
 
@@ -540,10 +620,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setVoiceEnabled(defaultsVoice)
         }
 
-        let code = selectedLocaleCode
-        let newLocale = code.isEmpty ? Locale.current : Locale(identifier: code)
-        if speechEngine.locale.identifier != newLocale.identifier {
-            speechEngine.locale = newLocale
+        // SenseVoice settings (enable / language / model readiness) reach us via
+        // UserDefaults.didChangeNotification — same channel as the Apple locale below.
+        // Only rebuild the engine when a SenseVoice-relevant input actually changed.
+        syncSenseVoiceEngineIfNeeded()
+
+        // Apple locale only applies when the live engine is the Apple one; SenseVoice picks
+        // its language at construction time (rebuilt above), so skip it for SenseVoice.
+        if speechEngine is AppleSpeechEngine {
+            let code = selectedLocaleCode
+            let newLocale = code.isEmpty ? Locale.current : Locale(identifier: code)
+            if speechEngine.locale.identifier != newLocale.identifier {
+                speechEngine.locale = newLocale
+            }
         }
 
         voiceToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString())

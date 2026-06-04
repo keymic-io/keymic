@@ -439,12 +439,65 @@ extension Bundle {
 
 // MARK: - Voice
 
+/// Drives the SenseVoice model download button + status text. Wraps the shared
+/// `SenseVoiceModelStore` (which already hops its callback to main) and publishes its state
+/// so SwiftUI redraws. The store is the single source of truth; AppDelegate's engine factory
+/// reads the same `SenseVoiceModelStore.shared.state`.
+@MainActor
+final class SenseVoiceDownloadController: ObservableObject {
+    @Published var state: SenseVoiceModelStore.State
+
+    init() {
+        state = SenseVoiceModelStore.shared.state
+    }
+
+    func download() {
+        SenseVoiceModelStore.shared.ensureDownloaded { [weak self] newState in
+            DispatchQueue.main.async { self?.state = newState }
+        }
+    }
+}
+
 private struct VoiceSettingsView: View {
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = true
     @AppStorage("selectedLocaleCode") private var localeCode: String = ""
+    @AppStorage("senseVoiceEnabled") private var senseVoiceEnabled: Bool = false
+    @AppStorage("senseVoiceLanguage") private var senseVoiceLanguage: String = "auto"
+    @StateObject private var download = SenseVoiceDownloadController()
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     private var triggerKey: Binding<String> { hotkeyBinding(hotkeyStore, for: .voiceTrigger) }
+
+    private static let senseVoiceSupported: Bool = {
+        if #available(macOS 15, *) { return true } else { return false }
+    }()
+
+    /// (tag, localized label) pairs for the SenseVoice language picker. Tags match
+    /// `SenseVoiceConfig.languageIds` keys.
+    private static let senseVoiceLanguages: [(tag: String, label: String)] = [
+        ("auto", String(localized: "Auto / 自动")),
+        ("zh", "中文"),
+        ("en", "English"),
+        ("yue", "粤语"),
+        ("ja", "日本語"),
+        ("ko", "한국어"),
+    ]
+
+    private var senseVoiceStatusText: String {
+        switch download.state {
+        case .notDownloaded: return String(localized: "Model not downloaded")
+        case .downloading: return String(localized: "Downloading…")
+        case .ready: return String(localized: "Model ready")
+        case .failed(let msg): return String(localized: "Failed: \(msg)")
+        }
+    }
+
+    private var senseVoiceDownloadDisabled: Bool {
+        switch download.state {
+        case .ready, .downloading: return true
+        case .notDownloaded, .failed: return false
+        }
+    }
 
     private static let languages: [SpeechLanguageOption] = SFSpeechRecognizer.supportedLocales()
         .map { SpeechLanguageOption(locale: $0) }
@@ -473,6 +526,46 @@ private struct VoiceSettingsView: View {
                 Text(
                     "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
                 )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle(
+                    "Enable local SenseVoice engine (multilingual, on-device)",
+                    isOn: $senseVoiceEnabled
+                )
+                .disabled(!Self.senseVoiceSupported || download.state != .ready)
+
+                Picker("Language:", selection: $senseVoiceLanguage) {
+                    ForEach(Self.senseVoiceLanguages, id: \.tag) { lang in
+                        Text(lang.label).tag(lang.tag)
+                    }
+                }
+                .disabled(!Self.senseVoiceSupported)
+
+                LabeledContent("Model:") {
+                    HStack(spacing: 12) {
+                        Text(senseVoiceStatusText)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Download model (~432 MB)") {
+                            download.download()
+                        }
+                        .disabled(!Self.senseVoiceSupported || senseVoiceDownloadDisabled)
+                    }
+                }
+            } header: {
+                Text("Local engine (SenseVoice)")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !Self.senseVoiceSupported {
+                        Text("Requires macOS 15+.")
+                    }
+                    Text(
+                        "Runs entirely on-device — no network after download. Falls back to Apple speech recognition when disabled, unavailable, or the model is not yet downloaded."
+                    )
+                }
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }

@@ -13,7 +13,7 @@ final class SelectedTextEditorController {
 
     let state = SelectedTextEditorState()
 
-    private let speechEngine: any SpeechEngineProtocol
+    private var speechEngine: any SpeechEngineProtocol
     private let llm: LLMRefiner
     private let outputRouter: () -> OutputRouter
     private weak var overlayPanel: OverlayPanel?
@@ -46,6 +46,19 @@ final class SelectedTextEditorController {
 
     func attach(overlayPanel: OverlayPanel) {
         self.overlayPanel = overlayPanel
+    }
+
+    /// Swap the speech engine (e.g. after the SenseVoice backend is toggled in Settings).
+    /// Stops any in-flight hold-to-talk session on the old engine before swapping; the saved
+    /// callbacks are cleared so the new engine doesn't inherit stale state.
+    func replaceEngine(_ engine: any SpeechEngineProtocol) {
+        if state.isRecording || voiceSession != nil {
+            speechEngine.endAudio()
+            voiceSession = nil
+            state.isRecording = false
+        }
+        restoreSpeechCallbacks()
+        speechEngine = engine
     }
 
     // MARK: - Open / close

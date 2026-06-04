@@ -8,6 +8,10 @@ private let logger = Logger(subsystem: "io.keymic.app", category: "SenseVoiceMod
 final class SenseVoiceModelStore {
     enum State: Equatable { case notDownloaded, downloading(Double), ready, failed(String) }
 
+    /// App-wide store rooted at the default Application Support path. AppDelegate's engine
+    /// factory and the Settings download button share this instance so `state` stays consistent.
+    static let shared = SenseVoiceModelStore()
+
     private let baseDir: URL
 
     // `state` is touched from both the caller thread and the URLSession background

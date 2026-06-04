@@ -45,12 +45,23 @@ final class SpeechSession {
 
 @MainActor
 final class DefaultSpeechSessionHost: SpeechSessionHost {
-    private let speechEngine: any SpeechEngineProtocol
+    private var speechEngine: any SpeechEngineProtocol
     private weak var currentClient: SpeechClient?
     private weak var currentSession: SpeechSession?
 
     init(engine: any SpeechEngineProtocol) {
         self.speechEngine = engine
+    }
+
+    /// Swap the underlying speech engine at runtime (e.g. after the user toggles the
+    /// SenseVoice backend or changes its language in Settings). Any in-flight session is
+    /// torn down first — mirroring `release(_:)` — so the old engine can't deliver stale
+    /// callbacks into a session bound to a now-detached engine.
+    func replaceEngine(_ engine: any SpeechEngineProtocol) {
+        currentSession?.cancel()
+        currentSession = nil
+        currentClient = nil
+        speechEngine = engine
     }
 
     func acquire(client: SpeechClient) throws -> SpeechSession {

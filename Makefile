@@ -17,6 +17,8 @@ build:
 	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/vocab.json $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -38,6 +40,8 @@ build-arm64:
 	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/vocab.json $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -57,6 +61,8 @@ build-x86_64:
 	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/vocab.json $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
