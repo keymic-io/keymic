@@ -356,6 +356,19 @@ private struct GeneralSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
+
+            Section {
+                Text("Speech: SenseVoiceSmall (FunASR) — FunASR Model License")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Link("FunASR Model License", destination: URL(string: "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE")!)
+                    Link("CoreML conversion", destination: URL(string: "https://github.com/mefengl/SenseVoiceSmall-coreml")!)
+                }
+                .font(.callout)
+            } header: {
+                Text("Acknowledgements")
+            }
         }
         .formStyle(.grouped)
         .onReceive(accessibilityTimer) { _ in
