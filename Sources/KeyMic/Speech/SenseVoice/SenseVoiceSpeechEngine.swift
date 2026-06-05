@@ -29,6 +29,11 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     private let textnormId: Int
     private let engine = AVAudioEngine()
     private var tapInstalled = false
+    /// Fires every 1s during hold to emit live partials. Cancelled in `teardown()`.
+    private var partialTimer: DispatchSourceTimer?
+    /// Single-flight: skip a tick if the previous partial decode is still running,
+    /// so slow decodes can't pile up. Main-actor only.
+    private var isDecoding = false
 
     init(
         model: SenseVoiceModel, fbank: FbankExtractor, decoder: CTCDecoder,
@@ -61,6 +66,13 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         }
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
         logger.info("startSession — input device: \(deviceName, privacy: .public)")
+        // Pseudo-streaming: re-decode the growing buffer once per second. First fire at
+        // +1s naturally implements the "<1s hold emits no partial" threshold.
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 1.0, repeating: 1.0)
+        timer.setEventHandler { [weak self] in self?.partialTick() }
+        timer.resume()
+        partialTimer = timer
         return VoiceSession { [weak self] in self?.teardown() }
     }
 
@@ -101,7 +113,38 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         }
     }
 
+    /// One partial pass: snapshot current audio, decode off-main, emit a partial.
+    /// Drops the tick if a previous decode is in flight. Decode errors are logged
+    /// and swallowed (never surfaced via onError) so partials don't disrupt capture.
+    private func partialTick() {
+        if isDecoding { return }
+        isDecoding = true
+        let samples = capture.snapshot()
+        let fbank = self.fbank
+        let model = self.model
+        let decoder = self.decoder
+        let lang = languageId
+        let tnorm = textnormId
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                let text = try Self.runPipeline(
+                    samples: samples, fbank: fbank, model: model,
+                    decoder: decoder, languageId: lang, textnormId: tnorm)
+                DispatchQueue.main.async {
+                    self?.isDecoding = false
+                    // Empty result = silence / too-short; don't clear the overlay.
+                    if !text.isEmpty { self?.onPartialResult?(text) }
+                }
+            } catch {
+                logger.debug("partial decode failed: \(error.localizedDescription, privacy: .public)")
+                DispatchQueue.main.async { self?.isDecoding = false }
+            }
+        }
+    }
+
     private func teardown() {
+        partialTimer?.cancel()
+        partialTimer = nil
         if tapInstalled {
             engine.inputNode.removeTap(onBus: 0)
             tapInstalled = false
