@@ -5,8 +5,10 @@ import os.log
 private let logger = Logger(subsystem: "io.keymic.app", category: "SenseVoiceSpeechEngine")
 
 /// Batch ASR engine backed by the SenseVoiceSmall CoreML model. Mirrors `AppleSpeechEngine`'s
-/// session lifecycle (capture on hold, transcribe on release) but produces no partial results —
-/// the whole utterance is captured, then fbank → model → CTC-decode runs once on `endAudio`.
+/// session lifecycle (capture on hold, transcribe on release). The final transcript runs once on
+/// `endAudio` (fbank → model → CTC-decode) and drives injection. For live preview, a 1s timer
+/// (`partialTick`) re-decodes the growing buffer during the hold and emits `onPartialResult`
+/// (overlay only) — pseudo-streaming, since the model itself is not streaming.
 ///
 /// Intentionally NOT annotated `@available(macOS 15)`: see `SenseVoiceModel`. The model is only
 /// constructed when `SenseVoiceModelStore.loadModel()` succeeds (macOS 15+), gated by the factory.
