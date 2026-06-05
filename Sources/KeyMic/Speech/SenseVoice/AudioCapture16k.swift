@@ -6,7 +6,7 @@ private let logger = Logger(subsystem: "io.keymic.app", category: "AudioCapture1
 /// 把麦克风音频转 16k 单声道 Float32 并整句累积(batch ASR 用)。
 final class AudioCapture16k {
     var onAudioLevel: ((Float) -> Void)?
-    private(set) var samples: [Float] = []
+    private var samples: [Float] = []
 
     private let targetFormat = AVAudioFormat(
         commonFormat: .pcmFormatFloat32, sampleRate: SenseVoiceConfig.sampleRate,

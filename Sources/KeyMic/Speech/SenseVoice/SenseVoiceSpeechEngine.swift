@@ -69,7 +69,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     /// `teardown()` removes the tap, so the audio thread can no longer mutate it.
     func endAudio() {
         teardown()
-        let samples = capture.samples
+        let samples = capture.snapshot()
         // Capture the immutable collaborators by value so the background closure does not touch
         // `@MainActor` state. Callbacks hop back to main.
         let fbank = self.fbank

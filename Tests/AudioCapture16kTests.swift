@@ -9,7 +9,7 @@ struct AudioCapture16kTestRunner {
         let buf = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 16000)!
         buf.frameLength = 16000
         let level = cap.accumulate(buf)
-        precondition(cap.samples.count == 16000, "should accumulate 16000 samples (\(cap.samples.count))")
+        precondition(cap.snapshot().count == 16000, "should accumulate 16000 samples (\(cap.snapshot().count))")
         precondition(level >= 0 && level <= 1, "level normalized 0..1 (\(level))")
 
         // resampling: 48k mono → expect ~16000 (×1/3) appended via the real append() converter path
@@ -19,7 +19,7 @@ struct AudioCapture16kTestRunner {
         buf48.frameLength = 48000
         cap2.append(buf48)
         // 160-sample slack absorbs converter latency/edge frames
-        precondition(abs(cap2.samples.count - 16000) <= 160, "48k→16k resample count off: \(cap2.samples.count)")
+        precondition(abs(cap2.snapshot().count - 16000) <= 160, "48k→16k resample count off: \(cap2.snapshot().count)")
 
         // concurrency: 写线程持续 accumulate,主线程并发 snapshot;
         // 断言每个快照都落在 append 边界(无撕裂)、计数单调不退、不越界、不崩溃。
@@ -31,13 +31,17 @@ struct AudioCapture16kTestRunner {
             for _ in 0..<iterations { cap3.accumulate(chunk) }
         }
         writer.start()
+        // Heuristic smoke test: the standalone swiftc runner has no ThreadSanitizer,
+        // so this exercises the lock under contention rather than proving race-freedom.
         var maxSeen = 0
-        while !writer.isFinished || cap3.snapshot().count < iterations * 1600 {
+        var done = false
+        while !done {
             let c = cap3.snapshot().count
             precondition(c % 1600 == 0, "snapshot not on append boundary: \(c)")
             precondition(c <= iterations * 1600, "snapshot exceeds total: \(c)")
             precondition(c >= maxSeen, "snapshot count went backwards: \(c) < \(maxSeen)")
             maxSeen = c
+            done = writer.isFinished && c == iterations * 1600
         }
         precondition(cap3.snapshot().count == iterations * 1600,
                      "final snapshot count wrong: \(cap3.snapshot().count)")
