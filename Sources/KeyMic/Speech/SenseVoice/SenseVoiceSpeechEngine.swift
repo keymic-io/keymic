@@ -64,35 +64,40 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         return VoiceSession { [weak self] in self?.teardown() }
     }
 
+    /// fbank → model → CTC decode on a sample snapshot. `static` so it carries no
+    /// `@MainActor` isolation and is safe to call from a background queue. Returns
+    /// "" when the feature matrix is empty (silence / too-short audio).
+    private static func runPipeline(
+        samples: [Float], fbank: FbankExtractor, model: SenseVoiceModel,
+        decoder: CTCDecoder, languageId: Int, textnormId: Int
+    ) throws -> String {
+        let feat = fbank.extract(samples: samples)
+        guard !feat.isEmpty else { return "" }
+        let logits = try model.infer(features: feat, languageId: languageId, textnormId: textnormId)
+        return decoder.decode(logits: logits)
+    }
+
     /// Release: stop capture, then transcribe the whole utterance off the main thread.
-    /// No partials. `capture.samples` is snapshotted on the main thread (here) AFTER
-    /// `teardown()` removes the tap, so the audio thread can no longer mutate it.
+    /// `capture.snapshot()` is taken on the main thread AFTER `teardown()` cancels the
+    /// partial timer and removes the tap. Final drives injection (state machine).
     func endAudio() {
         teardown()
         let samples = capture.snapshot()
-        // Capture the immutable collaborators by value so the background closure does not touch
-        // `@MainActor` state. Callbacks hop back to main.
         let fbank = self.fbank
         let model = self.model
         let decoder = self.decoder
         let lang = languageId
         let tnorm = textnormId
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let text: String
             do {
-                let feat = fbank.extract(samples: samples)
-                guard !feat.isEmpty else {
-                    DispatchQueue.main.async { self?.onFinalResult?("") }
-                    return
-                }
-                let logits = try model.infer(features: feat, languageId: lang, textnormId: tnorm)
-                text = decoder.decode(logits: logits)
+                let text = try Self.runPipeline(
+                    samples: samples, fbank: fbank, model: model,
+                    decoder: decoder, languageId: lang, textnormId: tnorm)
+                DispatchQueue.main.async { self?.onFinalResult?(text) }
             } catch {
                 let message = (error as? VoiceError)?.displayMessage ?? error.localizedDescription
                 DispatchQueue.main.async { self?.onError?(message) }
-                return
             }
-            DispatchQueue.main.async { self?.onFinalResult?(text) }
         }
     }
 
