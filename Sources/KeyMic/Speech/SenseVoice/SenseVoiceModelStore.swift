@@ -28,12 +28,39 @@ final class SenseVoiceModelStore {
     // Guarded by `lock`.
     private var downloadSession: URLSession?
     private var downloadDelegate: DownloadDelegate?
+
+    /// Serializes the heavy `MLModel(contentsOf:)` disk read so concurrent `loadModel()`
+    /// callers (e.g. several `UserDefaults` changes dispatching engine re-decisions before the
+    /// first load finishes) don't each read the 432 MB model. Held only around the disk read,
+    /// never together with `lock`.
+    private let loadLock = NSLock()
+
+    /// Observers fired on EVERY state transition (always hopped to main). Lets the engine
+    /// factory and Settings UI react to readiness/failure changes that originate outside an
+    /// explicit `ensureDownloaded` call — e.g. a background download completing (so the engine
+    /// upgrades to SenseVoice without waiting for the next unrelated `UserDefaults` change), or
+    /// a `loadModel()` failure flipping `.ready → .failed` (so the UI re-enables download).
+    /// Guarded by `lock`.
+    private var stateObservers: [(State) -> Void] = []
+
     var state: State {
         lock.lock(); defer { lock.unlock() }
         return _state
     }
     private func setState(_ s: State) {
-        lock.lock(); _state = s; lock.unlock()
+        lock.lock()
+        _state = s
+        let observers = stateObservers
+        lock.unlock()
+        guard !observers.isEmpty else { return }
+        DispatchQueue.main.async { observers.forEach { $0(s) } }
+    }
+
+    /// Register an observer for state transitions. The closure is always invoked on the main
+    /// thread. Observers are retained for the lifetime of the store (no removal API needed —
+    /// callers are long-lived singletons: AppDelegate and the Settings download controller).
+    func addStateObserver(_ observer: @escaping (State) -> Void) {
+        lock.lock(); stateObservers.append(observer); lock.unlock()
     }
 
     /// 默认 ~/Library/Application Support/KeyMic/models/
@@ -44,10 +71,17 @@ final class SenseVoiceModelStore {
             self.baseDir = appSup.appendingPathComponent("KeyMic/models", isDirectory: true)
         }
         let modelURL = self.baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName)
+        // Remove any leftover staging dir from an extraction that was interrupted (app killed
+        // / power loss). The model is only moved into `modelURL` after a COMPLETE extraction, so
+        // `modelURL`'s mere existence is a reliable readiness signal — a half-extracted tree can
+        // only ever be in the staging dir, never at `modelURL`.
+        let staging = self.baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".staging")
+        try? FileManager.default.removeItem(at: staging)
         _state = FileManager.default.fileExists(atPath: modelURL.path) ? .ready : .notDownloaded
     }
 
     var modelURL: URL { baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName) }
+    private var stagingURL: URL { baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".staging") }
 
     func verifySHA256(fileURL: URL, expected: String) -> Bool {
         guard let data = try? Data(contentsOf: fileURL) else { return false }
@@ -61,7 +95,20 @@ final class SenseVoiceModelStore {
     /// (`SenseVoiceSmall.mlmodelc`),因为它会被解压进 `baseDir`,随后 `modelURL`
     /// 指向 `baseDir/<modelDirName>`。该约定待 Task 0 模型探针确认。
     func ensureDownloaded(onState: @escaping (State) -> Void) {
-        if case .ready = state { onState(.ready); return }
+        // Single-flight: a check-and-set under `lock` so a double-click (or two call sites)
+        // can't kick off two concurrent 432 MB downloads racing on the same zip / baseDir.
+        lock.lock()
+        switch _state {
+        case .ready:
+            lock.unlock(); onState(.ready); return
+        case .downloading:
+            lock.unlock(); return  // a transfer is already in flight
+        case .notDownloaded, .failed:
+            break
+        }
+        _state = .downloading(0)
+        lock.unlock()
+
         guard let url = URL(string: SenseVoiceConfig.modelDownloadURLString) else { fail("bad download URL", onState); return }
         try? FileManager.default.createDirectory(at: baseDir, withIntermediateDirectories: true)
 
@@ -111,12 +158,31 @@ final class SenseVoiceModelStore {
         try? FileManager.default.removeItem(at: zip)
         do {
             try FileManager.default.moveItem(at: tempURL, to: zip)
-            try extractArchive(zip, into: baseDir)
-            // 解压成功后清理中间产物 zip。
+            // Extract into a staging dir, then atomically move the completed model into place.
+            // This way `modelURL` only ever exists when extraction fully succeeded — an
+            // interrupted extraction leaves a partial tree in staging (cleaned on next launch),
+            // never a half-baked `modelURL` that `init` would mistake for `.ready`.
+            try? FileManager.default.removeItem(at: stagingURL)
+            try FileManager.default.createDirectory(at: stagingURL, withIntermediateDirectories: true)
+            try extractArchive(zip, into: stagingURL)
+            let extracted = stagingURL.appendingPathComponent(SenseVoiceConfig.modelDirName)
+            guard FileManager.default.fileExists(atPath: extracted.path) else {
+                throw NSError(domain: "SenseVoiceModelStore", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "archive did not contain \(SenseVoiceConfig.modelDirName)"])
+            }
+            try? FileManager.default.removeItem(at: modelURL)
+            try FileManager.default.moveItem(at: extracted, to: modelURL)  // atomic rename (same volume)
+            // 清理中间产物 zip + staging。
+            try? FileManager.default.removeItem(at: stagingURL)
             try? FileManager.default.removeItem(at: zip)
             setState(.ready)
             DispatchQueue.main.async { onState(.ready) }
-        } catch { fail("unzip: \(error.localizedDescription)", onState) }
+        } catch {
+            try? FileManager.default.removeItem(at: stagingURL)
+            try? FileManager.default.removeItem(at: zip)
+            fail("unzip: \(error.localizedDescription)", onState)
+        }
     }
 
     /// Transport-level failure handler — runs on the background delegateQueue.
@@ -147,6 +213,16 @@ final class SenseVoiceModelStore {
         lock.unlock()
         guard case .ready = s else { return nil }
         if let cached { return cached }
+
+        // Serialize the heavy disk read: concurrent callers block here instead of each reading
+        // 432 MB. The first acquirer loads; the rest fall through to the cached instance below.
+        loadLock.lock()
+        defer { loadLock.unlock() }
+        lock.lock()
+        let cachedAfterWait = cachedModel
+        lock.unlock()
+        if let cachedAfterWait { return cachedAfterWait }
+
         let cfg = MLModelConfiguration()
         cfg.computeUnits = .all
         let m = try? MLModel(contentsOf: modelURL, configuration: cfg)
@@ -154,6 +230,11 @@ final class SenseVoiceModelStore {
             lock.lock()
             cachedModel = m
             lock.unlock()
+        } else {
+            // The model dir exists (state was `.ready`) but failed to load — corrupt / partial.
+            // Flip to `.failed` so the engine factory falls back to Apple AND the Settings UI
+            // re-enables the download button for recovery (observers fire on this transition).
+            setState(.failed("model load failed"))
         }
         return m
     }
@@ -166,9 +247,14 @@ final class SenseVoiceModelStore {
         p.arguments = ["-xk", "--sequesterRsrc", zip.path, dir.path]
         let errPipe = Pipe()
         p.standardError = errPipe
-        try p.run(); p.waitUntilExit()
+        try p.run()
+        // Drain stderr BEFORE `waitUntilExit()`. `readDataToEndOfFile()` reads until the write
+        // end closes (process exit), so a chatty ditto (e.g. permission errors over a large
+        // bundle) can't fill the 64 KB pipe buffer, block on write, and deadlock us in
+        // `waitUntilExit()` — which would leave the download stuck on `.downloading` forever.
+        let data = errPipe.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
         if p.terminationStatus != 0 {
-            let data = errPipe.fileHandleForReading.readDataToEndOfFile()
             let msg = String(data: data, encoding: .utf8) ?? "unknown error"
             throw NSError(domain: "ditto", code: Int(p.terminationStatus),
                           userInfo: [NSLocalizedDescriptionKey: "ditto failed: \(msg)"])

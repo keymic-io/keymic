@@ -227,6 +227,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // enabled this kicks off an off-main model load and swaps the engine in when ready;
         // otherwise it is a no-op (already on Apple).
         applySpeechEnginePreference()
+        // Re-decide the engine whenever the model store's readiness changes outside a
+        // UserDefaults edit — chiefly when a download finishes mid-session (so dictation
+        // upgrades to SenseVoice without waiting for an unrelated preference change or a
+        // restart), or when a load failure flips `.ready → .failed` (so we drop back to Apple).
+        senseVoiceModelStore.addStateObserver { [weak self] _ in
+            self?.syncSenseVoiceEngineIfNeeded()
+        }
         clipboardTransformController = ClipboardTransformController(
             store: clipboardController.store,
             overlayPanel: overlayPanel

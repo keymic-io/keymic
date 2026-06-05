@@ -449,6 +449,12 @@ final class SenseVoiceDownloadController: ObservableObject {
 
     init() {
         state = SenseVoiceModelStore.shared.state
+        // Mirror EVERY store transition, not just the ones from our own `download()` call —
+        // so a load failure elsewhere (`.ready → .failed`) re-enables the download button, and
+        // a download started from another path still updates this UI.
+        SenseVoiceModelStore.shared.addStateObserver { [weak self] newState in
+            self?.state = newState  // observer always fires on the main thread
+        }
     }
 
     func download() {
@@ -488,9 +494,10 @@ private struct VoiceSettingsView: View {
         case .notDownloaded: return String(localized: "Model not downloaded")
         case .downloading(let fraction):
             let percent = Int((fraction * 100).rounded())
-            return String(localized: "Downloading… \(percent)%")
+            // Explicit `%lld%%` key (vs. interpolation) so the catalog lookup is deterministic.
+            return String(format: String(localized: "Downloading… %lld%%"), percent)
         case .ready: return String(localized: "Model ready")
-        case .failed(let msg): return String(localized: "Failed: \(msg)")
+        case .failed(let msg): return String(format: String(localized: "Failed: %@"), msg)
         }
     }
 
@@ -543,7 +550,11 @@ private struct VoiceSettingsView: View {
                     "Enable local SenseVoice engine (multilingual, on-device)",
                     isOn: $senseVoiceEnabled
                 )
-                .disabled(!Self.senseVoiceSupported || download.state != .ready)
+                // Gate ENABLING on a ready model, but always allow turning it back OFF — otherwise
+                // a user whose model dir was deleted/corrupted (state != .ready) with a persisted
+                // `senseVoiceEnabled = true` would be unable to clear the setting, and the engine
+                // would auto-switch back to SenseVoice the moment the model became ready again.
+                .disabled(!Self.senseVoiceSupported || (download.state != .ready && !senseVoiceEnabled))
 
                 Picker("Language:", selection: $senseVoiceLanguage) {
                     ForEach(Self.senseVoiceLanguages, id: \.tag) { lang in

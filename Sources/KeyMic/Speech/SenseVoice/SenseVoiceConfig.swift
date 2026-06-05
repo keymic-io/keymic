@@ -15,6 +15,10 @@ enum SenseVoiceConfig {
     static let lfrM = 7
     static let lfrN = 6
     static let modelFeatureDim = melBins * lfrM   // 560
+    /// 导出图 `speech` 输入帧数 T 的上界(弹性 1...3000)。超过会让 `model.prediction`
+    /// 因 shape/range 不匹配抛错(约 3 分钟连续语音)。前端在喂入前截断到该上界,
+    /// 宁可丢尾部也好过整段 final 丢失。
+    static let modelMaxFrames = 3000
 
     // 模型 I/O 名(Task 0 实测确认:加载 .mlmodelc 跑真实前向 + 对照上游 export_meta.py)
     // 导出图共 4 个输入,Task 7 wrapper 必须全部喂入(不可省略 length/language/textnorm):

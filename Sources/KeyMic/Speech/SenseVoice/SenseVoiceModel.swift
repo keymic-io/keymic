@@ -1,5 +1,8 @@
 import CoreML
 import Foundation
+import os.log
+
+private let logger = Logger(subsystem: "io.keymic.app", category: "SenseVoiceModel")
 
 /// Wraps the SenseVoiceSmall CoreML model: builds its 4 inputs from LFR-fbank features,
 /// runs inference, returns raw CTC logits trimmed to the valid encoder length.
@@ -24,6 +27,14 @@ final class SenseVoiceModel {
     static func makeFeatureProvider(
         features: [[Float]], languageId: Int, textnormId: Int
     ) throws -> MLDictionaryFeatureProvider {
+        // The exported `speech` input only accepts T in 1...modelMaxFrames (~3 min). A longer
+        // hold would make `model.prediction` throw on a shape/range mismatch and lose the whole
+        // transcript; truncate to the cap (drop the tail) so we still return a partial result.
+        let features: [[Float]] = {
+            guard features.count > SenseVoiceConfig.modelMaxFrames else { return features }
+            logger.notice("feature frames \(features.count, privacy: .public) capped at \(SenseVoiceConfig.modelMaxFrames, privacy: .public); tail dropped")
+            return Array(features.prefix(SenseVoiceConfig.modelMaxFrames))
+        }()
         let t = features.count
         let d = features.first?.count ?? SenseVoiceConfig.modelFeatureDim
 

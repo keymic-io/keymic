@@ -36,6 +36,12 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     /// Single-flight: skip a tick if the previous partial decode is still running,
     /// so slow decodes can't pile up. Main-actor only.
     private var isDecoding = false
+    /// Bumped on every `startSession()`. A background final/partial decode captures the
+    /// generation it was dispatched under and drops its result if a newer session has
+    /// started in the meantime — otherwise utterance A's late final could be injected
+    /// into utterance B (the callbacks are shared across sessions on this engine).
+    /// Main-actor only.
+    private var sessionGeneration = 0
 
     init(
         model: SenseVoiceModel, fbank: FbankExtractor, decoder: CTCDecoder,
@@ -53,6 +59,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else { throw VoiceError.microphoneAccessDenied(status) }
 
+        sessionGeneration &+= 1
         capture.reset()
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
@@ -102,15 +109,22 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         let decoder = self.decoder
         let lang = languageId
         let tnorm = textnormId
+        let gen = sessionGeneration
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let text = try Self.runPipeline(
                     samples: samples, fbank: fbank, model: model,
                     decoder: decoder, languageId: lang, textnormId: tnorm)
-                DispatchQueue.main.async { self?.onFinalResult?(text) }
+                DispatchQueue.main.async {
+                    guard let self, gen == self.sessionGeneration else { return }
+                    self.onFinalResult?(text)
+                }
             } catch {
                 let message = (error as? VoiceError)?.displayMessage ?? error.localizedDescription
-                DispatchQueue.main.async { self?.onError?(message) }
+                DispatchQueue.main.async {
+                    guard let self, gen == self.sessionGeneration else { return }
+                    self.onError?(message)
+                }
             }
         }
     }
@@ -136,6 +150,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         let decoder = self.decoder
         let lang = languageId
         let tnorm = textnormId
+        let gen = sessionGeneration
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             do {
                 let text = try Self.runPipeline(
@@ -143,8 +158,10 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
                     decoder: decoder, languageId: lang, textnormId: tnorm)
                 DispatchQueue.main.async {
                     self?.isDecoding = false
+                    // Drop a partial from a session that has already been superseded.
+                    guard let self, gen == self.sessionGeneration else { return }
                     // Empty result = silence / too-short; don't clear the overlay.
-                    if !text.isEmpty { self?.onPartialResult?(text) }
+                    if !text.isEmpty { self.onPartialResult?(text) }
                 }
             } catch {
                 logger.debug("partial decode failed: \(error.localizedDescription, privacy: .public)")

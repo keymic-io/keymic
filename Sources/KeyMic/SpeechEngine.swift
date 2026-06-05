@@ -136,31 +136,23 @@ final class AppleSpeechEngine: SpeechEngineProtocol {
     // MARK: - Permissions
 
     static func requestPermissions(completion: @escaping (Bool, String?) -> Void) {
-        SFSpeechRecognizer.requestAuthorization { status in
-            DispatchQueue.main.async {
-                switch status {
-                case .authorized:
-                    AVCaptureDevice.requestAccess(for: .audio) { granted in
-                        DispatchQueue.main.async {
-                            if granted {
-                                completion(true, nil)
-                            } else {
-                                completion(
-                                    false,
-                                    String(localized: "Microphone access denied.\nGrant in System Settings → Privacy & Security → Microphone.")
-                                )
-                            }
-                        }
+        // Microphone is required by BOTH speech backends (Apple recognizer + local SenseVoice),
+        // so request it FIRST and unconditionally. Speech Recognition is only needed by the
+        // Apple recognizer; request it best-effort afterwards and never block the local
+        // SenseVoice path on its denial (the Apple path surfaces `recognizerUnavailable` at
+        // session time if speech auth is missing). Requesting speech first and bailing on
+        // denial — the old behaviour — left SenseVoice-only users with no microphone prompt.
+        AVCaptureDevice.requestAccess(for: .audio) { micGranted in
+            SFSpeechRecognizer.requestAuthorization { _ in
+                DispatchQueue.main.async {
+                    if micGranted {
+                        completion(true, nil)
+                    } else {
+                        completion(
+                            false,
+                            String(localized: "Microphone access denied.\nGrant in System Settings → Privacy & Security → Microphone.")
+                        )
                     }
-                case .denied, .restricted:
-                    completion(
-                        false,
-                        String(localized: "Speech recognition denied.\nGrant in System Settings → Privacy & Security → Speech Recognition.")
-                    )
-                case .notDetermined:
-                    completion(false, String(localized: "Speech recognition permission not determined."))
-                @unknown default:
-                    completion(false, String(localized: "Unknown speech recognition authorization status."))
                 }
             }
         }
