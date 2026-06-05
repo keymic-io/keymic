@@ -67,7 +67,7 @@ Golden fixture: input T=33 → `ctc_logits` `[1, 37, 25055]`, `encoder_out_lens=
   real forward pass = 25055; (b) the SentencePiece tokenizer `chn_jpn_yue_eng_ko_spectok.bpe.model`
   `get_piece_size()` = 25055. They match, so the CTC output indexes the SPM vocab directly.
 - **`blankId = 0`** — config.json `decoding.ctc_blank_id = 0`. SPM piece[0] is `<unk>`; FunASR
-  CTC reuses index 0 as the blank. `vocab.json` maps `"<unk>" -> 0`.
+  CTC reuses index 0 as the blank. The SPM `.model` is parsed at runtime: piece index 0 maps to `<unk>`.
 - SenseVoice control tokens live at the **top of the vocab** and must be stripped from decoded
   text. Language tags `<|zh|>`(24884) `<|en|>`(24885) … ; task tags `<|ASR|>`(24989) `<|AED|>`(24990)
   `<|SER|>`(24991) `<|nospeech|>`(24992); event tags `<|Speech|>`/`<|BGM|>`/`<|Laughter|>`/…;

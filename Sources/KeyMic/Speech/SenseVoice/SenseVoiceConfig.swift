@@ -37,7 +37,7 @@ enum SenseVoiceConfig {
 
     // 解码
     static let blankId = 0                          // Task 0 确认:config.json ctc_blank_id=0;SPM piece[0]=<unk> 复用为 blank
-    static let vocabResource = "vocab"
+    static let vocabResource = "chn_jpn_yue_eng_ko_spectok.bpe"   // SPM .model 资源名(运行时解析 protobuf 词表)
     static let vocabSize = 25055                    // Task 0 实测:ctc_logits 末维 == SPM piece 数 == 25055
 
     // 语言 id(直接作为 language 输入的 Int32 值,= 上游 model.py lid_dict)

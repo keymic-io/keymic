@@ -19,7 +19,9 @@ struct CTCDecoderTestRunner {
 
         // 3. golden:真实模型 argmax → collapse 等于 ctc_collapsed_no_blank,decode 为空(控制标签全 strip)
         let real = CTCDecoder(
-            vocab: SenseVoiceVocab(jsonPath: "Resources/sensevoice/vocab.json"), blankId: 0)
+            vocab: SenseVoiceVocab(
+                spmModelPath: "Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model"),
+            blankId: 0)
         let s = loadSampleIds("Tests/Support/sensevoice/sample_ids.json")
         precondition(
             real.collapse(s.greedyRaw) == s.collapsedNoBlank,

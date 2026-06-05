@@ -18,7 +18,7 @@ build:
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
-	cp Resources/sensevoice/vocab.json $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -41,7 +41,7 @@ build-arm64:
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
-	cp Resources/sensevoice/vocab.json $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -62,7 +62,7 @@ build-x86_64:
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
-	cp Resources/sensevoice/vocab.json $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -373,7 +373,8 @@ test-audio-capture-16k:
 
 test-sensevoice-vocab:
 	mkdir -p .build
-	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
+	swiftc Sources/KeyMic/Speech/SenseVoice/ProtobufReader.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
 	       Tests/SenseVoiceVocabTests.swift \
 	       -o .build/sensevoice-vocab-tests
 	.build/sensevoice-vocab-tests
@@ -400,6 +401,7 @@ test-sensevoice-model-store:
 test-ctc-decoder:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Speech/SenseVoice/ProtobufReader.swift \
 	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
 	       Sources/KeyMic/Speech/SenseVoice/CTCDecoder.swift \
 	       Tests/CTCDecoderTests.swift \

@@ -346,8 +346,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// which case the caller stays on Apple.
     private func makeSenseVoiceEngineIfPossible(model: MLModel) -> (any SpeechEngineProtocol)? {
         guard let mvnURL = Bundle.main.url(forResource: "am", withExtension: "mvn"),
-              let vocabURL = Bundle.main.url(forResource: "vocab", withExtension: "json") else {
-            logger.error("SenseVoice resources missing (am.mvn / vocab.json); staying on Apple")
+              let vocabURL = Bundle.main.url(
+                forResource: "chn_jpn_yue_eng_ko_spectok.bpe", withExtension: "model") else {
+            logger.error("SenseVoice resources missing (am.mvn / SPM .model); staying on Apple")
             return nil
         }
         let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
@@ -357,7 +358,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model: SenseVoiceModel(model: model),
             fbank: FbankExtractor(mvnPath: mvnURL.path),
             decoder: CTCDecoder(
-                vocab: SenseVoiceVocab(jsonPath: vocabURL.path),
+                vocab: SenseVoiceVocab(spmModelPath: vocabURL.path),
                 blankId: SenseVoiceConfig.blankId),
             languageId: languageId,
             textnormId: SenseVoiceConfig.defaultTextNorm)

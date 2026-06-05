@@ -50,13 +50,34 @@ final class CTCDecoder {
 
     private func detokenize(_ ids: [Int]) -> String {
         var pieces: [String] = []
+        var byteBuffer: [UInt8] = []  // 累积连续的 <0xHH> 字节片,遇非字节片时按 UTF-8 整体 flush
+
+        func flushBytes() {
+            guard !byteBuffer.isEmpty else { return }
+            // 多字节 UTF-8 字符(如 CJK)跨多个 <0xHH> 片,必须整体解码而非逐字节。
+            pieces.append(String(decoding: byteBuffer, as: UTF8.self))
+            byteBuffer.removeAll(keepingCapacity: true)
+        }
+
         for id in ids {
             let tok = vocab.token(for: id)
             if tok.isEmpty { continue }
+            if let byte = Self.bytePieceValue(tok) {
+                byteBuffer.append(byte)
+                continue
+            }
+            flushBytes()
             if tok.hasPrefix("<|") && tok.hasSuffix("|>") { continue }  // strip 控制标签
             pieces.append(tok)
         }
+        flushBytes()
         let joined = pieces.joined()
         return joined.replacingOccurrences(of: "▁", with: " ").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// SentencePiece 字节回退片 `<0xHH>` → 字节值;非字节片返回 nil。
+    private static func bytePieceValue(_ tok: String) -> UInt8? {
+        guard tok.hasPrefix("<0x"), tok.hasSuffix(">"), tok.count == 6 else { return nil }
+        return UInt8(tok.dropFirst(3).dropLast(1), radix: 16)
     }
 }

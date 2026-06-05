@@ -71,7 +71,7 @@ install_name_tool -add_rpath "@executable_path/../Frameworks" "${BUNDLE}/Content
 cp Info.plist "${BUNDLE}/Contents/"
 cp Resources/gitleaks.toml "${BUNDLE}/Contents/Resources/"
 cp Resources/sensevoice/am.mvn "${BUNDLE}/Contents/Resources/"
-cp Resources/sensevoice/vocab.json "${BUNDLE}/Contents/Resources/"
+cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model "${BUNDLE}/Contents/Resources/"
 cp Resources/AppIcon.icns "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate.png "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate@2x.png "${BUNDLE}/Contents/Resources/"
