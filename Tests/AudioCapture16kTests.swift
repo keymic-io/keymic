@@ -21,6 +21,28 @@ struct AudioCapture16kTestRunner {
         // 160-sample slack absorbs converter latency/edge frames
         precondition(abs(cap2.samples.count - 16000) <= 160, "48k→16k resample count off: \(cap2.samples.count)")
 
+        // concurrency: 写线程持续 accumulate,主线程并发 snapshot;
+        // 断言每个快照都落在 append 边界(无撕裂)、计数单调不退、不越界、不崩溃。
+        let cap3 = AudioCapture16k()
+        let chunk = AVAudioPCMBuffer(pcmFormat: fmt, frameCapacity: 1600)!
+        chunk.frameLength = 1600
+        let iterations = 500
+        let writer = Thread {
+            for _ in 0..<iterations { cap3.accumulate(chunk) }
+        }
+        writer.start()
+        var maxSeen = 0
+        while !writer.isFinished || cap3.snapshot().count < iterations * 1600 {
+            let c = cap3.snapshot().count
+            precondition(c % 1600 == 0, "snapshot not on append boundary: \(c)")
+            precondition(c <= iterations * 1600, "snapshot exceeds total: \(c)")
+            precondition(c >= maxSeen, "snapshot count went backwards: \(c) < \(maxSeen)")
+            maxSeen = c
+        }
+        precondition(cap3.snapshot().count == iterations * 1600,
+                     "final snapshot count wrong: \(cap3.snapshot().count)")
+        print("AudioCapture16k concurrency test passed")
+
         print("AudioCapture16kTests passed")
     }
 }
