@@ -116,6 +116,15 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     /// One partial pass: snapshot current audio, decode off-main, emit a partial.
     /// Drops the tick if a previous decode is in flight. Decode errors are logged
     /// and swallowed (never surfaced via onError) so partials don't disrupt capture.
+    ///
+    /// A partial dispatched just before `endAudio()` can finish AFTER the final
+    /// result (both hop through `main.async`), so `onPartialResult` may fire with
+    /// stale text post-final. That's harmless: `finalResult` drives the state
+    /// machine to `.idle`, whose catch-all drops any later `partialResult`
+    /// (`VoiceStateMachine`) — final stays authoritative for the overlay/injection.
+    /// Such a late partial also runs `runPipeline` concurrently with the final
+    /// decode, i.e. two `model.infer` on the shared CoreML model; `MLModel`
+    /// serializes concurrent predictions internally, so it's safe (transient 2x).
     private func partialTick() {
         if isDecoding { return }
         isDecoding = true
