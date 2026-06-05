@@ -486,10 +486,18 @@ private struct VoiceSettingsView: View {
     private var senseVoiceStatusText: String {
         switch download.state {
         case .notDownloaded: return String(localized: "Model not downloaded")
-        case .downloading: return String(localized: "Downloading…")
+        case .downloading(let fraction):
+            let percent = Int((fraction * 100).rounded())
+            return String(localized: "Downloading… \(percent)%")
         case .ready: return String(localized: "Model ready")
         case .failed(let msg): return String(localized: "Failed: \(msg)")
         }
+    }
+
+    /// The byte-progress fraction while downloading, else nil.
+    private var senseVoiceDownloadFraction: Double? {
+        if case .downloading(let fraction) = download.state { return fraction }
+        return nil
     }
 
     private var senseVoiceDownloadDisabled: Bool {
@@ -545,14 +553,20 @@ private struct VoiceSettingsView: View {
                 .disabled(!Self.senseVoiceSupported)
 
                 LabeledContent("Model:") {
-                    HStack(spacing: 12) {
-                        Text(senseVoiceStatusText)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Download model (~432 MB)") {
-                            download.download()
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 12) {
+                            Text(senseVoiceStatusText)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Download model (~432 MB)") {
+                                download.download()
+                            }
+                            .disabled(!Self.senseVoiceSupported || senseVoiceDownloadDisabled)
                         }
-                        .disabled(!Self.senseVoiceSupported || senseVoiceDownloadDisabled)
+                        if let fraction = senseVoiceDownloadFraction {
+                            ProgressView(value: fraction)
+                                .progressViewStyle(.linear)
+                        }
                     }
                 }
             } header: {
