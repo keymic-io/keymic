@@ -355,7 +355,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let mvnURL = Bundle.main.url(forResource: "am", withExtension: "mvn"),
               let vocabURL = Bundle.main.url(
                 forResource: "chn_jpn_yue_eng_ko_spectok.bpe", withExtension: "model") else {
-            logger.error("SenseVoice resources missing (am.mvn / SPM .model); staying on Apple")
+            logger.warning("SenseVoice resources missing (am.mvn / SPM .model); staying on Apple")
             return nil
         }
         let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"

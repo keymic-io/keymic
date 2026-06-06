@@ -32,7 +32,7 @@ final class SenseVoiceModel {
         // transcript; truncate to the cap (drop the tail) so we still return a partial result.
         let features: [[Float]] = {
             guard features.count > SenseVoiceConfig.modelMaxFrames else { return features }
-            logger.notice("feature frames \(features.count, privacy: .public) capped at \(SenseVoiceConfig.modelMaxFrames, privacy: .public); tail dropped")
+            logger.warning("feature frames \(features.count, privacy: .public) capped at \(SenseVoiceConfig.modelMaxFrames, privacy: .public); tail dropped")
             return Array(features.prefix(SenseVoiceConfig.modelMaxFrames))
         }()
         let t = features.count

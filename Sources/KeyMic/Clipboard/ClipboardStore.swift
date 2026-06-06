@@ -172,7 +172,7 @@ final class ClipboardStore {
         height: Int
     ) -> PreparedImage? {
         guard data.count <= Self.maxImageBytes else {
-            Self.logger.info("prepareImage skip oversized bytes=\(data.count, privacy: .public)")
+            Self.logger.warning("prepareImage skip oversized bytes=\(data.count, privacy: .public)")
             return nil
         }
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -421,7 +421,7 @@ final class ClipboardStore {
             }
         }
         if removed > 0 {
-            Self.logger.info("collectOrphanCacheFiles — removed \(removed, privacy: .public) orphan files")
+            Self.logger.debug("collectOrphanCacheFiles — removed \(removed, privacy: .public) orphan files")
         }
     }
 
@@ -437,7 +437,7 @@ final class ClipboardStore {
     private func saveDedup(newest: ClipboardItem) -> Bool {
         do {
             try context.save()
-            Self.logger.info("dedup saved — newestLen=\(newest.text.count, privacy: .public)")
+            Self.logger.debug("dedup saved — newestLen=\(newest.text.count, privacy: .public)")
             return true
         } catch {
             Self.logger.error("dedup save failed — \(error.localizedDescription, privacy: .public)")
@@ -448,7 +448,7 @@ final class ClipboardStore {
     private func saveInserted(text: String) -> Bool {
         do {
             try context.save()
-            Self.logger.info("add saved — insertedLen=\(text.count, privacy: .public)")
+            Self.logger.debug("add saved — insertedLen=\(text.count, privacy: .public)")
             return true
         } catch {
             Self.logger.error("add save failed — \(error.localizedDescription, privacy: .public)")

@@ -74,7 +74,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
-        logger.info("startSession — input device: \(deviceName, privacy: .public)")
+        logger.debug("startSession — input device: \(deviceName, privacy: .public)")
         // Pseudo-streaming: re-decode the growing buffer once per second. First fire at
         // +1s naturally implements the "<1s hold emits no partial" threshold.
         let timer = DispatchSource.makeTimerSource(queue: .main)

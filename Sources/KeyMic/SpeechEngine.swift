@@ -200,7 +200,7 @@ final class AppleSpeechEngine: SpeechEngineProtocol {
         audioEngine = engine
         let inputNode = engine.inputNode
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
-        logger.info("startSession — input device: \(deviceName, privacy: .public)")
+        logger.debug("startSession — input device: \(deviceName, privacy: .public)")
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             request.append(buffer)
