@@ -17,6 +17,8 @@ build:
 	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -38,6 +40,8 @@ build-arm64:
 	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -57,6 +61,8 @@ build-x86_64:
 	install_name_tool -add_rpath "@executable_path/../Frameworks" $(APP_BUNDLE)/Contents/MacOS/$(APP_NAME) 2>/dev/null || true
 	cp Info.plist $(APP_BUNDLE)/Contents/
 	cp Resources/gitleaks.toml $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/am.mvn $(APP_BUNDLE)/Contents/Resources/
+	cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/AppIcon.icns $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate.png $(APP_BUNDLE)/Contents/Resources/
 	cp Resources/TrayIconTemplate@2x.png $(APP_BUNDLE)/Contents/Resources/
@@ -353,6 +359,7 @@ test-speech-engine:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/VoiceError.swift \
 	       Sources/KeyMic/Speech/VoiceState.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SpeechEngineProtocol.swift \
 	       Sources/KeyMic/SpeechEngine.swift \
 	       Tests/SpeechEngineTests.swift \
 	       -o .build/speech-engine-tests
@@ -364,6 +371,77 @@ test-voice-session:
 	       Tests/VoiceSessionTests.swift \
 	       -o .build/voice-session-tests
 	.build/voice-session-tests
+
+test-speech-protocol:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/VoiceState.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SpeechEngineProtocol.swift \
+	       Sources/KeyMic/PersonaPlatform/Triggers/SpeechSessionHost.swift \
+	       Tests/SpeechEngineProtocolTests.swift \
+	       -o .build/speech-protocol-tests
+	.build/speech-protocol-tests
+
+test-speech-factory:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SpeechEngineFactory.swift \
+	       Tests/SpeechEngineFactoryTests.swift \
+	       -o .build/speech-factory-tests
+	.build/speech-factory-tests
+
+test-audio-capture-16k:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Speech/SenseVoice/AudioCapture16k.swift \
+	       Tests/AudioCapture16kTests.swift \
+	       -o .build/audio-capture-16k-tests
+	.build/audio-capture-16k-tests
+
+test-sensevoice-vocab:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/ProtobufReader.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
+	       Tests/SenseVoiceVocabTests.swift \
+	       -o .build/sensevoice-vocab-tests
+	.build/sensevoice-vocab-tests
+
+test-fbank-extractor:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Speech/SenseVoice/FbankExtractor.swift \
+	       Tests/Support/sensevoice/GoldenLoader.swift \
+	       Tests/FbankExtractorTests.swift \
+	       -framework Accelerate -framework AVFoundation \
+	       -o .build/fbank-extractor-tests
+	.build/fbank-extractor-tests
+
+test-sensevoice-model-store:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceModelStore.swift \
+	       Tests/SenseVoiceModelStoreTests.swift \
+	       -framework CoreML \
+	       -o .build/sensevoice-model-store-tests
+	.build/sensevoice-model-store-tests
+
+test-ctc-decoder:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Speech/SenseVoice/ProtobufReader.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
+	       Sources/KeyMic/Speech/SenseVoice/CTCDecoder.swift \
+	       Tests/CTCDecoderTests.swift \
+	       -o .build/ctc-decoder-tests
+	.build/ctc-decoder-tests
+
+test-sensevoice-model-input:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Speech/VoiceError.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceModel.swift \
+	       Tests/SenseVoiceModelInputTests.swift \
+	       -framework CoreML -framework AVFoundation \
+	       -o .build/sensevoice-model-input-tests
+	.build/sensevoice-model-input-tests
 
 test-voice-state-machine:
 	mkdir -p .build
@@ -950,7 +1028,7 @@ test-window-ocr:
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session test-agent-runner
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session test-agent-runner test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-ctc-decoder test-sensevoice-model-input
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)

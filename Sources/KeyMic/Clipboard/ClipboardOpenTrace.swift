@@ -40,7 +40,7 @@ final class ClipboardOpenTrace {
         last = now
         active = true
         intervalState = signposter.beginInterval("panel-open")
-        logger.info("[clip-open] ▶︎ begin (\(reason, privacy: .public))")
+        logger.debug("[clip-open] ▶︎ begin (\(reason, privacy: .public))")
     }
 
     /// Record a stage boundary: elapsed since `begin` and delta since the previous mark.
@@ -50,7 +50,7 @@ final class ClipboardOpenTrace {
         let elapsed = (now - start) * 1000
         let delta = (now - last) * 1000
         last = now
-        logger.info(
+        logger.debug(
             "[clip-open] \(label, privacy: .public) +\(elapsed, format: .fixed(precision: 1))ms (Δ\(delta, format: .fixed(precision: 1))ms)"
         )
     }
@@ -65,7 +65,7 @@ final class ClipboardOpenTrace {
         if let intervalState {
             signposter.endInterval("panel-open", intervalState)
         }
-        logger.info("[clip-open] ✓ \(label, privacy: .public) — total \(elapsed, format: .fixed(precision: 1))ms")
+        logger.debug("[clip-open] ✓ \(label, privacy: .public) — total \(elapsed, format: .fixed(precision: 1))ms")
         active = false
         intervalState = nil
     }

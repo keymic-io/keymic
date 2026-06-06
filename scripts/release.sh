@@ -70,6 +70,8 @@ cp "${UNIVERSAL_BIN}" "${BUNDLE}/Contents/MacOS/${APP_NAME}"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "${BUNDLE}/Contents/MacOS/${APP_NAME}" 2>/dev/null || true
 cp Info.plist "${BUNDLE}/Contents/"
 cp Resources/gitleaks.toml "${BUNDLE}/Contents/Resources/"
+cp Resources/sensevoice/am.mvn "${BUNDLE}/Contents/Resources/"
+cp Resources/sensevoice/chn_jpn_yue_eng_ko_spectok.bpe.model "${BUNDLE}/Contents/Resources/"
 cp Resources/AppIcon.icns "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate.png "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate@2x.png "${BUNDLE}/Contents/Resources/"

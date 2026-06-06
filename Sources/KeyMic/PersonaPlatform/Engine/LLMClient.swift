@@ -60,14 +60,14 @@ final class OpenAICompatibleLLMClient: LLMClient {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        logger.info("request — host=\(url.host ?? "?", privacy: .public) model=\(self.model, privacy: .public) temp=\(temperature, privacy: .public) userTextLen=\(userText.count, privacy: .public)")
+        logger.debug("request — host=\(url.host ?? "?", privacy: .public) model=\(self.model, privacy: .public) temp=\(temperature, privacy: .public) userTextLen=\(userText.count, privacy: .public)")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? -1
         let httpOK = (200..<300).contains(status)
         if httpOK, let content = Self.extractContent(from: data) {
             let refined = content.trimmingCharacters(in: .whitespacesAndNewlines)
-            logger.info("response — len=\(refined.count, privacy: .public)")
+            logger.debug("response — len=\(refined.count, privacy: .public)")
             return refined
         }
         let errMsg = Self.extractErrorMessage(from: data) ?? ""
