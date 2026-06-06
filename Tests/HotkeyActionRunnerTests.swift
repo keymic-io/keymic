@@ -39,6 +39,14 @@ struct HotkeyActionRunnerTestRunner {
         RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.5))
         expect(log2.snapshot() == ["sh:echo hi"], "shell invoked")
 
+        // 3. 默认 shell 现在套 ShellRunner 30s timeout（+ 5s SIGKILL grace），
+        //    避免单条 hung 命令把后续所有 hotkey actions 锁死在 runner 串行队列上。
+        let start = Date()
+        let exit = HotkeyActionRunner.defaultShell("sleep 120; exit 7")
+        let elapsed = Date().timeIntervalSince(start)
+        expect(elapsed < 45, "default shell should kill long command within ShellRunner timeout, elapsed \(elapsed)")
+        expect(exit != 7, "default shell should not have let the command run to its natural exit, got \(exit)")
+
         print("HotkeyActionRunnerTests passed")
     }
 

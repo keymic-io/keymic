@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session test-agent-runner
 
 
 build:
@@ -248,6 +248,31 @@ test-hotkey-action-runner:
 	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
 	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
 	       Sources/KeyMic/Hotkey/HotkeyActionRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Skill/SkillHotkeyBridge.swift \
+	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
+	       Sources/KeyMic/Tools/Skill/SkillLoader.swift \
+	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       Sources/KeyMic/Agent/AgentRunner.swift \
+	       Sources/KeyMic/Agent/AgentSession.swift \
+	       Sources/KeyMic/Agent/AgentEvent.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Agent/AgentSessionError.swift \
+	       Sources/KeyMic/Agent/AgentConfig.swift \
+	       Sources/KeyMic/Agent/AgentRunOptions.swift \
+	       Sources/KeyMic/Agent/AgentEventSink.swift \
+	       Sources/KeyMic/Agent/OpenAIChatTransport.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/ToolSchemaBuilder.swift \
+	       Sources/KeyMic/Agent/WithTimeout.swift \
 	       Tests/HotkeyActionRunnerTests.swift \
 	       -o .build/hotkey-action-runner-tests
 	.build/hotkey-action-runner-tests
@@ -590,26 +615,349 @@ test-secure-input-monitor:
 test-shell-logger:
 	mkdir -p .build
 	swiftc Tests/ShellLoggerTests.swift \
-	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       -o .build/shell-logger-tests
 	.build/shell-logger-tests
+
+test-tool-protocol:
+	mkdir -p .build
+	swiftc Tests/ToolProtocolTests.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       Sources/KeyMic/Tools/Protocol/LocalToolRegistrar.swift \
+	       -o .build/tool-protocol-tests
+	.build/tool-protocol-tests
+
+test-bash-tool:
+	mkdir -p .build
+	swiftc Tests/BashToolTests.swift \
+	       Sources/KeyMic/Tools/Bash/BashTool.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/bash-tool-tests
+	.build/bash-tool-tests
+
+test-filesystem-actor:
+	mkdir -p .build
+	swiftc Tests/FileSystemActorTests.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       -o .build/filesystem-actor-tests
+	.build/filesystem-actor-tests
+
+test-read-tool:
+	mkdir -p .build
+	swiftc Tests/ReadToolTests.swift \
+	       Sources/KeyMic/Tools/File/ReadTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/read-tool-tests
+	.build/read-tool-tests
+
+test-write-tool:
+	mkdir -p .build
+	swiftc Tests/WriteToolTests.swift \
+	       Sources/KeyMic/Tools/File/WriteTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/write-tool-tests
+	.build/write-tool-tests
+
+test-edit-tool:
+	mkdir -p .build
+	swiftc Tests/EditToolTests.swift \
+	       Sources/KeyMic/Tools/File/EditTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/edit-tool-tests
+	.build/edit-tool-tests
+
+test-multi-edit-tool:
+	mkdir -p .build
+	swiftc Tests/MultiEditToolTests.swift \
+	       Sources/KeyMic/Tools/File/MultiEditTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/multi-edit-tool-tests
+	.build/multi-edit-tool-tests
+
+test-glob-tool:
+	mkdir -p .build
+	swiftc Tests/GlobToolTests.swift \
+	       Sources/KeyMic/Tools/Search/GlobTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/glob-tool-tests
+	.build/glob-tool-tests
+
+test-grep-tool:
+	mkdir -p .build
+	swiftc Tests/GrepToolTests.swift \
+	       Sources/KeyMic/Tools/Search/GrepTool.swift \
+	       Sources/KeyMic/Tools/Search/GlobTool.swift \
+	       Sources/KeyMic/Tools/File/FileSystemActor.swift \
+	       Sources/KeyMic/Tools/File/FileSystemError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/grep-tool-tests
+	.build/grep-tool-tests
+
+test-mcp-config:
+	mkdir -p .build
+	swiftc Tests/MCPServerConfigTests.swift \
+	       Sources/KeyMic/Tools/MCP/MCPServerConfig.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientError.swift \
+	       -o .build/mcp-config-tests
+	.build/mcp-config-tests
+
+test-mcp-config-store:
+	mkdir -p .build
+	swiftc Tests/MCPConfigStoreTests.swift \
+	       Sources/KeyMic/Tools/MCP/MCPServerConfig.swift \
+	       Sources/KeyMic/Tools/MCP/MCPConfigStore.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientError.swift \
+	       -o .build/mcp-config-store-tests
+	.build/mcp-config-store-tests
+
+test-mcp-adapter:
+	mkdir -p .build
+	swift build
+	$(eval MCP_DEBUG_BUILD_DIR := $(shell swift build --show-bin-path))
+	swiftc -I $(MCP_DEBUG_BUILD_DIR)/Modules \
+	       Tests/MCPToolAdapterTests.swift \
+	       Sources/KeyMic/Tools/MCP/MCPToolAdapter.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientProtocol.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Value.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Data+Extensions.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Messages.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/ID.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Error.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Progress.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Tools.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Resources.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/Icon.swift.o \
+	       -o .build/mcp-tool-adapter-tests
+	.build/mcp-tool-adapter-tests
+
+
+test-mcp-manager:
+	mkdir -p .build
+	swift build
+	$(eval MCP_DEBUG_BUILD_DIR := $(shell swift build --show-bin-path))
+	swiftc -I $(MCP_DEBUG_BUILD_DIR)/Modules \
+	       Tests/MCPClientManagerTests.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientManager.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClient.swift \
+	       Sources/KeyMic/Tools/MCP/MCPToolCallTimeout.swift \
+	       Sources/KeyMic/Tools/MCP/MCPToolAdapter.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientProtocol.swift \
+	       Sources/KeyMic/Tools/MCP/MCPConfigStore.swift \
+	       Sources/KeyMic/Tools/MCP/MCPServerConfig.swift \
+	       Sources/KeyMic/Tools/MCP/MCPTokenStore.swift \
+	       Sources/KeyMic/Tools/MCP/MCPClientError.swift \
+	       Sources/KeyMic/Vault/KeychainBackend.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       $(MCP_DEBUG_BUILD_DIR)/MCP.build/*.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/EventSource.build/*.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/Logging.build/*.swift.o \
+	       $(MCP_DEBUG_BUILD_DIR)/SystemPackage.build/*.swift.o \
+	       -o .build/mcp-client-manager-tests
+	.build/mcp-client-manager-tests
 
 test-shell-snapshot:
 	mkdir -p .build
 	swiftc Tests/ShellSnapshotTests.swift \
-	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
-	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       -o .build/shell-snapshot-tests
 	.build/shell-snapshot-tests
 
 test-shell-runner:
 	mkdir -p .build
 	swiftc Tests/ShellRunnerTests.swift \
-	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
-	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
-	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       -o .build/shell-runner-tests
 	.build/shell-runner-tests
+
+test-skill-frontmatter-parser:
+	mkdir -p .build
+	swiftc Tests/SkillFrontmatterParserTests.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
+	       -o .build/skill-frontmatter-parser-tests
+	.build/skill-frontmatter-parser-tests
+
+test-skill-loader:
+	mkdir -p .build
+	swiftc Tests/SkillLoaderTests.swift \
+	       Sources/KeyMic/Tools/Skill/SkillLoader.swift \
+	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       -o .build/skill-loader-tests
+	.build/skill-loader-tests
+
+test-skill-registry:
+	mkdir -p .build
+	swiftc Tests/SkillRegistryTests.swift \
+	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       -o .build/skill-registry-tests
+	.build/skill-registry-tests
+
+test-activate-skill-tool:
+	mkdir -p .build
+	swiftc Tests/ActivateSkillToolTests.swift \
+	       Sources/KeyMic/Tools/Skill/ActivateSkillTool.swift \
+	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
+	       Sources/KeyMic/Tools/Skill/SkillLoader.swift \
+	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/activate-skill-tool-tests
+	.build/activate-skill-tool-tests
+
+test-skill-hotkey-bridge:
+	mkdir -p .build
+	swiftc Tests/SkillHotkeyBridgeTests.swift \
+	       Sources/KeyMic/Tools/Skill/SkillHotkeyBridge.swift \
+	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
+	       Sources/KeyMic/Tools/Skill/SkillLoader.swift \
+	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       -o .build/skill-hotkey-bridge-tests
+	.build/skill-hotkey-bridge-tests
+
+test-agent-message:
+	mkdir -p .build
+	swiftc Tests/AgentMessageTests.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Agent/AgentEvent.swift \
+	       Sources/KeyMic/Agent/AgentSessionError.swift \
+	       -o .build/agent-message-tests
+	.build/agent-message-tests
+
+test-agent-config:
+	mkdir -p .build
+	swiftc Tests/AgentConfigTests.swift \
+	       Sources/KeyMic/Agent/AgentConfig.swift \
+	       Sources/KeyMic/Agent/AgentRunOptions.swift \
+	       -o .build/agent-config-tests
+	.build/agent-config-tests
+
+test-allowed-tools-parser:
+	mkdir -p .build
+	swiftc Tests/AllowedToolsParserTests.swift \
+	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
+	       -o .build/allowed-tools-parser-tests
+	.build/allowed-tools-parser-tests
+
+test-openai-wire-types:
+	mkdir -p .build
+	swiftc Tests/OpenAIWireTypesTests.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       -o .build/openai-wire-types-tests
+	.build/openai-wire-types-tests
+
+test-tool-schema-builder:
+	mkdir -p .build
+	swiftc Tests/ToolSchemaBuilderTests.swift \
+	       Sources/KeyMic/Agent/ToolSchemaBuilder.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       -o .build/tool-schema-builder-tests
+	.build/tool-schema-builder-tests
+
+test-with-timeout:
+	mkdir -p .build
+	swiftc -parse-as-library Tests/WithTimeoutTests.swift \
+	       Sources/KeyMic/Agent/WithTimeout.swift \
+	       -o .build/with-timeout-tests
+	.build/with-timeout-tests
+
+test-openai-chat-transport:
+	mkdir -p .build
+	swiftc -parse-as-library Tests/OpenAIChatTransportTests.swift \
+	       Sources/KeyMic/Agent/OpenAIChatTransport.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Agent/AgentConfig.swift \
+	       Sources/KeyMic/Agent/AgentRunOptions.swift \
+	       -o .build/openai-chat-transport-tests
+	.build/openai-chat-transport-tests
+
+test-agent-session:
+	mkdir -p .build
+	swiftc -parse-as-library Tests/AgentSessionLoopTests.swift \
+	       Sources/KeyMic/Agent/AgentSession.swift \
+	       Sources/KeyMic/Agent/AgentEvent.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Agent/AgentSessionError.swift \
+	       Sources/KeyMic/Agent/AgentConfig.swift \
+	       Sources/KeyMic/Agent/AgentRunOptions.swift \
+	       Sources/KeyMic/Agent/OpenAIChatTransport.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/ToolSchemaBuilder.swift \
+	       Sources/KeyMic/Agent/WithTimeout.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       -o .build/agent-session-tests
+	.build/agent-session-tests
+
+test-agent-runner:
+	mkdir -p .build
+	swiftc -parse-as-library Tests/AgentRunnerTests.swift \
+	       Sources/KeyMic/Agent/AgentRunner.swift \
+	       Sources/KeyMic/Agent/AgentSession.swift \
+	       Sources/KeyMic/Agent/AgentEvent.swift \
+	       Sources/KeyMic/Agent/AgentMessage.swift \
+	       Sources/KeyMic/Agent/AgentSessionError.swift \
+	       Sources/KeyMic/Agent/AgentConfig.swift \
+	       Sources/KeyMic/Agent/AgentRunOptions.swift \
+	       Sources/KeyMic/Agent/AgentEventSink.swift \
+	       Sources/KeyMic/Agent/OpenAIChatTransport.swift \
+	       Sources/KeyMic/Agent/OpenAIWireTypes.swift \
+	       Sources/KeyMic/Agent/ToolSchemaBuilder.swift \
+	       Sources/KeyMic/Agent/WithTimeout.swift \
+	       Sources/KeyMic/Tools/Skill/Skill.swift \
+	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
+	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
+	       Sources/KeyMic/Tools/Protocol/Tool.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
+	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
+	       -o .build/agent-runner-tests
+	.build/agent-runner-tests
 
 test-pasteboard-snapshot:
 	mkdir -p .build
@@ -680,7 +1028,7 @@ test-window-ocr:
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-ctc-decoder test-sensevoice-model-input
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-skill-frontmatter-parser test-skill-loader test-skill-registry test-activate-skill-tool test-skill-hotkey-bridge test-tool-protocol test-bash-tool test-filesystem-actor test-read-tool test-write-tool test-edit-tool test-multi-edit-tool test-glob-tool test-grep-tool test-mcp-config test-mcp-config-store test-mcp-adapter test-mcp-manager test-agent-message test-agent-config test-allowed-tools-parser test-openai-wire-types test-tool-schema-builder test-with-timeout test-openai-chat-transport test-agent-session test-agent-runner test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-ctc-decoder test-sensevoice-model-input
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)

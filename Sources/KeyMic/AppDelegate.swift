@@ -26,8 +26,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// decision has superseded it — so a slow model load can never clobber a fresher choice.
     private var speechEngineGeneration = 0
     private let textInjector = TextInjector()
+    private let skillRegistry = SkillRegistry()
+    private let skillLoader = SkillLoader()
+    private let toolRegistry = ToolRegistry()
+    private let mcpManager = MCPClientManager()
+    /// Constructed inside `applicationDidFinishLaunching` because `AgentRunner.init`
+    /// is `@MainActor`-isolated and stored-property initializers run in a
+    /// nonisolated context. May be `nil` early in launch (before
+    /// `registerLocalTools()` completes) or if construction was deferred — all
+    /// consumers must tolerate absence and degrade gracefully.
+    private var agentRunner: AgentRunner?
+    private lazy var skillBridge = SkillHotkeyBridge(
+        registry: skillRegistry,
+        loader: skillLoader,
+        consume: { [weak self] skill in
+            // Plan 6: route skill hotkeys through the agent loop instead of
+            // pasting the body directly. The skill's `instructions` become the
+            // system prompt and `allowedTools` filters the tool set.
+            guard let self = self else { return }
+            Task { @MainActor in
+                guard let runner = self.agentRunner else {
+                    logger.warning("Skill hotkey fired but AgentRunner not ready; ignoring")
+                    return
+                }
+                _ = runner.runForSkill(skill, sink: ConsoleSink.shared)
+            }
+        }
+    )
     private lazy var actionRunner = HotkeyActionRunner(
-        typeText: { [weak self] text in self?.textInjector.inject(text) }
+        typeText: { [weak self] text in self?.textInjector.inject(text) },
+        skillBridge: skillBridge,
+        agentRunnerProvider: { [weak self] in
+            // Re-resolved on every `.runAgent` invocation so an AgentRunner
+            // that comes online after this runner is materialized is still
+            // picked up.
+            MainActor.assumeIsolated { self?.agentRunner }
+        }
     )
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
@@ -70,7 +104,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private weak var clipboardToggleView: ToggleMenuItemView?
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
-    private lazy var settingsWindow = SwiftUISettingsWindow()
+    private lazy var settingsWindow = SwiftUISettingsWindow(
+        agentRunnerProvider: { [weak self] in self?.agentRunner },
+        toolRegistry: toolRegistry
+    )
     var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }
@@ -151,7 +188,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         keyMonitor.currentFrontBundleID = { [weak self] in self?.cachedFrontBundleID }
 
+        // Wire `onAction` synchronously right after `keyMonitor.start()` so a
+        // hotkey pressed during the first ~10–100ms of launch isn't matched by
+        // the tap (consuming the keystroke) only to then dispatch into a nil
+        // `onAction`. `actionRunner` resolves `agentRunner` lazily via
+        // `agentRunnerProvider`, so it's safe to wire before the runtime is
+        // fully constructed. (Voice trigger callbacks are wired below, after the
+        // PersonaPlatform graph — VoiceTrigger — is constructed.)
         keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
+
+        Task { @MainActor in
+            await registerLocalTools()
+            agentRunner = AgentRunner(registry: toolRegistry, skillRegistry: skillRegistry)
+            Task { [mcpManager, toolRegistry] in
+                await mcpManager.loadAndConnectAll(registry: toolRegistry)
+            }
+        }
+
         clipboardController = ClipboardController()
         clipboardController.overlayPanel = overlayPanel
 
@@ -840,6 +893,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.alertStyle = .warning
         alert.addButton(withTitle: String(localized: "OK"))
         alert.runModal()
+    }
+
+    /// Register the built-in (in-process) tools into `toolRegistry`. MCP-discovered
+    /// tools arrive asynchronously via `MCPClientManager.loadAndConnectAll`.
+    private func registerLocalTools() async {
+        let tools: [any Tool] = [
+            BashTool(),
+            ReadTool(),
+            WriteTool(),
+            EditTool(),
+            MultiEditTool(),
+            GlobTool(),
+            GrepTool(),
+            ActivateSkillTool(registry: skillRegistry, loader: skillLoader),
+        ]
+        do {
+            try await LocalToolRegistrar.register(tools, in: toolRegistry)
+        } catch {
+            logger.error("Failed to register local tools: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }
 
