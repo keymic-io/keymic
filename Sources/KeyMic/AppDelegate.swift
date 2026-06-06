@@ -1,4 +1,5 @@
 import AppKit
+import CoreML
 import Speech
 import os.log
 
@@ -9,17 +10,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private let keyMonitor = KeyMonitor()
     private let secureInputMonitor = SecureInputMonitor()
-    private let speechEngine: SpeechEngine = {
-        let saved = UserDefaults.standard.string(forKey: AppDelegate.selectedLocaleCodeKey)
-        let code: String
-        if let saved, !saved.isEmpty {
-            code = saved
-        } else {
-            code = AppDelegate.defaultSpeechLocaleCode()
-            UserDefaults.standard.set(code, forKey: AppDelegate.selectedLocaleCodeKey)
-        }
-        return SpeechEngine(locale: Locale(identifier: code))
-    }()
+    /// Always non-nil after launch. Assigned the cheap Apple engine synchronously in
+    /// `applicationDidFinishLaunching`, then (if SenseVoice is desired) upgraded asynchronously
+    /// by `applySpeechEnginePreference()` once the model finishes loading off the main thread.
+    private var speechEngine: (any SpeechEngineProtocol)!
+    private let senseVoiceModelStore = SenseVoiceModelStore.shared
+    /// Last-applied SenseVoice inputs, so `syncMenuStates()` only re-decides the engine when they
+    /// change (the change-detection guard avoids dispatching an off-main load on every defaults
+    /// notification).
+    private var lastSenseVoiceEnabled: Bool?
+    private var lastSenseVoiceLanguage: String?
+    private var lastSenseVoiceModelReady: Bool?
+    /// Bumped on every engine decision in `applySpeechEnginePreference()`. An async SenseVoice
+    /// upgrade captures the generation at dispatch time and aborts its main-thread swap if a newer
+    /// decision has superseded it — so a slow model load can never clobber a fresher choice.
+    private var speechEngineGeneration = 0
     private let textInjector = TextInjector()
     private lazy var actionRunner = HotkeyActionRunner(
         typeText: { [weak self] text in self?.textInjector.inject(text) }
@@ -47,6 +52,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let voiceEnabledKey = "voiceEnabled"
     private static let selectedLocaleCodeKey = "selectedLocaleCode"
+    private static let senseVoiceEnabledKey = "senseVoiceEnabled"
+    private static let senseVoiceLanguageKey = "senseVoiceLanguage"
     private static let clipboardSchemaVersionKey = "clipboardSchemaVersion"
     private static let clipboardSchemaVersion = 2
 
@@ -113,9 +120,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupMainMenu()
         setupStatusBar()
+        // Always start on the cheap Apple engine (no model load → main-safe). If SenseVoice is
+        // desired it is upgraded asynchronously below in `applySpeechEnginePreference()`, after the
+        // session host + downstream controllers are wired up.
+        speechEngine = makeAppleEngine()
+        recordSenseVoiceBaseline()
         setupSpeechCallbacks()
 
-        SpeechEngine.requestPermissions { [weak self] granted, errorMsg in
+        AppleSpeechEngine.requestPermissions { [weak self] granted, errorMsg in
             if !granted, let msg = errorMsg {
                 self?.showAlert(title: String(localized: "Permission Required"), message: msg)
             }
@@ -173,7 +185,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clipboardStore: clipboardController.store,
             outputRouter: OutputRouter.shared
         )
-        speechSessionHost = DefaultSpeechSessionHost(speechEngine: speechEngine)
+        speechSessionHost = DefaultSpeechSessionHost(engine: speechEngine)
         voiceTrigger = VoiceTrigger(
             engine: personaEngine,
             sessionHost: speechSessionHost,
@@ -210,6 +222,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         keyMonitor.onSelectedTextEditorHotkey = { [weak self] in
             self?.selectedTextEditorController.open()
+        }
+        // Now that the host + all engine consumers exist, decide the engine. If SenseVoice is
+        // enabled this kicks off an off-main model load and swaps the engine in when ready;
+        // otherwise it is a no-op (already on Apple).
+        applySpeechEnginePreference()
+        // Re-decide the engine whenever the model store's readiness changes outside a
+        // UserDefaults edit — chiefly when a download finishes mid-session (so dictation
+        // upgrades to SenseVoice without waiting for an unrelated preference change or a
+        // restart), or when a load failure flips `.ready → .failed` (so we drop back to Apple).
+        senseVoiceModelStore.addStateObserver { [weak self] _ in
+            self?.syncSenseVoiceEngineIfNeeded()
         }
         clipboardTransformController = ClipboardTransformController(
             store: clipboardController.store,
@@ -305,6 +328,129 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // Voice pipeline lives in PersonaPlatform/Triggers/VoiceTrigger.
+
+    // MARK: - Speech engine factory
+
+    /// Build the Apple recognizer (the always-available fallback). Cheap — NO model load —
+    /// so it is safe to call on the main thread. Seeds `selectedLocaleCode` on first launch
+    /// (preserves the behavior of the old property initializer).
+    private func makeAppleEngine() -> AppleSpeechEngine {
+        let saved = selectedLocaleCode
+        let code: String
+        if !saved.isEmpty {
+            code = saved
+        } else {
+            code = AppDelegate.defaultSpeechLocaleCode()
+            selectedLocaleCode = code
+        }
+        logger.info("speech engine: Apple (locale=\(code, privacy: .public))")
+        return AppleSpeechEngine(locale: Locale(identifier: code))
+    }
+
+    /// Build a `SenseVoiceSpeechEngine` from an ALREADY-LOADED `MLModel`. The heavy 432 MB disk
+    /// load happens in the caller (off main); this only wires up the bundled am.mvn / vocab and
+    /// is cheap enough for the main thread. Returns nil if the bundled resources are missing, in
+    /// which case the caller stays on Apple.
+    private func makeSenseVoiceEngineIfPossible(model: MLModel) -> (any SpeechEngineProtocol)? {
+        guard let mvnURL = Bundle.main.url(forResource: "am", withExtension: "mvn"),
+              let vocabURL = Bundle.main.url(
+                forResource: "chn_jpn_yue_eng_ko_spectok.bpe", withExtension: "model") else {
+            logger.warning("SenseVoice resources missing (am.mvn / SPM .model); staying on Apple")
+            return nil
+        }
+        let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let languageId = SenseVoiceConfig.languageIds[langKey] ?? 0
+        logger.info("speech engine: SenseVoice (lang=\(langKey, privacy: .public))")
+        return SenseVoiceSpeechEngine(
+            model: SenseVoiceModel(model: model),
+            fbank: FbankExtractor(mvnPath: mvnURL.path),
+            decoder: CTCDecoder(
+                vocab: SenseVoiceVocab(spmModelPath: vocabURL.path),
+                blankId: SenseVoiceConfig.blankId),
+            languageId: languageId,
+            textnormId: SenseVoiceConfig.defaultTextNorm)
+    }
+
+    /// Central engine decision. Main-safe: when the factory wants Apple we swap synchronously;
+    /// when it wants SenseVoice we load the model OFF the main thread and only build + swap the
+    /// (`@MainActor`) engine back on main once it is loaded. The main thread is NEVER blocked on
+    /// `loadModel()`. A generation counter discards a stale async upgrade if a newer decision
+    /// has run in the meantime.
+    private func applySpeechEnginePreference() {
+        let sonomaOrEarlier: Bool = {
+            if #available(macOS 15, *) { return false } else { return true }
+        }()
+        let enabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
+        let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let modelReady = senseVoiceModelStore.state == .ready
+        let choice = SpeechEngineFactory.choose(
+            osIsSonomaOrEarlier: sonomaOrEarlier,
+            enabled: enabled,
+            modelReady: modelReady)
+
+        // Bump generation so a stale async upgrade can't clobber a newer decision.
+        speechEngineGeneration &+= 1
+        let gen = speechEngineGeneration
+
+        if choice == .apple {
+            // Cheap path — swap immediately on main.
+            speechEngine = makeAppleEngine()
+            setupSpeechCallbacks()
+            speechSessionHost?.replaceEngine(speechEngine)
+            selectedTextEditorController?.replaceEngine(speechEngine)
+            lastSenseVoiceEnabled = enabled
+            lastSenseVoiceLanguage = langKey
+            lastSenseVoiceModelReady = modelReady
+            return
+        }
+
+        // SenseVoice desired: load model OFF main, then build + swap ON main.
+        guard #available(macOS 15, *) else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let model = self.senseVoiceModelStore.loadModel()  // heavy disk load, OFF main
+            DispatchQueue.main.async {
+                // A newer decision superseded us — drop this swap.
+                guard gen == self.speechEngineGeneration else { return }
+                guard let model,
+                      let engine = self.makeSenseVoiceEngineIfPossible(model: model) else {
+                    // Model failed to load (e.g. corrupt) or resources missing → stay on Apple.
+                    return
+                }
+                self.speechEngine = engine
+                self.setupSpeechCallbacks()
+                self.speechSessionHost?.replaceEngine(engine)
+                self.selectedTextEditorController?.replaceEngine(engine)
+                self.lastSenseVoiceEnabled = enabled
+                self.lastSenseVoiceLanguage = langKey
+                self.lastSenseVoiceModelReady = true
+            }
+        }
+    }
+
+    /// Snapshot the SenseVoice inputs that determine engine selection, so the next
+    /// `syncMenuStates()` only re-decides when one of them changes.
+    private func recordSenseVoiceBaseline() {
+        lastSenseVoiceEnabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
+        lastSenseVoiceLanguage = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        lastSenseVoiceModelReady = senseVoiceModelStore.state == .ready
+    }
+
+    /// Re-decide the speech engine iff a SenseVoice-relevant input changed (toggle, language,
+    /// or model readiness) versus the last-applied baseline. Skips work otherwise so the
+    /// high-frequency `syncMenuStates()` stays cheap and never dispatches an off-main load when
+    /// nothing changed.
+    private func syncSenseVoiceEngineIfNeeded() {
+        let enabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
+        let language = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let modelReady = senseVoiceModelStore.state == .ready
+        if enabled == lastSenseVoiceEnabled,
+           language == lastSenseVoiceLanguage,
+           modelReady == lastSenseVoiceModelReady {
+            return
+        }
+        applySpeechEnginePreference()
+    }
 
     // MARK: - Speech callbacks
 
@@ -540,10 +686,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setVoiceEnabled(defaultsVoice)
         }
 
-        let code = selectedLocaleCode
-        let newLocale = code.isEmpty ? Locale.current : Locale(identifier: code)
-        if speechEngine.locale.identifier != newLocale.identifier {
-            speechEngine.locale = newLocale
+        // SenseVoice settings (enable / language / model readiness) reach us via
+        // UserDefaults.didChangeNotification — same channel as the Apple locale below.
+        // Only rebuild the engine when a SenseVoice-relevant input actually changed.
+        syncSenseVoiceEngineIfNeeded()
+
+        // Apple locale only applies when the live engine is the Apple one; SenseVoice picks
+        // its language at construction time (re-decided above), so skip it for SenseVoice.
+        if let apple = speechEngine as? AppleSpeechEngine {
+            let code = selectedLocaleCode
+            let newLocale = code.isEmpty ? Locale.current : Locale(identifier: code)
+            if apple.locale.identifier != newLocale.identifier {
+                apple.locale = newLocale
+            }
         }
 
         voiceToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .voiceTrigger)?.displayString())

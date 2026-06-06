@@ -356,6 +356,19 @@ private struct GeneralSettingsView: View {
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
+
+            Section {
+                Text("Speech: SenseVoiceSmall (FunASR) — FunASR Model License")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 12) {
+                    Link("FunASR Model License", destination: URL(string: "https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE")!)
+                    Link("CoreML conversion", destination: URL(string: "https://github.com/mefengl/SenseVoiceSmall-coreml")!)
+                }
+                .font(.callout)
+            } header: {
+                Text("Acknowledgements")
+            }
         }
         .formStyle(.grouped)
         .onReceive(accessibilityTimer) { _ in
@@ -426,12 +439,80 @@ extension Bundle {
 
 // MARK: - Voice
 
+/// Drives the SenseVoice model download button + status text. Wraps the shared
+/// `SenseVoiceModelStore` (which already hops its callback to main) and publishes its state
+/// so SwiftUI redraws. The store is the single source of truth; AppDelegate's engine factory
+/// reads the same `SenseVoiceModelStore.shared.state`.
+@MainActor
+final class SenseVoiceDownloadController: ObservableObject {
+    @Published var state: SenseVoiceModelStore.State
+
+    init() {
+        state = SenseVoiceModelStore.shared.state
+        // Mirror EVERY store transition, not just the ones from our own `download()` call —
+        // so a load failure elsewhere (`.ready → .failed`) re-enables the download button, and
+        // a download started from another path still updates this UI.
+        SenseVoiceModelStore.shared.addStateObserver { [weak self] newState in
+            self?.state = newState  // observer always fires on the main thread
+        }
+    }
+
+    func download() {
+        SenseVoiceModelStore.shared.ensureDownloaded { [weak self] newState in
+            DispatchQueue.main.async { self?.state = newState }
+        }
+    }
+}
+
 private struct VoiceSettingsView: View {
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = true
     @AppStorage("selectedLocaleCode") private var localeCode: String = ""
+    @AppStorage("senseVoiceEnabled") private var senseVoiceEnabled: Bool = false
+    @AppStorage("senseVoiceLanguage") private var senseVoiceLanguage: String = "auto"
+    @StateObject private var download = SenseVoiceDownloadController()
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     private var triggerKey: Binding<String> { hotkeyBinding(hotkeyStore, for: .voiceTrigger) }
+
+    private static let senseVoiceSupported: Bool = {
+        if #available(macOS 15, *) { return true } else { return false }
+    }()
+
+    /// (tag, localized label) pairs for the SenseVoice language picker. Tags match
+    /// `SenseVoiceConfig.languageIds` keys.
+    private static let senseVoiceLanguages: [(tag: String, label: String)] = [
+        ("auto", String(localized: "Auto / 自动")),
+        ("zh", "中文"),
+        ("en", "English"),
+        ("yue", "粤语"),
+        ("ja", "日本語"),
+        ("ko", "한국어"),
+    ]
+
+    private var senseVoiceStatusText: String {
+        switch download.state {
+        case .notDownloaded: return String(localized: "Model not downloaded")
+        case .downloading(let fraction):
+            let percent = Int((fraction * 100).rounded())
+            // Explicit `%lld%%` key (vs. interpolation) so the catalog lookup is deterministic.
+            return String(format: String(localized: "Downloading… %lld%%"), percent)
+        case .ready: return String(localized: "Model ready")
+        case .failed(let msg): return String(format: String(localized: "Failed: %@"), msg)
+        }
+    }
+
+    /// The byte-progress fraction while downloading, else nil.
+    private var senseVoiceDownloadFraction: Double? {
+        if case .downloading(let fraction) = download.state { return fraction }
+        return nil
+    }
+
+    private var senseVoiceDownloadDisabled: Bool {
+        switch download.state {
+        case .ready, .downloading: return true
+        case .notDownloaded, .failed: return false
+        }
+    }
 
     private static let languages: [SpeechLanguageOption] = SFSpeechRecognizer.supportedLocales()
         .map { SpeechLanguageOption(locale: $0) }
@@ -460,6 +541,56 @@ private struct VoiceSettingsView: View {
                 Text(
                     "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
                 )
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
+
+            Section {
+                Toggle(
+                    "Enable local SenseVoice engine (multilingual, on-device)",
+                    isOn: $senseVoiceEnabled
+                )
+                // Gate ENABLING on a ready model, but always allow turning it back OFF — otherwise
+                // a user whose model dir was deleted/corrupted (state != .ready) with a persisted
+                // `senseVoiceEnabled = true` would be unable to clear the setting, and the engine
+                // would auto-switch back to SenseVoice the moment the model became ready again.
+                .disabled(!Self.senseVoiceSupported || (download.state != .ready && !senseVoiceEnabled))
+
+                Picker("Language:", selection: $senseVoiceLanguage) {
+                    ForEach(Self.senseVoiceLanguages, id: \.tag) { lang in
+                        Text(lang.label).tag(lang.tag)
+                    }
+                }
+                .disabled(!Self.senseVoiceSupported)
+
+                LabeledContent("Model:") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 12) {
+                            Text(senseVoiceStatusText)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Download model (~432 MB)") {
+                                download.download()
+                            }
+                            .disabled(!Self.senseVoiceSupported || senseVoiceDownloadDisabled)
+                        }
+                        if let fraction = senseVoiceDownloadFraction {
+                            ProgressView(value: fraction)
+                                .progressViewStyle(.linear)
+                        }
+                    }
+                }
+            } header: {
+                Text("Local engine (SenseVoice)")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !Self.senseVoiceSupported {
+                        Text("Requires macOS 15+.")
+                    }
+                    Text(
+                        "Runs entirely on-device — no network after download. Falls back to Apple speech recognition when disabled, unavailable, or the model is not yet downloaded."
+                    )
+                }
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }

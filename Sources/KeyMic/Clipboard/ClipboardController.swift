@@ -174,7 +174,7 @@ final class ClipboardController {
         store.updateMaxHistory(ClipboardPreferences.maxHistory)
         store.applyCleanup()
         let enabled = ClipboardPreferences.enabled
-        Self.logger.info("preferencesChanged — clipboard enabled=\(enabled, privacy: .public)")
+        Self.logger.debug("preferencesChanged — clipboard enabled=\(enabled, privacy: .public)")
         if enabled {
             monitor.start()
         } else {

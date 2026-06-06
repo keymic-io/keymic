@@ -1,0 +1,4 @@
+Speech recognition powered by SenseVoiceSmall (FunAudioLLM / FunASR), Alibaba Group.
+Model licensed under the FunASR Model License (MODEL_LICENSE v1.1).
+https://github.com/modelscope/FunASR/blob/main/MODEL_LICENSE
+CoreML conversion: https://github.com/mefengl/SenseVoiceSmall-coreml

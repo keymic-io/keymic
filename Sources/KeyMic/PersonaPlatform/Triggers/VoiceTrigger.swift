@@ -47,7 +47,7 @@ final class VoiceTrigger: SpeechClient {
             NSSound(named: .init("Tink"))?.play()
             try session.start()
         } catch SpeechSessionError.busy {
-            logger.info("Speech session busy; ignoring trigger down")
+            logger.debug("Speech session busy; ignoring trigger down")
         } catch let error as VoiceError {
             failStart(error.displayMessage)
         } catch {

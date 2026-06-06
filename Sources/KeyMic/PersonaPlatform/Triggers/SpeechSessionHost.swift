@@ -45,12 +45,32 @@ final class SpeechSession {
 
 @MainActor
 final class DefaultSpeechSessionHost: SpeechSessionHost {
-    private let speechEngine: SpeechEngine
+    private var speechEngine: any SpeechEngineProtocol
     private weak var currentClient: SpeechClient?
     private weak var currentSession: SpeechSession?
+    /// A swap requested while a session is in flight. Applied in `release(_:)` once the
+    /// current session ends, so we never strand the hold-to-talk session mid-recording.
+    private var pendingEngine: (any SpeechEngineProtocol)?
 
-    init(speechEngine: SpeechEngine) {
-        self.speechEngine = speechEngine
+    init(engine: any SpeechEngineProtocol) {
+        self.speechEngine = engine
+    }
+
+    /// Swap the underlying speech engine at runtime (e.g. after the user toggles the
+    /// SenseVoice backend or changes its language in Settings).
+    ///
+    /// If a session is in flight (the user is still holding the trigger), the swap is
+    /// DEFERRED until the session releases. Tearing it down now would strand it: the
+    /// later `stop()`/`endAudio()` would be dropped by the `=== currentSession` guards
+    /// and the final transcript lost. The in-flight session keeps running on the old
+    /// engine, whose callbacks remain wired to this host and continue routing to the
+    /// current client. The pending engine is adopted in `release(_:)`.
+    func replaceEngine(_ engine: any SpeechEngineProtocol) {
+        if currentSession != nil {
+            pendingEngine = engine
+            return
+        }
+        speechEngine = engine
     }
 
     func acquire(client: SpeechClient) throws -> SpeechSession {
@@ -88,6 +108,11 @@ final class DefaultSpeechSessionHost: SpeechSessionHost {
         session.voiceSession = nil
         currentClient = nil
         currentSession = nil
+        // Adopt any engine swap that was deferred while this session was in flight.
+        if let pendingEngine {
+            speechEngine = pendingEngine
+            self.pendingEngine = nil
+        }
     }
 
     func routePartial(_ text: String) {

@@ -13,7 +13,7 @@ final class SelectedTextEditorController {
 
     let state = SelectedTextEditorState()
 
-    private let speechEngine: SpeechEngine
+    private var speechEngine: any SpeechEngineProtocol
     private let llm: LLMRefiner
     private let outputRouter: () -> OutputRouter
     private weak var overlayPanel: OverlayPanel?
@@ -34,7 +34,12 @@ final class SelectedTextEditorController {
     private var savedOnAudioLevel: ((Float) -> Void)?
     private var didSaveCallbacks: Bool = false
 
-    init(speechEngine: SpeechEngine,
+    /// Safety-net for `stopVoice()`: callbacks are normally restored the moment the final
+    /// (or error) lands, but if the engine never delivers we restore after this fires so the
+    /// shared engine isn't left wired to the editor forever. Cancelled once the result lands.
+    private var restoreFallback: DispatchWorkItem?
+
+    init(speechEngine: any SpeechEngineProtocol,
          llm: LLMRefiner = .shared,
          outputRouter: @autoclosure @escaping () -> OutputRouter = OutputRouter.shared,
          overlayPanel: OverlayPanel? = nil) {
@@ -46,6 +51,21 @@ final class SelectedTextEditorController {
 
     func attach(overlayPanel: OverlayPanel) {
         self.overlayPanel = overlayPanel
+    }
+
+    /// Swap the speech engine (e.g. after the SenseVoice backend is toggled in Settings).
+    /// Stops any in-flight hold-to-talk session on the old engine before swapping; the saved
+    /// callbacks are cleared so the new engine doesn't inherit stale state.
+    func replaceEngine(_ engine: any SpeechEngineProtocol) {
+        if state.isRecording || voiceSession != nil {
+            speechEngine.endAudio()
+            voiceSession = nil
+            state.isRecording = false
+        }
+        restoreFallback?.cancel()
+        restoreFallback = nil
+        restoreSpeechCallbacks()
+        speechEngine = engine
     }
 
     // MARK: - Open / close
@@ -99,14 +119,18 @@ final class SelectedTextEditorController {
         }
         speechEngine.onFinalResult = { [weak self] text in
             DispatchQueue.main.async {
-                self?.state.instructionText = text
-                self?.state.isRecording = false
+                guard let self else { return }
+                self.state.instructionText = text
+                self.state.isRecording = false
+                self.finishVoiceCapture()
             }
         }
         speechEngine.onError = { [weak self] msg in
             DispatchQueue.main.async {
-                self?.state.isRecording = false
-                self?.state.errorMessage = msg
+                guard let self else { return }
+                self.state.isRecording = false
+                self.state.errorMessage = msg
+                self.finishVoiceCapture()
             }
         }
         speechEngine.onAudioLevel = { [weak self] level in
@@ -132,10 +156,20 @@ final class SelectedTextEditorController {
         speechEngine.endAudio()
         voiceSession = nil
         state.isRecording = false
-        // Restore callbacks after a brief delay to allow the final result to land.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-            self?.restoreSpeechCallbacks()
-        }
+        // Restore callbacks when the final (or error) actually lands — driven by the handlers
+        // installed in `startVoice()`. A fixed delay would drop a SenseVoice final whose CoreML
+        // decode runs longer than the delay. The fallback below only fires if nothing arrives.
+        let fallback = DispatchWorkItem { [weak self] in self?.finishVoiceCapture() }
+        restoreFallback = fallback
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12.0, execute: fallback)
+    }
+
+    /// Restore the saved engine callbacks and cancel the pending fallback. Idempotent — called
+    /// from the final/error handlers (normal path) or the fallback timer (engine never replied).
+    private func finishVoiceCapture() {
+        restoreFallback?.cancel()
+        restoreFallback = nil
+        restoreSpeechCallbacks()
     }
 
     private func saveSpeechCallbacksIfNeeded() {
