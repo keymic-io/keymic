@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait spike-onnx-runtime spike-onnx-runtime-noentitlement spike-onnx-funasr-ar
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store smoke-onnx
 
 
 build:
@@ -680,7 +680,7 @@ test-window-ocr:
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-ctc-decoder test-sensevoice-model-input
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-ctc-decoder test-sensevoice-model-input test-voice-model-catalog test-asset-store
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
@@ -731,44 +731,24 @@ release:
 		./scripts/release.sh $(VERSION); \
 	fi
 
-# --- de-risking spike: dlopen self-signed sherpa-onnx + onnxruntime under hardened runtime ---
-SPIKE_DIR := Tests/Spikes
-SPIKE_BUILD := .build/spike
+# --- ONNX engine unit tests (standalone swiftc runners) ---
+test-voice-model-catalog:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-catalog \
+	    Tests/VoiceModelCatalogTests.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift
+	.build/t-catalog
 
-spike-onnx-runtime:
-	@mkdir -p $(SPIKE_BUILD)
-	clang -c $(SPIKE_DIR)/SpikeBridge.c -I$(SPIKE_DIR)/vendor -o $(SPIKE_BUILD)/SpikeBridge.o
-	swiftc -O -parse-as-library -o $(SPIKE_BUILD)/onnx-spike \
-	    $(SPIKE_DIR)/ONNXRuntimeSpike.swift $(SPIKE_BUILD)/SpikeBridge.o \
-	    -import-objc-header $(SPIKE_DIR)/SpikeBridge.h
-	codesign --force --sign "$(CODESIGN_IDENTITY)" --options runtime \
-	    --entitlements $(ENTITLEMENTS) --identifier io.keymic.app.spike \
-	    $(SPIKE_BUILD)/onnx-spike
-	@echo "--- signed WITH entitlements; expect SPIKE_PASS ---"
-	$(SPIKE_BUILD)/onnx-spike
+test-asset-store:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-store \
+	    Tests/AssetStoreTests.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift
+	.build/t-store
 
-spike-onnx-runtime-noentitlement:
-	@mkdir -p $(SPIKE_BUILD)
-	clang -c $(SPIKE_DIR)/SpikeBridge.c -I$(SPIKE_DIR)/vendor -o $(SPIKE_BUILD)/SpikeBridge.o
-	swiftc -O -parse-as-library -o $(SPIKE_BUILD)/onnx-spike-noent \
-	    $(SPIKE_DIR)/ONNXRuntimeSpike.swift $(SPIKE_BUILD)/SpikeBridge.o \
-	    -import-objc-header $(SPIKE_DIR)/SpikeBridge.h
-	codesign --force --sign "$(CODESIGN_IDENTITY)" --options runtime \
-	    --identifier io.keymic.app.spike.noent \
-	    $(SPIKE_BUILD)/onnx-spike-noent
-	@echo "--- signed WITHOUT entitlements; expect load failure ---"
-	-$(SPIKE_BUILD)/onnx-spike-noent
-	@echo "(nonzero exit above = library validation blocked load = entitlement load-bearing)"
-
-# AR funasr_nano 延迟基准:同一 dlopen 加载器,funasr_nano 4 文件 config,init/decode 分开计时
-spike-onnx-funasr-ar:
-	@mkdir -p $(SPIKE_BUILD)
-	clang -c $(SPIKE_DIR)/SpikeBridge.c -I$(SPIKE_DIR)/vendor -o $(SPIKE_BUILD)/SpikeBridge.o
-	swiftc -O -parse-as-library -o $(SPIKE_BUILD)/funasr-ar-spike \
-	    $(SPIKE_DIR)/FunASRARSpike.swift $(SPIKE_BUILD)/SpikeBridge.o \
-	    -import-objc-header $(SPIKE_DIR)/SpikeBridge.h
-	codesign --force --sign "$(CODESIGN_IDENTITY)" --options runtime \
-	    --entitlements $(ENTITLEMENTS) --identifier io.keymic.app.spike \
-	    $(SPIKE_BUILD)/funasr-ar-spike
-	@echo "--- signed WITH entitlements; AR funasr_nano latency benchmark ---"
-	$(SPIKE_BUILD)/funasr-ar-spike
+# 手动真机冒烟(需预放/下载 runtime+模型;非 CI)。用真实 AR 模型转写 Tests/fixtures/zh.wav。
+smoke-onnx:
+	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/funasr-nano-ar} populated"
+	swift build
+	@echo "(invoke ONNX path via the running app; this target only builds)"
