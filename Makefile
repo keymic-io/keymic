@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait spike-onnx-runtime spike-onnx-runtime-noentitlement
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait spike-onnx-runtime spike-onnx-runtime-noentitlement spike-onnx-funasr-ar
 
 
 build:
@@ -759,3 +759,16 @@ spike-onnx-runtime-noentitlement:
 	@echo "--- signed WITHOUT entitlements; expect load failure ---"
 	-$(SPIKE_BUILD)/onnx-spike-noent
 	@echo "(nonzero exit above = library validation blocked load = entitlement load-bearing)"
+
+# AR funasr_nano 延迟基准:同一 dlopen 加载器,funasr_nano 4 文件 config,init/decode 分开计时
+spike-onnx-funasr-ar:
+	@mkdir -p $(SPIKE_BUILD)
+	clang -c $(SPIKE_DIR)/SpikeBridge.c -I$(SPIKE_DIR)/vendor -o $(SPIKE_BUILD)/SpikeBridge.o
+	swiftc -O -parse-as-library -o $(SPIKE_BUILD)/funasr-ar-spike \
+	    $(SPIKE_DIR)/FunASRARSpike.swift $(SPIKE_BUILD)/SpikeBridge.o \
+	    -import-objc-header $(SPIKE_DIR)/SpikeBridge.h
+	codesign --force --sign "$(CODESIGN_IDENTITY)" --options runtime \
+	    --entitlements $(ENTITLEMENTS) --identifier io.keymic.app.spike \
+	    $(SPIKE_BUILD)/funasr-ar-spike
+	@echo "--- signed WITH entitlements; AR funasr_nano latency benchmark ---"
+	$(SPIKE_BUILD)/funasr-ar-spike
