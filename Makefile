@@ -4,7 +4,7 @@ ENTITLEMENTS := $(APP_NAME).entitlements
 BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait spike-onnx-runtime spike-onnx-runtime-noentitlement
 
 
 build:
@@ -730,3 +730,32 @@ release:
 	else \
 		./scripts/release.sh $(VERSION); \
 	fi
+
+# --- de-risking spike: dlopen self-signed sherpa-onnx + onnxruntime under hardened runtime ---
+SPIKE_DIR := Tests/Spikes
+SPIKE_BUILD := .build/spike
+
+spike-onnx-runtime:
+	@mkdir -p $(SPIKE_BUILD)
+	clang -c $(SPIKE_DIR)/SpikeBridge.c -I$(SPIKE_DIR)/vendor -o $(SPIKE_BUILD)/SpikeBridge.o
+	swiftc -O -parse-as-library -o $(SPIKE_BUILD)/onnx-spike \
+	    $(SPIKE_DIR)/ONNXRuntimeSpike.swift $(SPIKE_BUILD)/SpikeBridge.o \
+	    -import-objc-header $(SPIKE_DIR)/SpikeBridge.h
+	codesign --force --sign "$(CODESIGN_IDENTITY)" --options runtime \
+	    --entitlements $(ENTITLEMENTS) --identifier io.keymic.app.spike \
+	    $(SPIKE_BUILD)/onnx-spike
+	@echo "--- signed WITH entitlements; expect SPIKE_PASS ---"
+	$(SPIKE_BUILD)/onnx-spike
+
+spike-onnx-runtime-noentitlement:
+	@mkdir -p $(SPIKE_BUILD)
+	clang -c $(SPIKE_DIR)/SpikeBridge.c -I$(SPIKE_DIR)/vendor -o $(SPIKE_BUILD)/SpikeBridge.o
+	swiftc -O -parse-as-library -o $(SPIKE_BUILD)/onnx-spike-noent \
+	    $(SPIKE_DIR)/ONNXRuntimeSpike.swift $(SPIKE_BUILD)/SpikeBridge.o \
+	    -import-objc-header $(SPIKE_DIR)/SpikeBridge.h
+	codesign --force --sign "$(CODESIGN_IDENTITY)" --options runtime \
+	    --identifier io.keymic.app.spike.noent \
+	    $(SPIKE_BUILD)/onnx-spike-noent
+	@echo "--- signed WITHOUT entitlements; expect load failure ---"
+	-$(SPIKE_BUILD)/onnx-spike-noent
+	@echo "(nonzero exit above = library validation blocked load = entitlement load-bearing)"
