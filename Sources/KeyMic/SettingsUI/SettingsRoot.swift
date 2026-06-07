@@ -470,6 +470,7 @@ private struct VoiceSettingsView: View {
     @AppStorage("senseVoiceEnabled") private var senseVoiceEnabled: Bool = false
     @AppStorage("senseVoiceLanguage") private var senseVoiceLanguage: String = "auto"
     @StateObject private var download = SenseVoiceDownloadController()
+    @ObservedObject private var engineStatus = SpeechEngineStatusStore.shared
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     private var triggerKey: Binding<String> { hotkeyBinding(hotkeyStore, for: .voiceTrigger) }
@@ -543,6 +544,14 @@ private struct VoiceSettingsView: View {
                 )
                 .font(.callout)
                 .foregroundStyle(.secondary)
+            }
+
+            Section {
+                LabeledContent("Recognition engine:") {
+                    Text(SpeechEngineStatus.displayLabel(for: engineStatus.status))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
 
             Section {
