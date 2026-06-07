@@ -383,16 +383,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let enabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
         let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
         let modelReady = senseVoiceModelStore.state == .ready
+        let isMacOS26OrLater: Bool = {
+            if #available(macOS 26, *) { return true } else { return false }
+        }()
+        // localeSupported / assetReady are wired to SpeechAnalyzerSupport in a later task;
+        // until then they are false, so choose() never returns .speechAnalyzer here.
         let choice = SpeechEngineFactory.choose(
             osIsSonomaOrEarlier: sonomaOrEarlier,
             enabled: enabled,
-            modelReady: modelReady)
+            modelReady: modelReady,
+            isMacOS26OrLater: isMacOS26OrLater,
+            localeSupportedBySpeechAnalyzer: false,
+            speechAnalyzerAssetReady: false)
 
         // Bump generation so a stale async upgrade can't clobber a newer decision.
         speechEngineGeneration &+= 1
         let gen = speechEngineGeneration
 
-        if choice == .apple {
+        if choice != .senseVoice {
+            // .apple — and, until a later task wires the SpeechAnalyzer engine, .speechAnalyzer too.
             // Cheap path — swap immediately on main.
             speechEngine = makeAppleEngine()
             setupSpeechCallbacks()
