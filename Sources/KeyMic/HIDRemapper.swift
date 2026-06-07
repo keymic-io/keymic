@@ -43,23 +43,15 @@ enum HIDRemapper {
         }
         let json = #"{"UserKeyMapping":[\#(entries.joined(separator: ","))]}"#
         let work = {
-            let task = Process()
-            task.executableURL = URL(fileURLWithPath: hidutilPath)
-            task.arguments = ["property", "--set", json]
-            task.standardOutput = Pipe()
-            task.standardError = Pipe()
-            do {
-                try task.run()
-                task.waitUntilExit()
-                if task.terminationStatus != 0 {
-                    log.error("hidutil returned \(task.terminationStatus, privacy: .public) for \(json, privacy: .public)")
-                } else {
-                    log.info(
-                        "hidutil set \(entries.count, privacy: .public) mapping(s) [\(synchronously ? "sync" : "async", privacy: .public)]"
-                    )
-                }
-            } catch {
-                log.error("hidutil launch failed: \(error.localizedDescription, privacy: .public)")
+            let (exit, _, err) = ShellRunner.shared.runExecSync(
+                URL(fileURLWithPath: hidutilPath),
+                arguments: ["property", "--set", json])
+            if exit != 0 {
+                log.error("hidutil returned \(exit, privacy: .public) for \(json, privacy: .public): \(err, privacy: .public)")
+            } else {
+                log.info(
+                    "hidutil set \(entries.count, privacy: .public) mapping(s) [\(synchronously ? "sync" : "async", privacy: .public)]"
+                )
             }
         }
         if synchronously {
