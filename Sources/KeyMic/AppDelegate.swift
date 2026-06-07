@@ -412,6 +412,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lastSenseVoiceEnabled = enabled
             lastSenseVoiceLanguage = langKey
             lastSenseVoiceModelReady = modelReady
+            SpeechEngineStatusStore.shared.update(.sfSpeechRecognizer)
             return
         }
 
@@ -435,6 +436,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.lastSenseVoiceEnabled = enabled
                 self.lastSenseVoiceLanguage = langKey
                 self.lastSenseVoiceModelReady = true
+                SpeechEngineStatusStore.shared.update(.senseVoice)
             }
         }
     }
