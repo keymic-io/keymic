@@ -6,6 +6,27 @@ import os.log
 
 private let logger = Logger(subsystem: "io.keymic.app", category: "SpeechAnalyzerEngine")
 
+/// Convert one mic buffer to the analyzer's format. Free function (no actor
+/// isolation) so it is safe to call from the AVAudioEngine realtime thread.
+@available(macOS 26, *)
+private func convertBuffer(_ buffer: AVAudioPCMBuffer,
+                           using converter: AVAudioConverter,
+                           to format: AVAudioFormat) -> AVAudioPCMBuffer? {
+    let ratio = format.sampleRate / buffer.format.sampleRate
+    let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
+    guard let out = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: capacity) else { return nil }
+    var consumed = false
+    var err: NSError?
+    converter.convert(to: out, error: &err) { _, status in
+        if consumed { status.pointee = .noDataNow; return nil }
+        consumed = true
+        status.pointee = .haveData
+        return buffer
+    }
+    if let err { logger.error("convert failed: \(err.localizedDescription, privacy: .public)"); return nil }
+    return out
+}
+
 /// macOS 26 SpeechAnalyzer-backed engine. Conforms to the same callback-based
 /// `SpeechEngineProtocol` as AppleSpeechEngine so the rest of the app is agnostic.
 /// Constructed only when SpeechAnalyzerSupport reports the locale supported AND
@@ -100,20 +121,37 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
         // Mic tap: RMS level + convert to analyzer format + yield.
         let inputNode = engine.inputNode
         let micFormat = inputNode.outputFormat(forBus: 0)
-        converter = AVAudioConverter(from: micFormat, to: analyzerFormat)
+        let targetFormat = analyzerFormat
+        guard let sessionConverter = AVAudioConverter(from: micFormat, to: targetFormat) else {
+            teardownInternal()
+            throw VoiceError.audioEngineFailed("无法创建音频转换器")
+        }
+        converter = sessionConverter
+        // Captured locals so the realtime audio thread never reads @MainActor
+        // properties of `self` (which teardownInternal mutates on the main actor).
+        let capturedConverter = sessionConverter
+        let capturedContinuation = continuation
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
         logger.debug("startSession — input device: \(deviceName, privacy: .public)")
 
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: micFormat) { [weak self] buffer, _ in
-            guard let self else { return }
-            self.emitAudioLevel(buffer)
+            // Audio level (RMS): compute on the audio thread, deliver on main.
+            if let ch = buffer.floatChannelData?[0] {
+                let n = Int(buffer.frameLength)
+                var sum: Float = 0
+                for i in 0..<n { sum += ch[i] * ch[i] }
+                let rms = sqrtf(sum / Float(max(n, 1)))
+                let dB = 20 * log10(max(rms, 1e-6))
+                let norm = max(Float(0), min(Float(1), (dB + 50) / 40))
+                DispatchQueue.main.async { [weak self] in self?.onAudioLevel?(norm) }
+            }
             DispatchQueue.main.async { [weak self] in
                 guard let self, !self.firstBufferReceived else { return }
                 self.firstBufferReceived = true
                 self.audioWatchdog?.cancel(); self.audioWatchdog = nil
             }
-            if let converted = self.convert(buffer) {
-                self.inputContinuation?.yield(AnalyzerInput(buffer: converted))
+            if let converted = convertBuffer(buffer, using: capturedConverter, to: targetFormat) {
+                capturedContinuation.yield(AnalyzerInput(buffer: converted))
             }
         }
         inputTapInstalled = true
@@ -126,7 +164,7 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
         }
 
         let watchdog = DispatchWorkItem { [weak self] in
-            guard let self, !self.firstBufferReceived else { return }
+            guard let self, self.generation == myGen, !self.firstBufferReceived else { return }
             logger.error("No audio frames in 800ms (device: \(deviceName, privacy: .public))")
             self.teardownInternal()
             self.onError?("麦克风未响应，请松开后稍候再试")
@@ -152,34 +190,6 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
     private func endSession() {
         generation &+= 1
         teardownInternal()
-    }
-
-    private func emitAudioLevel(_ buffer: AVAudioPCMBuffer) {
-        guard let ch = buffer.floatChannelData?[0] else { return }
-        let n = Int(buffer.frameLength)
-        var sum: Float = 0
-        for i in 0..<n { sum += ch[i] * ch[i] }
-        let rms = sqrtf(sum / Float(max(n, 1)))
-        let dB = 20 * log10(max(rms, 1e-6))
-        let norm = max(Float(0), min(Float(1), (dB + 50) / 40))
-        DispatchQueue.main.async { [weak self] in self?.onAudioLevel?(norm) }
-    }
-
-    private func convert(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard let converter else { return nil }
-        let ratio = analyzerFormat.sampleRate / buffer.format.sampleRate
-        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 1)
-        guard let out = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: capacity) else { return nil }
-        var consumed = false
-        var err: NSError?
-        converter.convert(to: out, error: &err) { _, status in
-            if consumed { status.pointee = .noDataNow; return nil }
-            consumed = true
-            status.pointee = .haveData
-            return buffer
-        }
-        if let err { logger.error("convert failed: \(err.localizedDescription, privacy: .public)"); return nil }
-        return out
     }
 
     private func teardownAudioOnly() {
