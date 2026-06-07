@@ -363,6 +363,13 @@ test-speech-factory:
 	       -o .build/speech-factory-tests
 	.build/speech-factory-tests
 
+test-speech-status:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SpeechAnalyzer/SpeechEngineStatus.swift \
+	       Tests/SpeechEngineStatusTests.swift \
+	       -o .build/speech-status-tests
+	.build/speech-status-tests
+
 test-audio-capture-16k:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
