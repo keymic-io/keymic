@@ -583,6 +583,9 @@ test-output-router:
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
 	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
@@ -1005,6 +1008,9 @@ test-shell-output:
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       Tests/ShellOutputTests.swift \
 	       -framework AppKit \
 	       -framework Carbon \
