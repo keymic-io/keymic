@@ -49,6 +49,9 @@ int spike_transcribe(const char *onnx_dir, const char *model_path,
     memset(&config, 0, sizeof(config));
     config.feat_config.sample_rate = 16000;
     config.feat_config.feature_dim = 80;
+    // 此 "funasr-nano" repo 的 artifact 实为 SenseVoice-CTC 格式(model_type=sense_voice_ctc),
+    // 用 sense_voice config —— 不是同名的 model_config.funasr_nano(那需 4 个文件:
+    // encoder_adaptor/llm/embedding/Qwen3 tokenizer,本 repo 不含)。
     config.model_config.sense_voice.model = model_path;
     config.model_config.sense_voice.language = "auto";
     config.model_config.sense_voice.use_itn = 1;
@@ -65,6 +68,7 @@ int spike_transcribe(const char *onnx_dir, const char *model_path,
     if (!wave) { snprintf(out, out_cap, "ReadWave NULL: %s", wav_path); destroyRec(rec); return 5; }
 
     const SherpaOnnxOfflineStream *stream = createStream(rec);
+    if (!stream) { snprintf(out, out_cap, "CreateOfflineStream NULL"); freeWave(wave); destroyRec(rec); return 7; }
     accept(stream, wave->sample_rate, wave->samples, wave->num_samples);
     decode(rec, stream);
     const SherpaOnnxOfflineRecognizerResult *res = getResult(stream);
