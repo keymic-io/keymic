@@ -516,7 +516,6 @@ private struct VoiceSettingsView: View {
     @AppStorage("selectedLocaleCode") private var localeCode: String = ""
     // Single model picker (D2) replaces the old `senseVoiceEnabled` toggle.
     @AppStorage("voiceModel") private var voiceModel: String = "apple"
-    @AppStorage("senseVoiceLanguage") private var senseVoiceLanguage: String = "auto"
     @StateObject private var download = SenseVoiceDownloadController()
     @StateObject private var onnx = OnnxDownloadController(modelStore: OnnxStores.model)
     @State private var hotkeyStore = HotkeySettingsStore.shared
@@ -527,26 +526,23 @@ private struct VoiceSettingsView: View {
         if #available(macOS 15, *) { return true } else { return false }
     }()
 
-    /// (tag, localized label) pairs for the SenseVoice language picker. Tags match
-    /// `SenseVoiceConfig.languageIds` keys.
-    private static let senseVoiceLanguages: [(tag: String, label: String)] = [
-        ("auto", String(localized: "Auto / 自动")),
-        ("zh", "中文"),
-        ("en", "English"),
-        ("yue", "粤语"),
-        ("ja", "日本語"),
-        ("ko", "한국어"),
-    ]
-
-    private var senseVoiceStatusText: String {
-        switch download.state {
-        case .notDownloaded: return String(localized: "Model not downloaded")
+    /// Unified status line for every downloadable model — identical wording across engines.
+    /// In the stable states (not-downloaded / ready) the size is shown inline, so there is no
+    /// separate "Size:" row.
+    private func modelStatusText(_ phase: DownloadPhase, sizeText: String?) -> String {
+        switch phase {
+        case .notDownloaded:
+            if let sizeText { return String(format: String(localized: "Not downloaded (%@)"), sizeText) }
+            return String(localized: "Not downloaded")
         case .downloading(let fraction):
             let percent = Int((fraction * 100).rounded())
             // Explicit `%lld%%` key (vs. interpolation) so the catalog lookup is deterministic.
             return String(format: String(localized: "Downloading… %lld%%"), percent)
-        case .ready: return String(localized: "Model ready")
-        case .failed(let msg): return String(format: String(localized: "Failed: %@"), msg)
+        case .ready:
+            if let sizeText { return String(format: String(localized: "Ready (%@)"), sizeText) }
+            return String(localized: "Ready")
+        case .failed(let msg):
+            return String(format: String(localized: "Failed: %@"), msg)
         }
     }
 
@@ -563,17 +559,6 @@ private struct VoiceSettingsView: View {
         }
     }
 
-    private var onnxStatusText: String {
-        switch onnx.combined {
-        case .notDownloaded: return String(localized: "Runtime + model not downloaded")
-        case .downloading(let fraction):
-            let percent = Int((fraction * 100).rounded())
-            return String(format: String(localized: "Downloading… %lld%%"), percent)
-        case .ready: return String(localized: "Ready")
-        case .failed(let msg): return String(format: String(localized: "Failed: %@"), msg)
-        }
-    }
-
     private var onnxDownloadFraction: Double? {
         if case .downloading(let fraction) = onnx.combined { return fraction }
         return nil
@@ -586,15 +571,80 @@ private struct VoiceSettingsView: View {
         }
     }
 
-    private static let languages: [SpeechLanguageOption] = SFSpeechRecognizer.supportedLocales()
-        .map { SpeechLanguageOption(locale: $0) }
-        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    /// Distinct, region-free languages (deduped by language code). Stable across redraws.
+    private static let languages: [SpeechLanguage] = SpeechLanguageCatalog.distinctLanguages()
 
-    private var selectedLanguageCode: Binding<String> {
+    /// Selected language CODE (region-free). Persists into the full-locale `selectedLocaleCode`
+    /// via a representative locale, so the Apple engine still gets a concrete locale.
+    private var selectedLanguage: Binding<String> {
         Binding(
-            get: { localeCode.isEmpty ? Locale.current.identifier : localeCode },
-            set: { localeCode = $0 }
+            get: {
+                SpeechLanguageCatalog.languageCode(of: localeCode)
+                    ?? Locale.current.language.languageCode?.identifier
+                    ?? "en"
+            },
+            set: { code in
+                if let locale = SpeechLanguageCatalog.representativeLocale(for: code) {
+                    localeCode = locale.identifier
+                }
+            }
         )
+    }
+
+    private var selectedModel: VoiceModelOption? {
+        VoiceModelCatalog.selectableModels.first { $0.id == voiceModel }
+    }
+
+    /// Models offered for the currently-selected language: Apple (always), the "coming soon"
+    /// unavailable entry (kept visible, disabled), and any available offline model that supports
+    /// the language. Offline engines that can't do the language are hidden.
+    private var visibleModels: [VoiceModelOption] {
+        let lang = selectedLanguage.wrappedValue
+        return VoiceModelCatalog.selectableModels.filter {
+            $0.id == "apple" || !$0.available || $0.supports(lang)
+        }
+    }
+
+    /// When the language changes such that the live model no longer supports it, fall back to
+    /// Apple (which supports every language the picker can show).
+    private func resetModelIfUnsupported() {
+        let lang = selectedLanguage.wrappedValue
+        if let m = selectedModel, m.id != "apple", m.available, !m.supports(lang) {
+            voiceModel = "apple"
+        }
+    }
+
+    /// Uniform detail row under the model picker. Downloadable engines share `ModelDownloadRow`
+    /// (status-with-inline-size / download-or-reveal); Apple is the built-in exception.
+    @ViewBuilder
+    private var modelDetailRows: some View {
+        switch voiceModel {
+        case "senseVoice":
+            ModelDownloadRow(
+                statusText: modelStatusText(DownloadPhase(download.state), sizeText: selectedModel?.sizeText),
+                fraction: senseVoiceDownloadFraction,
+                isReady: download.state == .ready,
+                downloadTitle: "Download model",
+                downloadDisabled: !Self.senseVoiceSupported || senseVoiceDownloadDisabled,
+                folderURL: SenseVoiceModelStore.shared.modelURL,
+                onDownload: { download.download() }
+            )
+        case "funasrNano":
+            ModelDownloadRow(
+                statusText: modelStatusText(DownloadPhase(onnx.combined), sizeText: selectedModel?.sizeText),
+                fraction: onnxDownloadFraction,
+                isReady: onnx.combined == .ready,
+                downloadTitle: "Download runtime + model",
+                downloadDisabled: !Self.senseVoiceSupported || onnxDownloadDisabled,
+                folderURL: OnnxStores.model.destDir,
+                onDownload: { onnx.download() }
+            )
+        default:  // "apple" + unavailable models: no download, no on-disk folder.
+            LabeledContent("Download:") {
+                Text("Built into macOS — no download required")
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     var body: some View {
@@ -604,84 +654,16 @@ private struct VoiceSettingsView: View {
             }
 
             Section {
-                Picker("Language:", selection: selectedLanguageCode) {
+                Picker("Language:", selection: selectedLanguage) {
                     ForEach(Self.languages) { language in
                         Text(language.name).tag(language.code)
                     }
                 }
+                .onChange(of: localeCode) { resetModelIfUnsupported() }
             } footer: {
                 Text(
                     "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
                 )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Picker("Model:", selection: $voiceModel) {
-                    ForEach(VoiceModelCatalog.selectableModels, id: \.id) { model in
-                        Text(model.displayName).tag(model.id).disabled(!model.available)
-                    }
-                }
-                .disabled(!Self.senseVoiceSupported)
-
-                if voiceModel == "senseVoice" {
-                    Picker("Language:", selection: $senseVoiceLanguage) {
-                        ForEach(Self.senseVoiceLanguages, id: \.tag) { lang in
-                            Text(lang.label).tag(lang.tag)
-                        }
-                    }
-                    .disabled(!Self.senseVoiceSupported)
-
-                    LabeledContent("Download:") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 12) {
-                                Text(senseVoiceStatusText)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Button("Download model (~432 MB)") {
-                                    download.download()
-                                }
-                                .disabled(!Self.senseVoiceSupported || senseVoiceDownloadDisabled)
-                            }
-                            if let fraction = senseVoiceDownloadFraction {
-                                ProgressView(value: fraction)
-                                    .progressViewStyle(.linear)
-                            }
-                        }
-                    }
-                } else if voiceModel == "funasrNano" {
-                    LabeledContent("Download:") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 12) {
-                                Text(onnxStatusText)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                if onnx.combined != .ready {
-                                    Button("Download runtime + model (~1 GB)") {
-                                        onnx.download()
-                                    }
-                                    .disabled(!Self.senseVoiceSupported || onnxDownloadDisabled)
-                                }
-                            }
-                            if let fraction = onnxDownloadFraction {
-                                ProgressView(value: fraction)
-                                    .progressViewStyle(.linear)
-                            }
-                        }
-                    }
-                }
-            } header: {
-                Text("Speech model")
-            } footer: {
-                VStack(alignment: .leading, spacing: 4) {
-                    if !Self.senseVoiceSupported {
-                        Text("Requires macOS 15+ for the local engines.")
-                    }
-                    Text(
-                        "Local models run entirely on-device — no network after download. KeyMic falls back to Apple speech recognition when the selected model is unavailable or not yet downloaded."
-                    )
-                }
                 .font(.callout)
                 .foregroundStyle(.secondary)
             }
@@ -707,20 +689,94 @@ private struct VoiceSettingsView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
+
+            Section {
+                Picker("Model:", selection: $voiceModel) {
+                    ForEach(visibleModels, id: \.id) { model in
+                        Text(model.displayName).tag(model.id).disabled(!model.available)
+                    }
+                }
+                .disabled(!Self.senseVoiceSupported)
+
+                modelDetailRows
+            } header: {
+                Text("Speech model")
+            } footer: {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !Self.senseVoiceSupported {
+                        Text("Requires macOS 15+ for the local engines.")
+                    }
+                    Text(
+                        "Local models run entirely on-device — no network after download. KeyMic falls back to Apple speech recognition when the selected model is unavailable or not yet downloaded."
+                    )
+                }
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
     }
 }
 
-private struct SpeechLanguageOption: Identifiable {
-    let code: String
-    let name: String
+/// Engine-agnostic download phase. `SenseVoiceModelStore.State` and `AssetStore.State` are
+/// structurally identical; normalizing into this lets one status formatter serve both.
+private enum DownloadPhase {
+    case notDownloaded, downloading(Double), ready, failed(String)
 
-    var id: String { code }
+    init(_ s: SenseVoiceModelStore.State) {
+        switch s {
+        case .notDownloaded: self = .notDownloaded
+        case .downloading(let f): self = .downloading(f)
+        case .ready: self = .ready
+        case .failed(let m): self = .failed(m)
+        }
+    }
 
-    init(locale: Locale) {
-        code = locale.identifier
-        name = Locale.current.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
+    init(_ s: AssetStore.State) {
+        switch s {
+        case .notDownloaded: self = .notDownloaded
+        case .downloading(let f): self = .downloading(f)
+        case .ready: self = .ready
+        case .failed(let m): self = .failed(m)
+        }
+    }
+}
+
+/// 统一的「模型下载/状态」展示行,所有可下载语音模型共用:状态文案(已就绪时含体积)+ 进度条 +
+/// (未就绪)下载按钮 /(已就绪)在 Finder 显示。
+private struct ModelDownloadRow: View {
+    let statusText: String
+    let fraction: Double?
+    let isReady: Bool
+    let downloadTitle: LocalizedStringKey
+    let downloadDisabled: Bool
+    let folderURL: URL?
+    let onDownload: () -> Void
+
+    var body: some View {
+        LabeledContent("Download:") {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 12) {
+                    Text(statusText)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if isReady {
+                        if let folderURL {
+                            Button("Show in Finder") {
+                                NSWorkspace.shared.activateFileViewerSelecting([folderURL])
+                            }
+                        }
+                    } else {
+                        Button(downloadTitle, action: onDownload)
+                            .disabled(downloadDisabled)
+                    }
+                }
+                if let fraction {
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                }
+            }
+        }
     }
 }
 

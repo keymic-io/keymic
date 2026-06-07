@@ -58,7 +58,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let voiceEnabledKey = "voiceEnabled"
     private static let selectedLocaleCodeKey = "selectedLocaleCode"
-    private static let senseVoiceLanguageKey = "senseVoiceLanguage"
     /// Single model picker (D2): "apple" | "senseVoice" | "funasrNano". Replaces the old
     /// `senseVoiceEnabled` toggle as the engine selector.
     private static let voiceModelKey = "voiceModel"
@@ -82,6 +81,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }
+    }
+
+    /// Region-free language code of the current selection — the single source that drives both
+    /// the Apple locale and the offline engines' recognition language. Empty selection → "auto".
+    private var currentSpeechLanguageCode: String {
+        SpeechLanguageCatalog.languageCode(of: selectedLocaleCode) ?? "auto"
     }
 
     /// Pick a speech locale identifier matching the system language on first launch.
@@ -376,7 +381,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             logger.warning("SenseVoice resources missing (am.mvn / SPM .model); staying on Apple")
             return nil
         }
-        let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let langKey = currentSpeechLanguageCode
         let languageId = SenseVoiceConfig.languageIds[langKey] ?? 0
         logger.info("speech engine: SenseVoice (lang=\(langKey, privacy: .public))")
         return SenseVoiceSpeechEngine(
@@ -399,7 +404,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if #available(macOS 15, *) { return false } else { return true }
         }()
         let model = UserDefaults.standard.string(forKey: AppDelegate.voiceModelKey) ?? "apple"
-        let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let langKey = currentSpeechLanguageCode
         let svReady = senseVoiceModelStore.state == .ready
         let rtReady = ONNXRuntimeLoader.shared.store.state == .ready
         let onnxReady = onnxModelStore.state == .ready
@@ -511,7 +516,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func recordSpeechBaselineFromCurrent() {
         recordSpeechBaseline(
             model: UserDefaults.standard.string(forKey: AppDelegate.voiceModelKey) ?? "apple",
-            lang: UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto",
+            lang: currentSpeechLanguageCode,
             svReady: senseVoiceModelStore.state == .ready,
             rtReady: ONNXRuntimeLoader.shared.store.state == .ready,
             onnxReady: onnxModelStore.state == .ready)
@@ -523,7 +528,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// nothing changed.
     private func syncSpeechEngineIfNeeded() {
         let model = UserDefaults.standard.string(forKey: AppDelegate.voiceModelKey) ?? "apple"
-        let language = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let language = currentSpeechLanguageCode
         let svReady = senseVoiceModelStore.state == .ready
         let rtReady = ONNXRuntimeLoader.shared.store.state == .ready
         let onnxReady = onnxModelStore.state == .ready

@@ -24,6 +24,17 @@ struct VoiceModelOption {
     let id: String            // "apple" | "senseVoice" | "funasrNano" | "funasrMltNano"
     let displayName: String
     let available: Bool       // false → picker 置灰「暂不可用」
+    /// 下载体积(约值,unit 跨语言通用,不本地化);nil = 系统内置/无需下载。
+    let sizeText: String?
+    /// 该模型支持的语言码(与 `SpeechLanguageCatalog` 同源);nil = 支持全部(Apple)。
+    /// 粤语并入 zh —— Apple 不把 yue 当独立语言码。
+    let supportedLanguages: [String]?
+
+    /// 是否支持某语言码。nil(Apple)→ 永远 true。
+    func supports(_ languageCode: String) -> Bool {
+        guard let supportedLanguages else { return true }
+        return supportedLanguages.contains(languageCode)
+    }
 }
 
 /// 静态注册表:URL/SHA256 实测 baked。
@@ -73,9 +84,13 @@ enum VoiceModelCatalog {
 
     /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano 走 ONNX;MLT 暂不可用(无 sherpa 包)。
     static let selectableModels: [VoiceModelOption] = [
-        VoiceModelOption(id: "apple", displayName: "Apple (system)", available: true),
-        VoiceModelOption(id: "senseVoice", displayName: "SenseVoice Small", available: true),
-        VoiceModelOption(id: "funasrNano", displayName: "Fun-ASR-Nano (zh/en/ja)", available: true),
-        VoiceModelOption(id: "funasrMltNano", displayName: "Fun-ASR-MLT-Nano (31 langs) — coming soon", available: false),
+        VoiceModelOption(id: "apple", displayName: "Apple (system)", available: true, sizeText: nil,
+                         supportedLanguages: nil),
+        VoiceModelOption(id: "senseVoice", displayName: "SenseVoice Small", available: true, sizeText: "≈ 432 MB",
+                         supportedLanguages: ["zh", "en", "ja", "ko"]),
+        VoiceModelOption(id: "funasrNano", displayName: "Fun-ASR-Nano (zh/en/ja)", available: true, sizeText: "≈ 1 GB",
+                         supportedLanguages: ["zh", "en", "ja"]),
+        VoiceModelOption(id: "funasrMltNano", displayName: "Fun-ASR-MLT-Nano (31 langs) — coming soon", available: false,
+                         sizeText: nil, supportedLanguages: nil),
     ]
 }
