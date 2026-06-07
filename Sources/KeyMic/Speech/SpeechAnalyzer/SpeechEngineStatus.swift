@@ -15,13 +15,13 @@ enum SpeechEngineStatus: Equatable {
     static func displayLabel(for status: SpeechEngineStatus) -> String {
         switch status {
         case .senseVoice:
-            return String(localized: "当前识别引擎:SenseVoice(本地)")
+            return String(localized: "SenseVoice (on-device)")
         case .speechAnalyzer:
-            return String(localized: "当前识别引擎:Apple SpeechAnalyzer")
+            return String(localized: "Apple SpeechAnalyzer")
         case .sfSpeechRecognizer:
-            return String(localized: "当前识别引擎:Apple SFSpeechRecognizer")
+            return String(localized: "Apple SFSpeechRecognizer")
         case .sfSpeechRecognizerDownloadingAnalyzerAsset:
-            return String(localized: "当前识别引擎:Apple SFSpeechRecognizer(SpeechAnalyzer 语言包下载中…)")
+            return String(localized: "Apple SFSpeechRecognizer (downloading SpeechAnalyzer language pack…)")
         }
     }
 }
