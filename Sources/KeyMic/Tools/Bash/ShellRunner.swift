@@ -80,6 +80,7 @@ final class ShellRunner: @unchecked Sendable {
     /// busy-waits the child the same way `run(_:)` does). `timeout == nil`
     /// uses the runner's default (30s). Logs to the os.Logger only — exec
     /// calls are not user shell history, so they do not go to `ShellLogger`.
+    /// Like run(_:), it offers no cancellation hook — a long-running spawn can only be bounded by timeout.
     func runExecSync(
         _ executableURL: URL,
         arguments: [String],
@@ -96,6 +97,28 @@ final class ShellRunner: @unchecked Sendable {
         let durationMs = Int(Date().timeIntervalSince(t0) * 1000)
         osLogger.debug("exec \(executableURL.lastPathComponent, privacy: .public) exit=\(exit, privacy: .public) durationMs=\(durationMs, privacy: .public)")
         return (exit, out, err)
+    }
+
+    /// Fire-and-forget spawn: launches the child and returns immediately. No
+    /// pipes, no wait, no timeout, no tree-kill — the child's standard streams
+    /// are redirected to /dev/null (fully detached), and on app exit the child
+    /// is reparented to launchd. For relaunch helpers that must outlive KeyMic itself.
+    func launchDetached(_ executableURL: URL, arguments: [String]) {
+        let p = Process()
+        p.executableURL = executableURL
+        p.arguments = arguments
+        // Fully detach from the (possibly terminating) parent's file
+        // descriptors — the child outlives us, so it must not hold handles
+        // onto our streams.
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        p.standardInput = FileHandle.nullDevice
+        do {
+            try p.run()
+            osLogger.debug("launchDetached \(executableURL.lastPathComponent, privacy: .public) pid=\(p.processIdentifier, privacy: .public)")
+        } catch {
+            osLogger.error("launchDetached failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Shared implementation for `run(_:)` and `runAndCapture(_:)`.

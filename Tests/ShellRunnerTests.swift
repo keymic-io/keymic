@@ -15,6 +15,7 @@ private final class ShellRunnerTests {
         try testRunExecSyncArgvNotShellInterpreted()
         try testRunExecSyncNonZeroAndStderr()
         try testRunExecSyncTimeout()
+        try testLaunchDetachedSpawns()
         print("ShellRunnerTests passed")
     }
 
@@ -171,6 +172,7 @@ private final class ShellRunnerTests {
             fatalError("expected ShellLogEntry from runAndCapture to capture stdout")
         }
     }
+
     static func testRunExecSyncCapturesOutput() throws {
         let runner = makeRunner(snapshot: nil, captured: CapturedLogger())
         let r = runner.runExecSync(URL(fileURLWithPath: "/bin/echo"), arguments: ["hello"])
@@ -210,6 +212,22 @@ private final class ShellRunnerTests {
         guard validExits.contains(r.exitCode) else {
             fatalError("testRunExecSyncTimeout: expected 15 or 9, got \(r.exitCode)")
         }
+    }
+
+    static func testLaunchDetachedSpawns() throws {
+        let runner = makeRunner(snapshot: nil, captured: CapturedLogger())
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymic-detached-\(UUID().uuidString).marker")
+        // launchDetached returns immediately; verify it actually spawned the
+        // child by polling for its side effect.
+        runner.launchDetached(URL(fileURLWithPath: "/usr/bin/touch"), arguments: [marker.path])
+        var appeared = false
+        for _ in 0..<40 {
+            if FileManager.default.fileExists(atPath: marker.path) { appeared = true; break }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        try? FileManager.default.removeItem(at: marker)
+        guard appeared else { fatalError("testLaunchDetachedSpawns: marker never created") }
     }
 }
 
