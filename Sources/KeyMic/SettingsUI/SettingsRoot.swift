@@ -464,12 +464,61 @@ final class SenseVoiceDownloadController: ObservableObject {
     }
 }
 
+/// Drives the ONNX runtime + Fun-ASR-Nano model download button/status. Wraps the two shared
+/// stores (`ONNXRuntimeLoader.shared.store` + `OnnxStores.model`) — the same instances AppDelegate's
+/// engine decision reads — and composes their two states into one user-facing `combined` state.
+@MainActor
+final class OnnxDownloadController: ObservableObject {
+    @Published var runtimeState: AssetStore.State
+    @Published var modelState: AssetStore.State
+    private let modelStore: AssetStore
+
+    init(modelStore: AssetStore) {
+        self.modelStore = modelStore
+        self.runtimeState = ONNXRuntimeLoader.shared.store.state
+        self.modelState = modelStore.state
+        // AssetStore hops its observer callback to main, so direct assignment is main-safe.
+        ONNXRuntimeLoader.shared.store.addStateObserver { [weak self] s in self?.runtimeState = s }
+        modelStore.addStateObserver { [weak self] s in self?.modelState = s }
+    }
+
+    /// Download runtime + model (both required). Runtime first; on ready, kick off the model.
+    func download() {
+        let runtime = ONNXRuntimeLoader.shared.store
+        if runtime.state == .ready {
+            modelStore.ensureDownloaded { _ in }
+        } else {
+            runtime.ensureDownloaded { [weak self] st in
+                if case .ready = st { self?.modelStore.ensureDownloaded { _ in } }
+            }
+        }
+    }
+
+    /// Composite user-visible state: either failed → failed; both ready → ready; runtime download
+    /// maps to 0–10%, model download to 10–100%.
+    var combined: AssetStore.State {
+        func frac(_ s: AssetStore.State) -> Double {
+            if case .downloading(let f) = s { return f }
+            if case .ready = s { return 1 }
+            return 0
+        }
+        if case .failed(let m) = runtimeState { return .failed("runtime: \(m)") }
+        if case .failed(let m) = modelState { return .failed("model: \(m)") }
+        if runtimeState == .ready, modelState == .ready { return .ready }
+        if case .downloading = runtimeState { return .downloading(frac(runtimeState) * 0.1) }
+        if case .downloading = modelState { return .downloading(0.1 + frac(modelState) * 0.9) }
+        return .notDownloaded
+    }
+}
+
 private struct VoiceSettingsView: View {
     @AppStorage("voiceEnabled") private var voiceEnabled: Bool = true
     @AppStorage("selectedLocaleCode") private var localeCode: String = ""
-    @AppStorage("senseVoiceEnabled") private var senseVoiceEnabled: Bool = false
+    // Single model picker (D2) replaces the old `senseVoiceEnabled` toggle.
+    @AppStorage("voiceModel") private var voiceModel: String = "apple"
     @AppStorage("senseVoiceLanguage") private var senseVoiceLanguage: String = "auto"
     @StateObject private var download = SenseVoiceDownloadController()
+    @StateObject private var onnx = OnnxDownloadController(modelStore: OnnxStores.model)
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     private var triggerKey: Binding<String> { hotkeyBinding(hotkeyStore, for: .voiceTrigger) }
@@ -514,6 +563,29 @@ private struct VoiceSettingsView: View {
         }
     }
 
+    private var onnxStatusText: String {
+        switch onnx.combined {
+        case .notDownloaded: return String(localized: "Runtime + model not downloaded")
+        case .downloading(let fraction):
+            let percent = Int((fraction * 100).rounded())
+            return String(format: String(localized: "Downloading… %lld%%"), percent)
+        case .ready: return String(localized: "Ready")
+        case .failed(let msg): return String(format: String(localized: "Failed: %@"), msg)
+        }
+    }
+
+    private var onnxDownloadFraction: Double? {
+        if case .downloading(let fraction) = onnx.combined { return fraction }
+        return nil
+    }
+
+    private var onnxDownloadDisabled: Bool {
+        switch onnx.combined {
+        case .ready, .downloading: return true
+        case .notDownloaded, .failed: return false
+        }
+    }
+
     private static let languages: [SpeechLanguageOption] = SFSpeechRecognizer.supportedLocales()
         .map { SpeechLanguageOption(locale: $0) }
         .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
@@ -546,49 +618,68 @@ private struct VoiceSettingsView: View {
             }
 
             Section {
-                Toggle(
-                    "Enable local SenseVoice engine (multilingual, on-device)",
-                    isOn: $senseVoiceEnabled
-                )
-                // Gate ENABLING on a ready model, but always allow turning it back OFF — otherwise
-                // a user whose model dir was deleted/corrupted (state != .ready) with a persisted
-                // `senseVoiceEnabled = true` would be unable to clear the setting, and the engine
-                // would auto-switch back to SenseVoice the moment the model became ready again.
-                .disabled(!Self.senseVoiceSupported || (download.state != .ready && !senseVoiceEnabled))
-
-                Picker("Language:", selection: $senseVoiceLanguage) {
-                    ForEach(Self.senseVoiceLanguages, id: \.tag) { lang in
-                        Text(lang.label).tag(lang.tag)
+                Picker("Model:", selection: $voiceModel) {
+                    ForEach(VoiceModelCatalog.selectableModels, id: \.id) { model in
+                        Text(model.displayName).tag(model.id).disabled(!model.available)
                     }
                 }
                 .disabled(!Self.senseVoiceSupported)
 
-                LabeledContent("Model:") {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 12) {
-                            Text(senseVoiceStatusText)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button("Download model (~432 MB)") {
-                                download.download()
-                            }
-                            .disabled(!Self.senseVoiceSupported || senseVoiceDownloadDisabled)
+                if voiceModel == "senseVoice" {
+                    Picker("Language:", selection: $senseVoiceLanguage) {
+                        ForEach(Self.senseVoiceLanguages, id: \.tag) { lang in
+                            Text(lang.label).tag(lang.tag)
                         }
-                        if let fraction = senseVoiceDownloadFraction {
-                            ProgressView(value: fraction)
-                                .progressViewStyle(.linear)
+                    }
+                    .disabled(!Self.senseVoiceSupported)
+
+                    LabeledContent("Download:") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 12) {
+                                Text(senseVoiceStatusText)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Button("Download model (~432 MB)") {
+                                    download.download()
+                                }
+                                .disabled(!Self.senseVoiceSupported || senseVoiceDownloadDisabled)
+                            }
+                            if let fraction = senseVoiceDownloadFraction {
+                                ProgressView(value: fraction)
+                                    .progressViewStyle(.linear)
+                            }
+                        }
+                    }
+                } else if voiceModel == "funasrNano" {
+                    LabeledContent("Download:") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 12) {
+                                Text(onnxStatusText)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                if onnx.combined != .ready {
+                                    Button("Download runtime + model (~1 GB)") {
+                                        onnx.download()
+                                    }
+                                    .disabled(!Self.senseVoiceSupported || onnxDownloadDisabled)
+                                }
+                            }
+                            if let fraction = onnxDownloadFraction {
+                                ProgressView(value: fraction)
+                                    .progressViewStyle(.linear)
+                            }
                         }
                     }
                 }
             } header: {
-                Text("Local engine (SenseVoice)")
+                Text("Speech model")
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if !Self.senseVoiceSupported {
-                        Text("Requires macOS 15+.")
+                        Text("Requires macOS 15+ for the local engines.")
                     }
                     Text(
-                        "Runs entirely on-device — no network after download. Falls back to Apple speech recognition when disabled, unavailable, or the model is not yet downloaded."
+                        "Local models run entirely on-device — no network after download. KeyMic falls back to Apple speech recognition when the selected model is unavailable or not yet downloaded."
                     )
                 }
                 .font(.callout)
