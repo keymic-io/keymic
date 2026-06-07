@@ -418,6 +418,9 @@ test-sensevoice-model-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
 	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceModelStore.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       Tests/SenseVoiceModelStoreTests.swift \
 	       -framework CoreML \
 	       -o .build/sensevoice-model-store-tests
