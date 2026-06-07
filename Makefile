@@ -1,15 +1,23 @@
 APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 ENTITLEMENTS := $(APP_NAME).entitlements
-BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
+# SpeechAnalyzer (LOR-28) needs the macOS 26 SDK. Detect SDK major version and,
+# when >= 26, pass -DKEYMIC_HAS_SPEECH_ANALYZER so the guarded Speech code compiles.
+# Older SDKs build fine without it (the #if excludes the new-API files).
+SDK_MAJOR := $(shell xcrun --sdk macosx --show-sdk-version 2>/dev/null | cut -d. -f1)
+SPEECH_ANALYZER_FLAGS :=
+ifeq ($(shell [ "$(SDK_MAJOR)" -ge 26 ] 2>/dev/null && echo yes),yes)
+SPEECH_ANALYZER_FLAGS := -Xswiftc -DKEYMIC_HAS_SPEECH_ANALYZER
+endif
+BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
 .PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait
 
 
 build:
-	swift build -c release
-	$(eval BUILD_DIR := $(shell swift build -c release --show-bin-path))
+	swift build -c release $(SPEECH_ANALYZER_FLAGS)
+	$(eval BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path))
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS
 	mkdir -p $(APP_BUNDLE)/Contents/Resources
@@ -32,8 +40,8 @@ build:
 	@echo "\n✅ Built $(APP_BUNDLE)"
 
 build-arm64:
-	swift build -c release --arch arm64
-	$(eval ARM64_BUILD := $(shell swift build -c release --arch arm64 --show-bin-path))
+	swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch arm64
+	$(eval ARM64_BUILD := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch arm64 --show-bin-path))
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(APP_BUNDLE)/Contents/Frameworks
 	cp $(ARM64_BUILD)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
@@ -53,8 +61,8 @@ build-arm64:
 	@echo "\n✅ Built $(APP_BUNDLE) (arm64)"
 
 build-x86_64:
-	swift build -c release --arch x86_64
-	$(eval X86_BUILD := $(shell swift build -c release --arch x86_64 --show-bin-path))
+	swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch x86_64
+	$(eval X86_BUILD := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch x86_64 --show-bin-path))
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(APP_BUNDLE)/Contents/Frameworks
 	cp $(X86_BUILD)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
