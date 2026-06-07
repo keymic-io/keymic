@@ -241,9 +241,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // enabled this kicks off an off-main model load and swaps the engine in when ready;
         // otherwise it is a no-op (already on Apple).
         applySpeechEnginePreference()
-#if KEYMIC_HAS_SPEECH_ANALYZER
-        if #available(macOS 26, *) { speechAnalyzerSupport.bootstrapIfNeeded() }
-#endif
         // Re-decide the engine whenever the model store's readiness changes outside a
         // UserDefaults edit — chiefly when a download finishes mid-session (so dictation
         // upgrades to SenseVoice without waiting for an unrelated preference change or a
@@ -443,6 +440,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 lastSenseVoiceEnabled = enabled
                 lastSenseVoiceLanguage = langKey
                 lastSenseVoiceModelReady = modelReady
+                lastSpeechLocaleCode = selectedLocaleCode
                 SpeechEngineStatusStore.shared.update(.speechAnalyzer)
                 return
             }
@@ -461,6 +459,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             lastSenseVoiceEnabled = enabled
             lastSenseVoiceLanguage = langKey
             lastSenseVoiceModelReady = modelReady
+            lastSpeechLocaleCode = selectedLocaleCode
             SpeechEngineStatusStore.shared.update(
                 assetDownloading ? .sfSpeechRecognizerDownloadingAnalyzerAsset : .sfSpeechRecognizer)
             return
@@ -486,6 +485,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.lastSenseVoiceEnabled = enabled
                 self.lastSenseVoiceLanguage = langKey
                 self.lastSenseVoiceModelReady = true
+                self.lastSpeechLocaleCode = self.selectedLocaleCode
                 SpeechEngineStatusStore.shared.update(.senseVoice)
             }
         }
@@ -515,7 +515,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            localeCode == lastSpeechLocaleCode {
             return
         }
-        lastSpeechLocaleCode = localeCode
         applySpeechEnginePreference()
     }
 
