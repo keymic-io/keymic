@@ -18,8 +18,12 @@ enum SpeechEngineFactory {
         localeSupportedBySpeechAnalyzer: Bool,
         speechAnalyzerAssetReady: Bool
     ) -> SpeechEngineChoice {
-        // 1. SenseVoice keeps its exact original gate.
-        if !osIsSonomaOrEarlier && enabled && modelReady {
+        // Pre-macOS-15 has neither SenseVoice nor SpeechAnalyzer — always legacy Apple.
+        // Also makes the (impossible-at-runtime) Sonoma+macOS26 input deterministic.
+        if osIsSonomaOrEarlier { return .apple }
+        // 1. SenseVoice keeps its exact original gate (macOS 15+ is its only OS requirement;
+        //    isMacOS26OrLater is intentionally NOT checked here).
+        if enabled && modelReady {
             return .senseVoice
         }
         // 2. Apple default path — upgrade to SpeechAnalyzer only when fully ready.

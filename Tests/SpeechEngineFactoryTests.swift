@@ -18,6 +18,11 @@ struct SpeechEngineFactoryTestRunner {
             osIsSonomaOrEarlier: true, enabled: true, modelReady: true,
             isMacOS26OrLater: false, localeSupportedBySpeechAnalyzer: false,
             speechAnalyzerAssetReady: false) == .apple)
+        // 矛盾入参(Sonoma 同时标 macOS26 + 全就绪)→ 前置守卫确保 .apple。
+        precondition(SpeechEngineFactory.choose(
+            osIsSonomaOrEarlier: true, enabled: true, modelReady: true,
+            isMacOS26OrLater: true, localeSupportedBySpeechAnalyzer: true,
+            speechAnalyzerAssetReady: true) == .apple)
         // SenseVoice 关 + 非 macOS26 → .apple。
         precondition(SpeechEngineFactory.choose(
             osIsSonomaOrEarlier: false, enabled: false, modelReady: true,

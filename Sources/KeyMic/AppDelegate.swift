@@ -401,8 +401,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let gen = speechEngineGeneration
 
         if choice != .senseVoice {
-            // .apple — and, until a later task wires the SpeechAnalyzer engine, .speechAnalyzer too.
-            // Cheap path — swap immediately on main.
+            // TODO(LOR-28 Task 8): add a dedicated .speechAnalyzer branch ABOVE this one.
+            // Until then .speechAnalyzer (currently gated off) falls through to the Apple engine.
+            assert(choice == .apple || choice == .speechAnalyzer,
+                   "Unhandled SpeechEngineChoice in applySpeechEnginePreference")
             speechEngine = makeAppleEngine()
             setupSpeechCallbacks()
             speechSessionHost?.replaceEngine(speechEngine)
