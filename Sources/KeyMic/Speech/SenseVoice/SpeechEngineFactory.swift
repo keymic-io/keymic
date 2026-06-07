@@ -1,14 +1,23 @@
 import Foundation
 
-enum SpeechEngineChoice { case apple, senseVoice }
+enum SpeechEngineChoice { case apple, senseVoice, onnx }
 
 enum SpeechEngineFactory {
-    /// Pick the speech backend. SenseVoice requires macOS 15, the user toggle on, and a ready model;
-    /// every other case falls back to Apple's recognizer.
-    static func choose(osIsSonomaOrEarlier: Bool, enabled: Bool, modelReady: Bool) -> SpeechEngineChoice {
+    /// 按 picker 选中的 model + 各引擎就绪度选后端。SenseVoice 与 ONNX 均需 macOS 15;
+    /// 选中项未就绪一律回退 Apple。
+    static func choose(model: String,
+                       osIsSonomaOrEarlier: Bool,
+                       senseVoiceReady: Bool,
+                       onnxRuntimeReady: Bool,
+                       onnxModelReady: Bool) -> SpeechEngineChoice {
         if osIsSonomaOrEarlier { return .apple }
-        if !enabled { return .apple }
-        if !modelReady { return .apple }
-        return .senseVoice
+        switch model {
+        case "senseVoice":
+            return senseVoiceReady ? .senseVoice : .apple
+        case "funasrNano":
+            return (onnxRuntimeReady && onnxModelReady) ? .onnx : .apple
+        default:
+            return .apple
+        }
     }
 }
