@@ -46,14 +46,19 @@ final class SpeechAnalyzerSupport {
         didLoadSupported = true
         Task { [weak self] in
             let locales = await SpeechTranscriber.supportedLocales
+            // Seed already-installed packs so a pre-installed locale is immediately
+            // ready (no spurious "downloading" flash / redundant install request).
+            let installed = await SpeechTranscriber.installedLocales
+            // Audio format is locale-agnostic; en-US is an arbitrary stable probe.
             let probe = SpeechTranscriber(locale: Locale(identifier: "en-US"),
                                           preset: .progressiveTranscription)
             let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [probe])
             await MainActor.run {
                 guard let self else { return }
                 self.supportedLocaleIDs = Set(locales.map { Self.normalize($0.identifier) })
+                self.installedLocaleIDs = Set(installed.map { Self.normalize($0.identifier) })
                 self.analyzerFormat = format
-                logger.info("SpeechAnalyzer: \(self.supportedLocaleIDs.count) locales, format \(format != nil)")
+                logger.info("SpeechAnalyzer: \(self.supportedLocaleIDs.count) supported, \(self.installedLocaleIDs.count) installed, format \(format != nil ? "ok" : "nil", privacy: .public)")
                 self.onReadinessChanged?()
             }
         }
@@ -83,6 +88,7 @@ final class SpeechAnalyzerSupport {
             } catch {
                 await MainActor.run {
                     guard let self else { return }
+                    // Failure clears downloading; a later ensureAsset call may retry.
                     self.downloadingLocaleIDs.remove(key)
                     logger.error("SpeechAnalyzer asset install failed for \(key, privacy: .public): \(error.localizedDescription, privacy: .public)")
                     self.onReadinessChanged?()
