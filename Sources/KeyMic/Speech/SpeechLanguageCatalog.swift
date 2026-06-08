@@ -13,18 +13,39 @@ struct SpeechLanguage: Identifiable, Hashable {
 /// language-support table, and the engine factory. Keyed by language code so every surface
 /// renders the SAME name (all names come from the system locale API).
 enum SpeechLanguageCatalog {
+    /// Chinese dialects that macOS exposes as their own language codes, pulled to sit right after
+    /// 普通话(zh) in the picker. Order here is the display order within the cluster.
+    private static let chineseDialectCodes = ["yue", "wuu"]
+
     /// Distinct languages Apple can recognize, deduped by language code, sorted by localized name.
     /// `SFSpeechRecognizer.supportedLocales()` is an unordered `Set`, so the dedupe scans it and
-    /// the result is sorted for a stable picker order.
+    /// the result is sorted for a stable picker order. The macro-language "zh" is shown as 普通话
+    /// (Mandarin) — the system name is the generic "中文" — and the Chinese dialects are clustered
+    /// immediately after it.
     static func distinctLanguages() -> [SpeechLanguage] {
         var seen = Set<String>()
         var out: [SpeechLanguage] = []
         for locale in SFSpeechRecognizer.supportedLocales() {
             guard let code = locale.language.languageCode?.identifier, !seen.contains(code) else { continue }
             seen.insert(code)
-            out.append(SpeechLanguage(code: code, name: Locale.current.localizedString(forLanguageCode: code) ?? code))
+            let name = (code == "zh")
+                ? String(localized: "Mandarin Chinese")
+                : (Locale.current.localizedString(forLanguageCode: code) ?? code)
+            out.append(SpeechLanguage(code: code, name: name))
         }
-        return out.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        out.sort { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        return clusterChineseFamily(out)
+    }
+
+    /// Keep 普通话(zh) at its sorted position, then pull the Chinese dialects to immediately
+    /// follow it (in `chineseDialectCodes` order). No-op when zh / the dialects are absent.
+    private static func clusterChineseFamily(_ langs: [SpeechLanguage]) -> [SpeechLanguage] {
+        let dialects = chineseDialectCodes.compactMap { code in langs.first { $0.code == code } }
+        guard !dialects.isEmpty else { return langs }
+        var rest = langs.filter { !chineseDialectCodes.contains($0.code) }
+        guard let zhIdx = rest.firstIndex(where: { $0.code == "zh" }) else { return langs }
+        rest.insert(contentsOf: dialects, at: zhIdx + 1)
+        return rest
     }
 
     /// Language code of a stored locale identifier (e.g. "zh-CN" → "zh"). Empty/invalid → nil.

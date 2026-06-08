@@ -519,7 +519,6 @@ private struct VoiceSettingsView: View {
     @StateObject private var download = SenseVoiceDownloadController()
     @StateObject private var onnx = OnnxDownloadController(modelStore: OnnxStores.model)
     @StateObject private var onnxMlt = OnnxDownloadController(modelStore: OnnxStores.mltModel)
-    @ObservedObject private var engineStatus = SpeechEngineStatusStore.shared
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     private var triggerKey: Binding<String> { hotkeyBinding(hotkeyStore, for: .voiceTrigger) }
@@ -609,13 +608,13 @@ private struct VoiceSettingsView: View {
         VoiceModelCatalog.selectableModels.first { $0.id == voiceModel }
     }
 
-    /// A model row's picker label: the model name, plus an "[Unsupported language]" suffix when the
-    /// model is available but can't recognize the currently-selected language. Names stay verbatim
-    /// (brand); the suffix is localized.
+    /// A model row's picker label: the model name, plus a static "[Preferred language not
+    /// supported]" suffix when the model is available but can't recognize the selected language.
+    /// Names stay verbatim (brand); the suffix is localized.
     private func modelPickerLabel(_ model: VoiceModelOption) -> String {
         let lang = selectedLanguage.wrappedValue
         if model.available, !model.supports(lang) {
-            return model.displayName + "  " + String(localized: "[Unsupported language]")
+            return model.displayName + "  " + String(localized: "[Preferred language not supported]")
         }
         return model.displayName
     }
@@ -667,32 +666,14 @@ private struct VoiceSettingsView: View {
         Form {
             Section {
                 Toggle("Enable voice input", isOn: $voiceEnabled)
-            }
 
-            Section {
-                Picker("Language:", selection: selectedLanguage) {
+                Picker("Preferred Language:", selection: selectedLanguage) {
                     ForEach(Self.languages) { language in
                         Text(language.name).tag(language.code)
                     }
                 }
                 .onChange(of: localeCode) { resetModelIfUnsupported() }
-            } footer: {
-                Text(
-                    "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
 
-            Section {
-                LabeledContent("Recognition engine:") {
-                    Text(SpeechEngineStatus.displayLabel(for: engineStatus.status))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-            }
-
-            Section {
                 LabeledContent("Trigger Key:") {
                     HotkeyRecorderWithClear(
                         encoded: triggerKey,
@@ -721,6 +702,12 @@ private struct VoiceSettingsView: View {
                     }
                 }
                 .disabled(!Self.senseVoiceSupported)
+                // SwiftUI's per-row `.disabled` greys the option but does NOT reliably block
+                // selecting it in a pop-up Picker. Enforce it: any pick of a model that can't do
+                // the current language bounces straight back to Apple. `onAppear` also heals a
+                // selection that became unsupported via an earlier language change.
+                .onChange(of: voiceModel) { resetModelIfUnsupported() }
+                .onAppear { resetModelIfUnsupported() }
 
                 modelDetailRows
             } header: {

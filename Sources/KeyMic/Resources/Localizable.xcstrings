@@ -4347,59 +4347,6 @@
         }
       }
     },
-    "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Wenn keine Sprache ausgewählt ist, verwendet KeyMic die aktuelle Systemsprache. Nach der Auswahl wird die eigene Spracheinstellung von KeyMic verwendet."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Si no se selecciona ningún idioma, KeyMic muestra el idioma actual del sistema. Después de elegir uno, KeyMic usa su propia configuración."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Si aucune langue n’est sélectionnée, KeyMic affiche la langue actuelle du système. Une fois choisie, KeyMic utilise sa propre langue."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "言語を選択していない場合、KeyMic は現在のシステム言語を使用します。選択後は KeyMic 自身の言語設定が適用されます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "언어를 선택하지 않으면 KeyMic가 현재 시스템 언어를 사용합니다. 선택하면 KeyMic 자체 언어 설정이 사용됩니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未选择语言时 KeyMic 使用当前系统语言；选择后将使用 KeyMic 自身的语言设置。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "未選擇語言時 KeyMic 會使用目前的系統語言；選擇後將使用 KeyMic 自身的語言設定。"
-          }
-        }
-      }
-    },
     "Ignore confidential clipboards": {
       "extractionState": "manual",
       "localizations": {
@@ -4930,55 +4877,55 @@
         }
       }
     },
-    "Language:": {
+    "Preferred Language:": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Sprache:"
+            "value": "Bevorzugte Sprache:"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Language:"
+            "value": "Preferred Language:"
           }
         },
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Idioma:"
+            "value": "Idioma preferido:"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Langue :"
+            "value": "Langue préférée :"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "言語："
+            "value": "優先言語："
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "언어:"
+            "value": "기본 언어:"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "语言："
+            "value": "首选语言："
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "語言："
+            "value": "首選語言："
           }
         }
       }
@@ -11184,6 +11131,59 @@
         }
       }
     },
+    "Mandarin Chinese": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mandarin-Chinesisch"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mandarin Chinese"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Chino mandarín"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mandarin"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "標準中国語"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "표준 중국어"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "國語"
+          }
+        }
+      }
+    },
     "Model not downloaded": {
       "extractionState": "manual",
       "localizations": {
@@ -12244,55 +12244,55 @@
         }
       }
     },
-    "[Unsupported language]": {
+    "[Preferred language not supported]": {
       "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "[Unsupported language]"
-          }
-        },
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "[Sprache nicht unterstützt]"
+            "value": "[Bevorzugte Sprache nicht unterstützt]"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[Preferred language not supported]"
           }
         },
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "[Idioma no admitido]"
+            "value": "[Idioma preferido no admitido]"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "[Langue non prise en charge]"
+            "value": "[Langue préférée non prise en charge]"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "[この言語に非対応]"
+            "value": "[優先言語に非対応]"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "[지원하지 않는 언어]"
+            "value": "[기본 언어 미지원]"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "[不支持该语种]"
+            "state": "translated",
+            "value": "[不支持首选语言]"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "[不支援此語言]"
+            "value": "[不支援首選語言]"
           }
         }
       }
