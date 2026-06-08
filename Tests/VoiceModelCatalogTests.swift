@@ -16,10 +16,11 @@ struct VoiceModelCatalogTests {
         assert(fa.files.allSatisfy { !$0.sha256.isEmpty })
         assert(fa.available, "funasr-nano available")
 
-        // 选择项:含 apple/senseVoice/funasrNano;MLT 存在但 unavailable
+        // 选择项:含 apple/senseVoice/funasrNano/funasrMltNano,均 available
+        // (MLT 自 151a4c0 起有 HF+ModelScope 镜像资产,故可用)。
         let models = VoiceModelCatalog.selectableModels
         assert(models.contains { $0.id == "funasrNano" && $0.available })
-        assert(models.contains { $0.id == "funasrMltNano" && !$0.available })
+        assert(models.contains { $0.id == "funasrMltNano" && $0.available })
         print("VoiceModelCatalogTests passed")
     }
 }
