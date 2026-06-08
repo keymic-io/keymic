@@ -81,6 +81,18 @@ final class AssetStore {
         }
     }
 
+    /// Download `file.url`, falling back to each mirror in order on failure (e.g. HF blocked →
+    /// ModelScope). Returns the first successful body, or throws the last error if all fail.
+    static func downloadWithFallback(_ file: AssetFile) throws -> Data {
+        var lastError: Error = NSError(domain: "AssetStore", code: -1,
+                                       userInfo: [NSLocalizedDescriptionKey: "no source URLs"])
+        for url in [file.url] + file.mirrors {
+            do { return try Data(contentsOf: url) }
+            catch { lastError = error }
+        }
+        throw lastError
+    }
+
     private func runDownload(onState: @escaping (State) -> Void) {
         defer { lock.lock(); inFlight = false; lock.unlock() }
         let fm = FileManager.default
@@ -93,7 +105,7 @@ final class AssetStore {
             let dst = stagingDir.appendingPathComponent(file.relPath)
             do {
                 try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let data = try Data(contentsOf: file.url)   // 同步下载(后台线程);file:// 与 https 均可
+                let data = try Self.downloadWithFallback(file)   // 主源失败→按序试镜像;file:// 与 https 均可
                 try data.write(to: dst)
             } catch {
                 try? fm.removeItem(at: stagingDir)

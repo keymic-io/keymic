@@ -5,6 +5,15 @@ struct AssetFile {
     let url: URL
     let sha256: String
     let relPath: String
+    /// 备用镜像 URL,主 `url` 失败时按序重试(如 HF 不可达 → ModelScope)。
+    let mirrors: [URL]
+
+    init(url: URL, sha256: String, relPath: String, mirrors: [URL] = []) {
+        self.url = url
+        self.sha256 = sha256
+        self.relPath = relPath
+        self.mirrors = mirrors
+    }
 }
 
 /// 一组一起下载、放进同一目录的文件(runtime dylib 集 / 某模型文件集)。
@@ -45,6 +54,9 @@ enum VoiceModelCatalog {
     }
     private static func hfMlt(_ file: String) -> URL {
         URL(string: "https://huggingface.co/lorneluo/sherpa-onnx-funasr-mlt-nano-int8-2512/resolve/main/\(file)")!
+    }
+    private static func msMlt(_ file: String) -> URL {
+        URL(string: "https://www.modelscope.cn/models/lorneluo2/sherpa-onnx-funasr-mlt-nano-int8-2512/resolve/master/\(file)")!
     }
     private static func runtimeURL(_ file: String) -> URL {
         URL(string: "https://github.com/keymic-io/keymic/releases/download/onnx-runtime-v1.13.2/\(file)")!
@@ -92,24 +104,30 @@ enum VoiceModelCatalog {
         files: [
             AssetFile(url: hfMlt("encoder_adaptor.int8.onnx"),
                       sha256: "d38cf070a354f5166bc24a4cd885cceb0fa465c7b0410b11d6c376ce77e256bd",
-                      relPath: "encoder_adaptor.int8.onnx"),
+                      relPath: "encoder_adaptor.int8.onnx",
+                      mirrors: [msMlt("encoder_adaptor.int8.onnx")]),
             AssetFile(url: hfMlt("llm.int8.onnx"),
                       sha256: "ef4308d86844c7f3ddb90b237014ca0a3830aadcfc5551e65d813e63098b131b",
-                      relPath: "llm.int8.onnx"),
+                      relPath: "llm.int8.onnx",
+                      mirrors: [msMlt("llm.int8.onnx")]),
             AssetFile(url: hfMlt("embedding.int8.onnx"),
                       sha256: "8bc272cde3148b17fbef94f34fa25605f5a98fdb6fd0bc71a8410148f2b1d217",
-                      relPath: "embedding.int8.onnx"),
+                      relPath: "embedding.int8.onnx",
+                      mirrors: [msMlt("embedding.int8.onnx")]),
             // Qwen3-0.6B tokenizer files are byte-identical to funasrNano's (same tokenizer); each
             // bundle keeps its own copy under its destDir — intentional, not a copy-paste error.
             AssetFile(url: hfMlt("Qwen3-0.6B/tokenizer.json"),
                       sha256: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
-                      relPath: "Qwen3-0.6B/tokenizer.json"),
+                      relPath: "Qwen3-0.6B/tokenizer.json",
+                      mirrors: [msMlt("Qwen3-0.6B/tokenizer.json")]),
             AssetFile(url: hfMlt("Qwen3-0.6B/vocab.json"),
                       sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
-                      relPath: "Qwen3-0.6B/vocab.json"),
+                      relPath: "Qwen3-0.6B/vocab.json",
+                      mirrors: [msMlt("Qwen3-0.6B/vocab.json")]),
             AssetFile(url: hfMlt("Qwen3-0.6B/merges.txt"),
                       sha256: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
-                      relPath: "Qwen3-0.6B/merges.txt"),
+                      relPath: "Qwen3-0.6B/merges.txt",
+                      mirrors: [msMlt("Qwen3-0.6B/merges.txt")]),
         ])
 
     /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano / funasrMltNano 均走 ONNX(sherpa funasr runtime)。
