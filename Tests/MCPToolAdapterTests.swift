@@ -34,6 +34,8 @@ final class FakeMCPClient: MCPClientProtocol, @unchecked Sendable {
 struct MCPToolAdapterTests {
     static func main() async throws {
         try await testPrefixedName()
+        try await testLongNameIsCappedTo64()
+        try await testLongNamesStayDistinct()
         try await testFactorySchemaExtraction()
         try await testHappyPathCallsRemoteBareNameAndReturnsText()
         try await testErrorResultThrowsToolCallFailed()
@@ -64,6 +66,36 @@ struct MCPToolAdapterTests {
         // `_` separator (not `.`) so the name passes OpenAI's
         // `function.name` regex `^[a-zA-Z0-9_-]{1,64}$`.
         assertEqual(adapter.name, "server_remote")
+    }
+
+    static func testLongNameIsCappedTo64() async throws {
+        // A server+tool combination longer than 64 chars must be capped, else
+        // OpenAI returns HTTP 400 and the whole agent run terminates.
+        let adapter = MCPToolAdapter(
+            serverName: "linear-server-enterprise-edition",
+            remoteName: "create_attachment_from_upload_with_extra_long_descriptor",
+            description: "x",
+            parametersJSONSchema: ["type": "object", "properties": [:]],
+            client: FakeMCPClient()
+        )
+        precondition(adapter.name.count <= 64, "name length \(adapter.name.count) exceeds 64: \(adapter.name)")
+        // Still matches OpenAI's allowed charset.
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+        precondition(adapter.name.unicodeScalars.allSatisfy { allowed.contains($0) }, "illegal chars in \(adapter.name)")
+    }
+
+    static func testLongNamesStayDistinct() async throws {
+        // Two long names sharing a 64-char prefix must not collide after capping.
+        let shared = String(repeating: "a", count: 80)
+        func adapter(_ remote: String) -> MCPToolAdapter {
+            MCPToolAdapter(serverName: shared, remoteName: remote, description: "x",
+                           parametersJSONSchema: ["type": "object", "properties": [:]],
+                           client: FakeMCPClient())
+        }
+        let n1 = adapter("tool_one").name
+        let n2 = adapter("tool_two").name
+        precondition(n1 != n2, "capped names collided: \(n1)")
+        precondition(n1.count <= 64 && n2.count <= 64)
     }
 
     static func testFactorySchemaExtraction() async throws {

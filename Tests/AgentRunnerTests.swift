@@ -7,6 +7,9 @@ struct AgentRunnerTests {
         try await testRunForSkillRespectsAllowedTools()
         try await testRunForHotkeyUsesDefaultSystemPrompt()
         try await testRunForHotkeyDeliversNotConfiguredWhenEmpty()
+        try await testComposeSystemPromptEmptyRegistryReturnsBase()
+        try await testComposeSystemPromptAppendsAvailableSkills()
+        try await testComposeSystemPromptHidesHotkeyOnlySkills()
         print("AgentRunnerTests passed")
     }
 
@@ -47,6 +50,38 @@ struct AgentRunnerTests {
 
     static func testRunForHotkeyUsesDefaultSystemPrompt() async throws {
         precondition(AgentRunner.hotkeyDefaultSystemPrompt.contains("KeyMic"))
+    }
+
+    static func testComposeSystemPromptEmptyRegistryReturnsBase() async throws {
+        // Empty registry → base prompt is returned unchanged (no stray block).
+        let out = await AgentRunner.composeSystemPrompt(base: "BASE", skillRegistry: SkillRegistry())
+        precondition(out == "BASE", "empty registry should leave base unchanged; got \(String(describing: out))")
+    }
+
+    static func testComposeSystemPromptAppendsAvailableSkills() async throws {
+        // A loaded, model-invocable skill must surface in <available_skills> so
+        // the model can ActivateSkill it — the whole point of the registry.
+        let reg = SkillRegistry()
+        await reg.replace(with: [
+            Skill(metadata: SkillMetadata(name: "alpha", description: "Alpha skill"),
+                  instructions: nil, filePath: "/dev/null")
+        ])
+        let out = await AgentRunner.composeSystemPrompt(base: "BASE", skillRegistry: reg)
+        precondition(out?.contains("BASE") == true)
+        precondition(out?.contains("<available_skills>") == true, "missing skills block; got \(String(describing: out))")
+        precondition(out?.contains("alpha") == true)
+    }
+
+    static func testComposeSystemPromptHidesHotkeyOnlySkills() async throws {
+        // disable_model_invocation skills are hotkey-only and must NOT be listed.
+        let reg = SkillRegistry()
+        await reg.replace(with: [
+            Skill(metadata: SkillMetadata(name: "hidden", description: "x",
+                                          allowedTools: nil, disableModelInvocation: true),
+                  instructions: nil, filePath: "/dev/null")
+        ])
+        let out = await AgentRunner.composeSystemPrompt(base: "BASE", skillRegistry: reg)
+        precondition(out == "BASE", "hotkey-only skill must not appear; got \(String(describing: out))")
     }
 
     static func testRunForHotkeyDeliversNotConfiguredWhenEmpty() async throws {

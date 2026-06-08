@@ -11,6 +11,11 @@ private final class ShellRunnerTests {
         try testStderrCapturedToLog()
         try testTimeoutSigterm()
         try testRunAndCaptureReturnsOutput()
+        try testRunExecSyncCapturesOutput()
+        try testRunExecSyncArgvNotShellInterpreted()
+        try testRunExecSyncNonZeroAndStderr()
+        try testRunExecSyncTimeout()
+        try testLaunchDetachedSpawns()
         print("ShellRunnerTests passed")
     }
 
@@ -166,6 +171,63 @@ private final class ShellRunnerTests {
         guard let entry = captured.entries.last, entry.stdout.contains("hello") else {
             fatalError("expected ShellLogEntry from runAndCapture to capture stdout")
         }
+    }
+
+    static func testRunExecSyncCapturesOutput() throws {
+        let runner = makeRunner(snapshot: nil, captured: CapturedLogger())
+        let r = runner.runExecSync(URL(fileURLWithPath: "/bin/echo"), arguments: ["hello"])
+        guard r.exitCode == 0 else { fatalError("testRunExecSyncCapturesOutput: exit \(r.exitCode)") }
+        guard r.stdout.contains("hello") else {
+            fatalError("testRunExecSyncCapturesOutput: stdout '\(r.stdout)'")
+        }
+    }
+
+    static func testRunExecSyncArgvNotShellInterpreted() throws {
+        // Exec mode does NOT go through a shell: $HOME and ; reach the binary
+        // verbatim instead of being expanded / treated as a separator.
+        let runner = makeRunner(snapshot: nil, captured: CapturedLogger())
+        let r = runner.runExecSync(URL(fileURLWithPath: "/bin/echo"), arguments: ["$HOME ; rm"])
+        let out = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard out == "$HOME ; rm" else {
+            fatalError("testRunExecSyncArgvNotShellInterpreted: expected literal, got '\(out)'")
+        }
+    }
+
+    static func testRunExecSyncNonZeroAndStderr() throws {
+        let runner = makeRunner(snapshot: nil, captured: CapturedLogger())
+        let r = runner.runExecSync(URL(fileURLWithPath: "/bin/ls"),
+                                   arguments: ["/nonexistent-keymic-exec-path"])
+        guard r.exitCode != 0 else { fatalError("testRunExecSyncNonZeroAndStderr: expected non-zero") }
+        guard !r.stderr.isEmpty else { fatalError("testRunExecSyncNonZeroAndStderr: stderr empty") }
+    }
+
+    static func testRunExecSyncTimeout() throws {
+        let runner = makeRunner(snapshot: nil, captured: CapturedLogger())
+        let t0 = Date()
+        let r = runner.runExecSync(URL(fileURLWithPath: "/bin/sleep"),
+                                   arguments: ["30"], timeout: 2)
+        let elapsed = Date().timeIntervalSince(t0)
+        guard elapsed < 5 else { fatalError("testRunExecSyncTimeout: elapsed=\(elapsed)s") }
+        let validExits: [Int32] = [15, 9]  // SIGTERM / SIGKILL
+        guard validExits.contains(r.exitCode) else {
+            fatalError("testRunExecSyncTimeout: expected 15 or 9, got \(r.exitCode)")
+        }
+    }
+
+    static func testLaunchDetachedSpawns() throws {
+        let runner = makeRunner(snapshot: nil, captured: CapturedLogger())
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymic-detached-\(UUID().uuidString).marker")
+        // launchDetached returns immediately; verify it actually spawned the
+        // child by polling for its side effect.
+        runner.launchDetached(URL(fileURLWithPath: "/usr/bin/touch"), arguments: [marker.path])
+        var appeared = false
+        for _ in 0..<40 {
+            if FileManager.default.fileExists(atPath: marker.path) { appeared = true; break }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        try? FileManager.default.removeItem(at: marker)
+        guard appeared else { fatalError("testLaunchDetachedSpawns: marker never created") }
     }
 }
 

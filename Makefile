@@ -244,9 +244,6 @@ test-cleanup-policy:
 test-hotkey-action-runner:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyAction.swift \
-	       Sources/KeyMic/Tools/Shell/ShellLogger.swift \
-	       Sources/KeyMic/Tools/Shell/ShellSnapshot.swift \
-	       Sources/KeyMic/Tools/Shell/ShellRunner.swift \
 	       Sources/KeyMic/Hotkey/HotkeyActionRunner.swift \
 	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
 	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
@@ -258,6 +255,7 @@ test-hotkey-action-runner:
 	       Sources/KeyMic/Tools/Skill/Skill.swift \
 	       Sources/KeyMic/Tools/Skill/SkillError.swift \
 	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
+	       Sources/KeyMic/Tools/Skill/ActivateSkillTool.swift \
 	       Sources/KeyMic/Tools/Protocol/Tool.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
@@ -418,6 +416,9 @@ test-sensevoice-model-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
 	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceModelStore.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       Tests/SenseVoiceModelStoreTests.swift \
 	       -framework CoreML \
 	       -o .build/sensevoice-model-store-tests
@@ -583,6 +584,9 @@ test-output-router:
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       Sources/KeyMic/Output/iTerm/ITermAvailability.swift \
 	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
@@ -952,6 +956,9 @@ test-agent-runner:
 	       Sources/KeyMic/Tools/Skill/Skill.swift \
 	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
 	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Skill/SkillLoader.swift \
+	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
+	       Sources/KeyMic/Tools/Skill/ActivateSkillTool.swift \
 	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
 	       Sources/KeyMic/Tools/Protocol/Tool.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
@@ -1005,6 +1012,9 @@ test-shell-output:
 	       Sources/KeyMic/Output/Shell/ShellTemplate.swift \
 	       Sources/KeyMic/Output/Shell/ANSIStripper.swift \
 	       Sources/KeyMic/Output/Shell/ShellOutputRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellRunner.swift \
+	       Sources/KeyMic/Tools/Bash/ShellSnapshot.swift \
+	       Sources/KeyMic/Tools/Bash/ShellLogger.swift \
 	       Tests/ShellOutputTests.swift \
 	       -framework AppKit \
 	       -framework Carbon \

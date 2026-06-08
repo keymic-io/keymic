@@ -26,7 +26,7 @@ struct ShellOutputTestRunner {
 
     static func runRunnerSmoke() async {
         do {
-            let ok = try await ShellOutputRunner.run("echo hello", timeout: 5)
+            let ok = try await ShellOutputRunner.run("echo hello")
             expect(ok.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "hello",
                    "echo hello stdout mismatch, got: \(ok.stdout)")
             expect(ok.stderr.isEmpty, "echo hello should have no stderr, got: \(ok.stderr)")
@@ -36,19 +36,19 @@ struct ShellOutputTestRunner {
         }
 
         do {
-            let bad = try await ShellOutputRunner.run("false", timeout: 5)
+            let bad = try await ShellOutputRunner.run("false")
             expect(bad.exitCode != 0, "`false` should have non-zero exit, got: \(bad.exitCode)")
         } catch {
             fail("false threw unexpectedly: \(error)")
         }
 
+        // cwd is $HOME (preserved from the old raw-Process behavior).
         do {
-            _ = try await ShellOutputRunner.run("sleep 3", timeout: 0.5)
-            fail("sleep 3 timeout=0.5 should have thrown .timeout")
-        } catch ShellOutputRunnerError.timeout {
-            // expected
+            let pwd = try await ShellOutputRunner.run("pwd")
+            expect(pwd.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == NSHomeDirectory(),
+                   "cwd should be $HOME, got: \(pwd.stdout)")
         } catch {
-            fail("sleep 3 threw wrong error: \(error)")
+            fail("pwd threw: \(error)")
         }
     }
 

@@ -71,6 +71,56 @@ final class ShellRunner: @unchecked Sendable {
         }
     }
 
+    /// Direct execve of `executableURL` with `arguments` passed verbatim as an
+    /// argv array — NO shell, NO PATH snapshot, NO `eval`. Use for spawning a
+    /// known binary with structured arguments (e.g. `hidutil`, `ditto`) where
+    /// routing through a shell would only add quoting / injection surface.
+    ///
+    /// Synchronous: callers already dispatch off-main where needed (this body
+    /// busy-waits the child the same way `run(_:)` does). `timeout == nil`
+    /// uses the runner's default (30s). Logs to the os.Logger only — exec
+    /// calls are not user shell history, so they do not go to `ShellLogger`.
+    /// Like run(_:), it offers no cancellation hook — a long-running spawn can only be bounded by timeout.
+    func runExecSync(
+        _ executableURL: URL,
+        arguments: [String],
+        cwd: String? = nil,
+        timeout: TimeInterval? = nil
+    ) -> (exitCode: Int32, stdout: String, stderr: String) {
+        let t0 = Date()
+        let (exit, out, err) = runProcess(
+            executableURL: executableURL,
+            args: arguments,
+            cwd: cwd,
+            timeout: timeout ?? commandTimeout,
+            isCancelled: { false })
+        let durationMs = Int(Date().timeIntervalSince(t0) * 1000)
+        osLogger.debug("exec \(executableURL.lastPathComponent, privacy: .public) exit=\(exit, privacy: .public) durationMs=\(durationMs, privacy: .public)")
+        return (exit, out, err)
+    }
+
+    /// Fire-and-forget spawn: launches the child and returns immediately. No
+    /// pipes, no wait, no timeout, no tree-kill — the child's standard streams
+    /// are redirected to /dev/null (fully detached), and on app exit the child
+    /// is reparented to launchd. For relaunch helpers that must outlive KeyMic itself.
+    func launchDetached(_ executableURL: URL, arguments: [String]) {
+        let p = Process()
+        p.executableURL = executableURL
+        p.arguments = arguments
+        // Fully detach from the (possibly terminating) parent's file
+        // descriptors — the child outlives us, so it must not hold handles
+        // onto our streams.
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        p.standardInput = FileHandle.nullDevice
+        do {
+            try p.run()
+            osLogger.debug("launchDetached \(executableURL.lastPathComponent, privacy: .public) pid=\(p.processIdentifier, privacy: .public)")
+        } catch {
+            osLogger.error("launchDetached failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Shared implementation for `run(_:)` and `runAndCapture(_:)`.
     /// Synchronous — caller is responsible for off-thread dispatch if needed.
     private func runAndLog(
@@ -91,7 +141,9 @@ final class ShellRunner: @unchecked Sendable {
             args = ["-l", "-c", wrapped]
         }
 
-        let (exit, stdout, stderr) = runProcess(args: args, cwd: cwd, isCancelled: isCancelled)
+        let (exit, stdout, stderr) = runProcess(
+            executableURL: URL(fileURLWithPath: shellPath),
+            args: args, cwd: cwd, timeout: commandTimeout, isCancelled: isCancelled)
         let durationMs = Int(Date().timeIntervalSince(t0) * 1000)
         logger.log(ShellLogEntry(
             timestamp: t0, command: command, exitCode: exit,
@@ -102,12 +154,14 @@ final class ShellRunner: @unchecked Sendable {
     }
 
     private func runProcess(
+        executableURL: URL,
         args: [String],
         cwd: String?,
+        timeout: TimeInterval,
         isCancelled: @Sendable () -> Bool
     ) -> (Int32, String, String) {
         let p = Process()
-        p.executableURL = URL(fileURLWithPath: shellPath)
+        p.executableURL = executableURL
         p.arguments = args
         if let cwd, !cwd.isEmpty {
             p.currentDirectoryURL = URL(fileURLWithPath: cwd)
@@ -135,7 +189,7 @@ final class ShellRunner: @unchecked Sendable {
             return (-1, "", "Process.run failed: \(error.localizedDescription)")
         }
 
-        let deadline = Date().addingTimeInterval(commandTimeout)
+        let deadline = Date().addingTimeInterval(timeout)
         while p.isRunning && Date() < deadline && !isCancelled() {
             Thread.sleep(forTimeInterval: 0.05)
         }

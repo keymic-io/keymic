@@ -66,23 +66,22 @@ final class HotkeyActionRunner {
             }
             bridge.fire(name: name)
         case .runAgent(let prompt):
-            // Block the runner queue on the agent task so `[runAgent, typeText]`
-            // and similar composed bindings execute sequentially, matching
-            // every other action kind. A re-fired hotkey will cancel the in-
-            // flight agent via `AgentRunner`'s in-flight-task tracking, which
-            // signals the semaphore promptly so the queue doesn't stall.
+            // Agent runs are long-lived (up to `maxWallTime`, default 120s) and
+            // inherently async, so we must NOT block the serial runner queue
+            // waiting for completion — doing so would freeze every other hotkey
+            // action (and the re-fire that is meant to cancel this run) for the
+            // whole agent lifetime. Dispatch onto the MainActor and return
+            // immediately; a re-fired `runAgent` hotkey reaches this case
+            // promptly because the queue is no longer parked, and
+            // `AgentRunner.adoptHotkeyTask` cancels the in-flight run.
             let provider = agentRunnerProvider
-            let semaphore = DispatchSemaphore(value: 0)
             Task { @MainActor in
-                defer { semaphore.signal() }
                 guard let runner = provider() else {
                     Self.logger.warning("runAgent fired but no AgentRunner wired; ignoring")
                     return
                 }
-                let task = runner.runForHotkey(prompt: prompt, sink: ConsoleSink.shared)
-                _ = await task.value
+                _ = runner.runForHotkey(prompt: prompt, sink: ConsoleSink.shared)
             }
-            semaphore.wait()
         }
     }
 
