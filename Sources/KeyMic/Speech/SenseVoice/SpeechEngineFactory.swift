@@ -14,7 +14,7 @@ enum SpeechEngineFactory {
         switch model {
         case "senseVoice":
             return senseVoiceReady ? .senseVoice : .apple
-        case "funasrNano":
+        case "funasrNano", "funasrMltNano":
             return (onnxRuntimeReady && onnxModelReady) ? .onnx : .apple
         default:
             return .apple
