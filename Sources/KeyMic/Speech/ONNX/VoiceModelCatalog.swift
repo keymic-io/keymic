@@ -27,7 +27,8 @@ struct VoiceModelOption {
     /// 下载体积(约值,unit 跨语言通用,不本地化);nil = 系统内置/无需下载。
     let sizeText: String?
     /// 该模型支持的语言码(与 `SpeechLanguageCatalog` 同源);nil = 支持全部(Apple)。
-    /// 粤语并入 zh —— Apple 不把 yue 当独立语言码。
+    /// 注意:macOS 的 SFSpeechRecognizer 把 yue(粤语)/wuu(上海话)当独立语言码暴露,
+    /// 故语言栏里它们是独立项;SenseVoice 支持 yue,所以要显式列出。
     let supportedLanguages: [String]?
 
     /// 是否支持某语言码。nil(Apple)→ 永远 true。
@@ -87,7 +88,7 @@ enum VoiceModelCatalog {
         VoiceModelOption(id: "apple", displayName: "Apple (system)", available: true, sizeText: nil,
                          supportedLanguages: nil),
         VoiceModelOption(id: "senseVoice", displayName: "SenseVoice Small", available: true, sizeText: "≈ 432 MB",
-                         supportedLanguages: ["zh", "en", "ja", "ko"]),
+                         supportedLanguages: ["zh", "yue", "en", "ja", "ko"]),
         VoiceModelOption(id: "funasrNano", displayName: "Fun-ASR-Nano (zh/en/ja)", available: true, sizeText: "≈ 1 GB",
                          supportedLanguages: ["zh", "en", "ja"]),
         VoiceModelOption(id: "funasrMltNano", displayName: "Fun-ASR-MLT-Nano (31 langs) — coming soon", available: false,

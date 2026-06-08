@@ -15,4 +15,4 @@ pkill -x KeyMic || true
 make build && make install && open /Applications/KeyMic.app
 
 # Foreground stream at debug so the developer sees every log line until Ctrl-C.
-exec log stream --predicate 'subsystem == "io.keymic.app"' --level debug --style compact
+#exec log stream --predicate 'subsystem == "io.keymic.app"' --level debug --style compact

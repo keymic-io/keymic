@@ -595,18 +595,26 @@ private struct VoiceSettingsView: View {
         VoiceModelCatalog.selectableModels.first { $0.id == voiceModel }
     }
 
-    /// Models offered for the currently-selected language: Apple (always), the "coming soon"
-    /// unavailable entry (kept visible, disabled), and any available offline model that supports
-    /// the language. Offline engines that can't do the language are hidden.
-    private var visibleModels: [VoiceModelOption] {
+    /// A model row's picker label: the model name, plus an "[Unsupported language]" suffix when the
+    /// model is available but can't recognize the currently-selected language. Names stay verbatim
+    /// (brand); the suffix is localized.
+    private func modelPickerLabel(_ model: VoiceModelOption) -> String {
         let lang = selectedLanguage.wrappedValue
-        return VoiceModelCatalog.selectableModels.filter {
-            $0.id == "apple" || !$0.available || $0.supports(lang)
+        if model.available, !model.supports(lang) {
+            return model.displayName + "  " + String(localized: "[Unsupported language]")
         }
+        return model.displayName
+    }
+
+    /// Whether a model row is disabled: the "coming soon" unavailable entries, and any available
+    /// model that does not support the selected language (shown greyed rather than hidden).
+    private func modelRowDisabled(_ model: VoiceModelOption) -> Bool {
+        !model.available || !model.supports(selectedLanguage.wrappedValue)
     }
 
     /// When the language changes such that the live model no longer supports it, fall back to
-    /// Apple (which supports every language the picker can show).
+    /// Apple (which supports every language the picker can show) so the active selection stays
+    /// valid. The unsupported model still appears in the list, greyed out.
     private func resetModelIfUnsupported() {
         let lang = selectedLanguage.wrappedValue
         if let m = selectedModel, m.id != "apple", m.available, !m.supports(lang) {
@@ -692,8 +700,8 @@ private struct VoiceSettingsView: View {
 
             Section {
                 Picker("Model:", selection: $voiceModel) {
-                    ForEach(visibleModels, id: \.id) { model in
-                        Text(model.displayName).tag(model.id).disabled(!model.available)
+                    ForEach(VoiceModelCatalog.selectableModels, id: \.id) { model in
+                        Text(modelPickerLabel(model)).tag(model.id).disabled(modelRowDisabled(model))
                     }
                 }
                 .disabled(!Self.senseVoiceSupported)
