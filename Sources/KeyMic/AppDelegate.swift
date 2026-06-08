@@ -30,10 +30,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastSenseVoiceModelReady: Bool?
     private var lastOnnxRuntimeReady: Bool?
     private var lastOnnxModelReady: Bool?
+    private var lastSpeechLocaleCode: String = ""
     /// Bumped on every engine decision in `applySpeechEnginePreference()`. An async SenseVoice
     /// upgrade captures the generation at dispatch time and aborts its main-thread swap if a newer
     /// decision has superseded it — so a slow model load can never clobber a fresher choice.
     private var speechEngineGeneration = 0
+#if KEYMIC_HAS_SPEECH_ANALYZER
+    /// Backing store for `speechAnalyzerSupport`. Untyped because a stored property cannot carry
+    /// `@available(macOS 26, *)`, and the concrete type is gated to macOS 26+.
+    private var _speechAnalyzerSupport: AnyObject?
+    @available(macOS 26, *)
+    private var speechAnalyzerSupport: SpeechAnalyzerSupport {
+        if let s = _speechAnalyzerSupport as? SpeechAnalyzerSupport { return s }
+        let s = SpeechAnalyzerSupport()
+        s.onReadinessChanged = { [weak self] in self?.applySpeechEnginePreference() }
+        _speechAnalyzerSupport = s
+        return s
+    }
+#endif
     private let textInjector = TextInjector()
     private lazy var actionRunner = HotkeyActionRunner(
         typeText: { [weak self] text in self?.textInjector.inject(text) }
@@ -414,24 +428,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let svReady = senseVoiceModelStore.state == .ready
         let rtReady = ONNXRuntimeLoader.shared.store.state == .ready
         let onnxReady = onnxModelStore.state == .ready
+        let isMacOS26OrLater: Bool = {
+            if #available(macOS 26, *) { return true } else { return false }
+        }()
+        let speechLocale: Locale = {
+            let code = selectedLocaleCode
+            return code.isEmpty ? Locale.current : Locale(identifier: code)
+        }()
+        var localeSupported = false
+        var assetReady = false
+        var assetDownloading = false
+#if KEYMIC_HAS_SPEECH_ANALYZER
+        if #available(macOS 26, *) {
+            speechAnalyzerSupport.bootstrapIfNeeded()
+            localeSupported = speechAnalyzerSupport.isSupported(speechLocale)
+            assetReady = speechAnalyzerSupport.isAssetReady(speechLocale)
+            assetDownloading = speechAnalyzerSupport.isDownloading(speechLocale)
+            // Supported but not installed → kick a download (no-op if already going/installed).
+            if localeSupported && !assetReady { speechAnalyzerSupport.ensureAsset(for: speechLocale) }
+        }
+#endif
         let choice = SpeechEngineFactory.choose(
             model: model,
             osIsSonomaOrEarlier: sonomaOrEarlier,
             senseVoiceReady: svReady,
             onnxRuntimeReady: rtReady,
-            onnxModelReady: onnxReady)
+            onnxModelReady: onnxReady,
+            isMacOS26OrLater: isMacOS26OrLater,
+            localeSupportedBySpeechAnalyzer: localeSupported,
+            speechAnalyzerAssetReady: assetReady)
 
         // Bump generation so a stale async upgrade can't clobber a newer decision.
         speechEngineGeneration &+= 1
         let gen = speechEngineGeneration
 
-        if choice == .apple {
-            // Cheap path — swap immediately on main.
+        if choice == .speechAnalyzer {
+#if KEYMIC_HAS_SPEECH_ANALYZER
+            if #available(macOS 26, *), let fmt = speechAnalyzerSupport.analyzerFormat {
+                let engine = SpeechAnalyzerSpeechEngine(locale: speechLocale, analyzerFormat: fmt)
+                speechEngine = engine
+                setupSpeechCallbacks()
+                speechSessionHost?.replaceEngine(engine)
+                selectedTextEditorController?.replaceEngine(engine)
+                recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
+                SpeechEngineStatusStore.shared.update(.speechAnalyzer)
+                return
+            }
+#endif
+            // analyzerFormat not ready yet (or not compiled) → handled by the Apple branch below.
+        }
+
+        // Apple legacy path — also catches a .speechAnalyzer choice whose analyzer engine could
+        // not be built (format not ready / define off), so it never falls into the SenseVoice
+        // async-load block below (which has no `enabled` gate).
+        if choice == .apple || choice == .speechAnalyzer {
             speechEngine = makeAppleEngine()
             setupSpeechCallbacks()
             speechSessionHost?.replaceEngine(speechEngine)
             selectedTextEditorController?.replaceEngine(speechEngine)
             recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
+            SpeechEngineStatusStore.shared.update(
+                assetDownloading ? .sfSpeechRecognizerDownloadingAnalyzerAsset : .sfSpeechRecognizer)
             return
         }
 
@@ -472,6 +529,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.speechSessionHost?.replaceEngine(engine)
                     self.selectedTextEditorController?.replaceEngine(engine)
                     self.recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
+                    SpeechEngineStatusStore.shared.update(.onnx)
                 }
             }
             return
@@ -495,6 +553,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.speechSessionHost?.replaceEngine(engine)
                 self.selectedTextEditorController?.replaceEngine(engine)
                 self.recordSpeechBaseline(model: model, lang: langKey, svReady: true, rtReady: rtReady, onnxReady: onnxReady)
+                SpeechEngineStatusStore.shared.update(.senseVoice)
             }
         }
     }
@@ -507,6 +566,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupSpeechCallbacks()
         speechSessionHost?.replaceEngine(speechEngine)
         selectedTextEditorController?.replaceEngine(speechEngine)
+        SpeechEngineStatusStore.shared.update(.sfSpeechRecognizer)
     }
 
     private func recordSpeechBaseline(model: String, lang: String, svReady: Bool, rtReady: Bool, onnxReady: Bool) {
@@ -515,6 +575,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastSenseVoiceModelReady = svReady
         lastOnnxRuntimeReady = rtReady
         lastOnnxModelReady = onnxReady
+        // Also baseline the locale so a locale change re-decides the engine (SpeechAnalyzer
+        // asset support is locale-specific).
+        lastSpeechLocaleCode = selectedLocaleCode
     }
 
     /// Snapshot the inputs that determine engine selection, so the next `syncMenuStates()` only
@@ -538,11 +601,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let svReady = senseVoiceModelStore.state == .ready
         let rtReady = ONNXRuntimeLoader.shared.store.state == .ready
         let onnxReady = onnxModelStore.state == .ready
+        let localeCode = selectedLocaleCode
         if model == lastVoiceModel,
            language == lastSenseVoiceLanguage,
            svReady == lastSenseVoiceModelReady,
            rtReady == lastOnnxRuntimeReady,
-           onnxReady == lastOnnxModelReady {
+           onnxReady == lastOnnxModelReady,
+           localeCode == lastSpeechLocaleCode {
             return
         }
         applySpeechEnginePreference()
@@ -784,7 +849,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Voice-model picker / language / store readiness reach us via
         // UserDefaults.didChangeNotification — same channel as the Apple locale below.
-        // Only rebuild the engine when an engine-relevant input actually changed.
+        // Only rebuild the engine when an engine- or locale-relevant input actually changed.
         syncSpeechEngineIfNeeded()
 
         // Apple locale only applies when the live engine is the Apple one; SenseVoice picks
