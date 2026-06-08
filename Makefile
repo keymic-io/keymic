@@ -255,6 +255,7 @@ test-hotkey-action-runner:
 	       Sources/KeyMic/Tools/Skill/Skill.swift \
 	       Sources/KeyMic/Tools/Skill/SkillError.swift \
 	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
+	       Sources/KeyMic/Tools/Skill/ActivateSkillTool.swift \
 	       Sources/KeyMic/Tools/Protocol/Tool.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolRegistry.swift \
@@ -955,6 +956,9 @@ test-agent-runner:
 	       Sources/KeyMic/Tools/Skill/Skill.swift \
 	       Sources/KeyMic/Tools/Skill/SkillRegistry.swift \
 	       Sources/KeyMic/Tools/Skill/SkillError.swift \
+	       Sources/KeyMic/Tools/Skill/SkillLoader.swift \
+	       Sources/KeyMic/Tools/Skill/SkillFrontmatterParser.swift \
+	       Sources/KeyMic/Tools/Skill/ActivateSkillTool.swift \
 	       Sources/KeyMic/Tools/Skill/AllowedToolsParser.swift \
 	       Sources/KeyMic/Tools/Protocol/Tool.swift \
 	       Sources/KeyMic/Tools/Protocol/ToolContext.swift \

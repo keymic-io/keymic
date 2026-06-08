@@ -52,6 +52,19 @@ final class AgentRunner {
         ToolContext(workingDirectory: workingDirectoryProvider())
     }
 
+    /// Append the `<available_skills>` block to `base` so the model can discover
+    /// and `ActivateSkill` the registered skills. Returns `base` unchanged when
+    /// no model-invocable skills are loaded (empty registry or all hotkey-only).
+    nonisolated static func composeSystemPrompt(
+        base: String?,
+        skillRegistry: SkillRegistry
+    ) async -> String? {
+        let block = ActivateSkillTool.availableSkillsBlock(await skillRegistry.availableForModel())
+        guard !block.isEmpty else { return base }
+        guard let base, !base.isEmpty else { return block }
+        return base + "\n\n" + block
+    }
+
     /// Tracks the most recent hotkey- or skill-driven run so a re-fire can
     /// cancel the predecessor instead of running two `AgentSession`s
     /// concurrently against the shared `ConsoleSink.shared`. Settings-panel
@@ -94,9 +107,14 @@ final class AgentRunner {
     func runForHotkey(prompt: String, sink: any AgentEventSink) -> Task<Void, Never> {
         let session = AgentSession(registry: registry, config: configProvider())
         let toolCtx = makeToolContext()
+        let skillRegistry = self.skillRegistry
         let task = Task.detached {
+            let systemPrompt = await Self.composeSystemPrompt(
+                base: AgentRunner.hotkeyDefaultSystemPrompt,
+                skillRegistry: skillRegistry
+            )
             for await event in session.run(
-                systemPrompt: AgentRunner.hotkeyDefaultSystemPrompt,
+                systemPrompt: systemPrompt,
                 userMessage: prompt,
                 allowedToolNames: nil,
                 priorMessages: [],
@@ -123,9 +141,14 @@ final class AgentRunner {
     ) -> Task<Void, Never> {
         let session = AgentSession(registry: registry, config: configProvider())
         let toolCtx = makeToolContext()
+        let skillRegistry = self.skillRegistry
         return Task.detached {
+            let composedPrompt = await Self.composeSystemPrompt(
+                base: systemPrompt,
+                skillRegistry: skillRegistry
+            )
             for await event in session.run(
-                systemPrompt: systemPrompt,
+                systemPrompt: composedPrompt,
                 userMessage: userMessage,
                 allowedToolNames: allowedToolNames,
                 priorMessages: priorMessages,
