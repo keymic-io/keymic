@@ -201,14 +201,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "API Base URL"
+            "state": "needs_review",
+            "value": "API 基础 URL"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "API Base URL"
+            "value": "API 基礎 URL"
           }
         }
       }
@@ -254,14 +254,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "API Key"
+            "state": "needs_review",
+            "value": "API 密钥"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "API Key"
+            "value": "API 金鑰"
           }
         }
       }
@@ -2020,8 +2020,8 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "Zwischenablageverlauf"
           }
         },
         "en": {
@@ -2032,38 +2032,38 @@
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "Historial del portapapeles"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "Historique du presse-papiers"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "クリップボード履歴"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "클립보드 기록"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "剪贴板历史"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "剪貼簿歷史"
           }
         }
       }
@@ -4347,59 +4347,6 @@
         }
       }
     },
-    "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting.": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Wenn keine Sprache ausgewählt ist, verwendet KeyMic die aktuelle Systemsprache. Nach der Auswahl wird die eigene Spracheinstellung von KeyMic verwendet."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "If no language has been selected, KeyMic shows the current system language. After you choose one, KeyMic uses its own language setting."
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Si no se selecciona ningún idioma, KeyMic muestra el idioma actual del sistema. Después de elegir uno, KeyMic usa su propia configuración."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Si aucune langue n’est sélectionnée, KeyMic affiche la langue actuelle du système. Une fois choisie, KeyMic utilise sa propre langue."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "言語を選択していない場合、KeyMic は現在のシステム言語を使用します。選択後は KeyMic 自身の言語設定が適用されます。"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "언어를 선택하지 않으면 KeyMic가 현재 시스템 언어를 사용합니다. 선택하면 KeyMic 자체 언어 설정이 사용됩니다."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未选择语言时 KeyMic 使用当前系统语言；选择后将使用 KeyMic 自身的语言设置。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "未選擇語言時 KeyMic 會使用目前的系統語言；選擇後將使用 KeyMic 自身的語言設定。"
-          }
-        }
-      }
-    },
     "Ignore confidential clipboards": {
       "extractionState": "manual",
       "localizations": {
@@ -4930,55 +4877,55 @@
         }
       }
     },
-    "Language:": {
+    "Preferred Language:": {
       "extractionState": "manual",
       "localizations": {
         "de": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Sprache:"
+            "value": "Bevorzugte Sprache:"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Language:"
+            "value": "Preferred Language:"
           }
         },
         "es": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Idioma:"
+            "value": "Idioma preferido:"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Langue :"
+            "value": "Langue préférée :"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "言語："
+            "value": "優先言語："
           }
         },
         "ko": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "언어:"
+            "value": "기본 언어:"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "语言："
+            "value": "首选语言："
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "語言："
+            "value": "首選語言："
           }
         }
       }
@@ -6455,14 +6402,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "打开 Vault："
+            "state": "needs_review",
+            "value": "打开密钥库："
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "開啟 Vault："
+            "value": "開啟密鑰庫："
           }
         }
       }
@@ -7303,14 +7250,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "从 Vault 中移除机密的操作不可撤销。"
+            "state": "needs_review",
+            "value": "从密钥库中移除机密的操作不可撤销。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "從 Vault 中移除機密的操作不可復原。"
+            "value": "從密鑰庫中移除機密的操作不可復原。"
           }
         }
       }
@@ -7621,14 +7568,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "从 KeyMic Vault 显示机密"
+            "state": "needs_review",
+            "value": "从 KeyMic 密钥库显示机密"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "從 KeyMic Vault 顯示機密"
+            "value": "從 KeyMic 密鑰庫顯示機密"
           }
         }
       }
@@ -7939,14 +7886,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "搜索 Vault"
+            "state": "needs_review",
+            "value": "搜索密钥库"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "搜尋 Vault"
+            "value": "搜尋密鑰庫"
           }
         }
       }
@@ -8168,8 +8115,8 @@
       "localizations": {
         "de": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "Ausgewählter Text"
           }
         },
         "en": {
@@ -8180,38 +8127,38 @@
         },
         "es": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "Texto seleccionado"
           }
         },
         "fr": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "Texte sélectionné"
           }
         },
         "ja": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "選択したテキスト"
           }
         },
         "ko": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "선택한 텍스트"
           }
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "选中的文本"
           }
         },
         "zh-Hant": {
           "stringUnit": {
-            "state": "new",
-            "value": ""
+            "state": "needs_review",
+            "value": "選取的文字"
           }
         }
       }
@@ -9317,14 +9264,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "Temperature"
+            "state": "needs_review",
+            "value": "温度"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Temperature"
+            "value": "溫度"
           }
         }
       }
@@ -10006,14 +9953,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "Vault 为空"
+            "state": "needs_review",
+            "value": "密钥库为空"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Vault 為空"
+            "value": "密鑰庫為空"
           }
         }
       }
@@ -10059,14 +10006,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "Vault 面板"
+            "state": "needs_review",
+            "value": "密钥库面板"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "Vault 面板"
+            "value": "密鑰庫面板"
           }
         }
       }
@@ -10854,14 +10801,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "🔒 检测到 %@ —— 已保存到 Vault"
+            "state": "needs_review",
+            "value": "🔒 检测到 %@ —— 已保存到密钥库"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "🔒 偵測到 %@ —— 已儲存至 Vault"
+            "value": "🔒 偵測到 %@ —— 已儲存至密鑰庫"
           }
         }
       }
@@ -10907,14 +10854,14 @@
         },
         "zh-Hans": {
           "stringUnit": {
-            "state": "translated",
-            "value": "🔒 Vault"
+            "state": "needs_review",
+            "value": "🔒 密钥库"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "🔒 Vault"
+            "value": "🔒 密鑰庫"
           }
         }
       }
@@ -11184,6 +11131,59 @@
         }
       }
     },
+    "Mandarin Chinese": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mandarin-Chinesisch"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mandarin Chinese"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Chino mandarín"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mandarin"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "標準中国語"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "표준 중국어"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "普通话"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "國語"
+          }
+        }
+      }
+    },
     "Model not downloaded": {
       "extractionState": "manual",
       "localizations": {
@@ -11385,13 +11385,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "失败:%@"
+            "value": "失败：%@"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "失敗:%@"
+            "value": "失敗：%@"
           }
         }
       }
@@ -11438,13 +11438,13 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "模型:"
+            "value": "模型："
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "needs_review",
-            "value": "模型:"
+            "value": "模型："
           }
         }
       }
@@ -11498,6 +11498,801 @@
           "stringUnit": {
             "state": "needs_review",
             "value": "自動"
+          }
+        }
+      }
+    },
+    "Speech model": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Speech model"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Sprachmodell"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Modelo de voz"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Modèle vocal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "音声モデル"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "음성 모델"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "语音模型"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "語音模型"
+          }
+        }
+      }
+    },
+    "Download:": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download:"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Download:"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Descarga:"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Téléchargement :"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ダウンロード："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "다운로드:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "下载："
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "下載："
+          }
+        }
+      }
+    },
+    "Size:": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Size:"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Größe:"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Tamaño:"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Taille :"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "サイズ："
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "크기:"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "大小："
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "大小："
+          }
+        }
+      }
+    },
+    "Ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bereit"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Listo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Prêt"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "準備完了"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "준비됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "就绪"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "就緒"
+          }
+        }
+      }
+    },
+    "Runtime + model not downloaded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runtime + model not downloaded"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Runtime und Modell nicht heruntergeladen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Runtime y modelo no descargados"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Runtime et modèle non téléchargés"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ランタイムとモデルが未ダウンロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "런타임 및 모델이 다운로드되지 않음"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "运行时和模型未下载"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "執行階段與模型未下載"
+          }
+        }
+      }
+    },
+    "Show in Finder": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show in Finder"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Im Finder anzeigen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mostrar en Finder"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Afficher dans le Finder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Finderで表示"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Finder에 표시"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "显示文件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "顯示檔案"
+          }
+        }
+      }
+    },
+    "Built into macOS — no download required": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Built into macOS — no download required"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "In macOS integriert – kein Download erforderlich"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Integrado en macOS: no requiere descarga"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Intégré à macOS — aucun téléchargement requis"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOSに内蔵 — ダウンロード不要"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "macOS 내장 — 다운로드 불필요"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "系统内置 — 无需下载"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "系統內建 — 無需下載"
+          }
+        }
+      }
+    },
+    "Download model": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download model"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Modell herunterladen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Descargar modelo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Télécharger le modèle"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "モデルをダウンロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "모델 다운로드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "下载模型"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "下載模型"
+          }
+        }
+      }
+    },
+    "Download runtime + model": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download runtime + model"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Runtime und Modell herunterladen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Descargar runtime y modelo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Télécharger le runtime et le modèle"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ランタイムとモデルをダウンロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "런타임 및 모델 다운로드"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "下载运行时和模型"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "下載執行階段與模型"
+          }
+        }
+      }
+    },
+    "Requires macOS 15+ for the local engines.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Requires macOS 15+ for the local engines."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Die lokalen Engines erfordern macOS 15 oder neuer."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Los motores locales requieren macOS 15 o posterior."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Les moteurs locaux nécessitent macOS 15 ou version ultérieure."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ローカルエンジンには macOS 15 以降が必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "로컬 엔진을 사용하려면 macOS 15 이상이 필요합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "本地引擎需要 macOS 15 及以上版本。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "本機引擎需要 macOS 15 以上版本。"
+          }
+        }
+      }
+    },
+    "Local models run entirely on-device — no network after download. KeyMic falls back to Apple speech recognition when the selected model is unavailable or not yet downloaded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local models run entirely on-device — no network after download. KeyMic falls back to Apple speech recognition when the selected model is unavailable or not yet downloaded."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Lokale Modelle laufen vollständig auf dem Gerät – nach dem Download ist kein Netzwerk erforderlich. KeyMic greift auf die Apple-Spracherkennung zurück, wenn das ausgewählte Modell nicht verfügbar oder noch nicht heruntergeladen ist."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Los modelos locales se ejecutan completamente en el dispositivo: no se necesita red tras la descarga. KeyMic recurre al reconocimiento de voz de Apple cuando el modelo seleccionado no está disponible o aún no se ha descargado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Les modèles locaux fonctionnent entièrement sur l'appareil — aucun réseau n'est requis après le téléchargement. KeyMic revient à la reconnaissance vocale d'Apple lorsque le modèle sélectionné est indisponible ou pas encore téléchargé."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "ローカルモデルは完全にデバイス上で動作します — ダウンロード後はネットワーク不要です。選択したモデルが利用できないか未ダウンロードの場合、KeyMic は Apple 音声認識にフォールバックします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "로컬 모델은 전적으로 기기에서 실행됩니다 — 다운로드 후에는 네트워크가 필요하지 않습니다. 선택한 모델을 사용할 수 없거나 아직 다운로드되지 않은 경우 KeyMic은 Apple 음성 인식으로 대체됩니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "本地模型完全在设备上运行 — 下载后无需联网。当所选模型不可用或尚未下载时,KeyMic 会回退到 Apple 语音识别。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "本機模型完全在裝置上執行 — 下載後無需聯網。當所選模型不可用或尚未下載時,KeyMic 會回退至 Apple 語音辨識。"
+          }
+        }
+      }
+    },
+    "Ready (%@)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ready (%@)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Bereit (%@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Listo (%@)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Prêt (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "準備完了(%@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "준비됨 (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "已就绪(%@)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "已就緒(%@)"
+          }
+        }
+      }
+    },
+    "Not downloaded (%@)": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not downloaded (%@)"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Nicht heruntergeladen (%@)"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No descargado (%@)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Non téléchargé (%@)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "未ダウンロード(%@)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "다운로드 안 됨 (%@)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "未下载(%@)"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "未下載(%@)"
+          }
+        }
+      }
+    },
+    "Not downloaded": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not downloaded"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Nicht heruntergeladen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "No descargado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Non téléchargé"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "未ダウンロード"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "다운로드 안 됨"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "未下载"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "未下載"
+          }
+        }
+      }
+    },
+    "[Preferred language not supported]": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "[Bevorzugte Sprache nicht unterstützt]"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[Preferred language not supported]"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "[Idioma preferido no admitido]"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "[Langue préférée non prise en charge]"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "[優先言語に非対応]"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "[기본 언어 미지원]"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "[不支持首选语言]"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "[不支援首選語言]"
           }
         }
       }

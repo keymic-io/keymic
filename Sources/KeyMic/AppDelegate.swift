@@ -1,4 +1,5 @@
 import AppKit
+import CSherpaOnnx
 import CoreML
 import Speech
 import os.log
@@ -15,12 +16,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// by `applySpeechEnginePreference()` once the model finishes loading off the main thread.
     private var speechEngine: (any SpeechEngineProtocol)!
     private let senseVoiceModelStore = SenseVoiceModelStore.shared
-    /// Last-applied SenseVoice inputs, so `syncMenuStates()` only re-decides the engine when they
-    /// change (the change-detection guard avoids dispatching an off-main load on every defaults
-    /// notification).
-    private var lastSenseVoiceEnabled: Bool?
+    /// The ONNX model store for the currently-selected engine. funasrNano and funasrMltNano are
+    /// both `.onnx`-backed but live in separate stores/dirs; readiness + destDir track the active one.
+    private var onnxModelStore: AssetStore {
+        (UserDefaults.standard.string(forKey: Self.voiceModelKey) == "funasrMltNano")
+            ? OnnxStores.mltModel : OnnxStores.model
+    }
+    /// Last-applied engine inputs, so `syncMenuStates()` only re-decides the engine when one of
+    /// them changes (the change-detection guard avoids dispatching an off-main load on every
+    /// defaults notification).
+    private var lastVoiceModel: String?
     private var lastSenseVoiceLanguage: String?
     private var lastSenseVoiceModelReady: Bool?
+    private var lastOnnxRuntimeReady: Bool?
+    private var lastOnnxModelReady: Bool?
     private var lastSpeechLocaleCode: String = ""
     /// Bumped on every engine decision in `applySpeechEnginePreference()`. An async SenseVoice
     /// upgrade captures the generation at dispatch time and aborts its main-thread swap if a newer
@@ -66,8 +75,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let voiceEnabledKey = "voiceEnabled"
     private static let selectedLocaleCodeKey = "selectedLocaleCode"
-    private static let senseVoiceEnabledKey = "senseVoiceEnabled"
-    private static let senseVoiceLanguageKey = "senseVoiceLanguage"
+    /// Single model picker (D2): "apple" | "senseVoice" | "funasrNano" | "funasrMltNano". Replaces the
+    /// old `senseVoiceEnabled` toggle as the engine selector.
+    private static let voiceModelKey = "voiceModel"
     private static let clipboardSchemaVersionKey = "clipboardSchemaVersion"
     private static let clipboardSchemaVersion = 2
 
@@ -88,6 +98,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }
+    }
+
+    /// Region-free language code of the current selection — the single source that drives both
+    /// the Apple locale and the offline engines' recognition language. Empty selection → "auto".
+    private var currentSpeechLanguageCode: String {
+        SpeechLanguageCatalog.languageCode(of: selectedLocaleCode) ?? "auto"
     }
 
     /// Pick a speech locale identifier matching the system language on first launch.
@@ -138,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // desired it is upgraded asynchronously below in `applySpeechEnginePreference()`, after the
         // session host + downstream controllers are wired up.
         speechEngine = makeAppleEngine()
-        recordSenseVoiceBaseline()
+        recordSpeechBaselineFromCurrent()
         setupSpeechCallbacks()
 
         AppleSpeechEngine.requestPermissions { [weak self] granted, errorMsg in
@@ -247,6 +263,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // restart), or when a load failure flips `.ready → .failed` (so we drop back to Apple).
         senseVoiceModelStore.addStateObserver { [weak self] _ in
             self?.syncSpeechEngineIfNeeded()
+        }
+        // Same auto-enable behavior for the ONNX runtime + Fun-ASR-Nano model stores: when a
+        // download finishes mid-session (state → .ready) and that model is the picker selection,
+        // re-deciding swaps dictation onto the ONNX engine without a restart (D2/4.3). A failure
+        // (.ready → .failed) likewise drops back to Apple.
+        ONNXRuntimeLoader.shared.store.addStateObserver { [weak self] _ in
+            DispatchQueue.main.async { self?.syncSpeechEngineIfNeeded() }
+        }
+        OnnxStores.model.addStateObserver { [weak self] _ in
+            DispatchQueue.main.async { self?.syncSpeechEngineIfNeeded() }
+        }
+        OnnxStores.mltModel.addStateObserver { [weak self] _ in
+            DispatchQueue.main.async { self?.syncSpeechEngineIfNeeded() }
         }
         clipboardTransformController = ClipboardTransformController(
             store: clipboardController.store,
@@ -372,7 +401,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             logger.warning("SenseVoice resources missing (am.mvn / SPM .model); staying on Apple")
             return nil
         }
-        let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
+        let langKey = currentSpeechLanguageCode
         let languageId = SenseVoiceConfig.languageIds[langKey] ?? 0
         logger.info("speech engine: SenseVoice (lang=\(langKey, privacy: .public))")
         return SenseVoiceSpeechEngine(
@@ -394,9 +423,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let sonomaOrEarlier: Bool = {
             if #available(macOS 15, *) { return false } else { return true }
         }()
-        let enabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
-        let langKey = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
-        let modelReady = senseVoiceModelStore.state == .ready
+        let model = UserDefaults.standard.string(forKey: AppDelegate.voiceModelKey) ?? "apple"
+        let langKey = currentSpeechLanguageCode
+        let svReady = senseVoiceModelStore.state == .ready
+        let rtReady = ONNXRuntimeLoader.shared.store.state == .ready
+        let onnxReady = onnxModelStore.state == .ready
         let isMacOS26OrLater: Bool = {
             if #available(macOS 26, *) { return true } else { return false }
         }()
@@ -418,9 +449,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 #endif
         let choice = SpeechEngineFactory.choose(
+            model: model,
             osIsSonomaOrEarlier: sonomaOrEarlier,
-            enabled: enabled,
-            modelReady: modelReady,
+            senseVoiceReady: svReady,
+            onnxRuntimeReady: rtReady,
+            onnxModelReady: onnxReady,
             isMacOS26OrLater: isMacOS26OrLater,
             localeSupportedBySpeechAnalyzer: localeSupported,
             speechAnalyzerAssetReady: assetReady)
@@ -437,10 +470,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 setupSpeechCallbacks()
                 speechSessionHost?.replaceEngine(engine)
                 selectedTextEditorController?.replaceEngine(engine)
-                lastSenseVoiceEnabled = enabled
-                lastSenseVoiceLanguage = langKey
-                lastSenseVoiceModelReady = modelReady
-                lastSpeechLocaleCode = selectedLocaleCode
+                recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.speechAnalyzer)
                 return
             }
@@ -456,12 +486,52 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setupSpeechCallbacks()
             speechSessionHost?.replaceEngine(speechEngine)
             selectedTextEditorController?.replaceEngine(speechEngine)
-            lastSenseVoiceEnabled = enabled
-            lastSenseVoiceLanguage = langKey
-            lastSenseVoiceModelReady = modelReady
-            lastSpeechLocaleCode = selectedLocaleCode
+            recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
             SpeechEngineStatusStore.shared.update(
                 assetDownloading ? .sfSpeechRecognizerDownloadingAnalyzerAsset : .sfSpeechRecognizer)
+            return
+        }
+
+        if choice == .onnx {
+            // ONNX Fun-ASR-Nano: dlopen runtime + build recognizer OFF main (0.6B LLM init is
+            // heavy), then build + swap the (@MainActor) engine back on main. recognizer ownership
+            // is handed to ONNXSpeechEngine (it destroys it in deinit). Any failure → fall back to
+            // Apple. macOS 15+ only.
+            guard #available(macOS 15, *) else { return }
+            let m = onnxModelStore.destDir   // capture on main (main-actor property) before off-main work
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else { return }
+                guard ONNXRuntimeLoader.shared.loadIfReady() else {
+                    DispatchQueue.main.async { self.fallbackToApple(gen: gen) }
+                    return
+                }
+                var err = [CChar](repeating: 0, count: 1024)
+                let rec = sherpa_create_funasr(
+                    m.appendingPathComponent("encoder_adaptor.int8.onnx").path,
+                    m.appendingPathComponent("llm.int8.onnx").path,
+                    m.appendingPathComponent("embedding.int8.onnx").path,
+                    m.appendingPathComponent("Qwen3-0.6B").path,
+                    &err, Int32(err.count))
+                DispatchQueue.main.async {
+                    // A newer decision superseded us — drop this recognizer.
+                    guard gen == self.speechEngineGeneration else {
+                        if let rec { sherpa_destroy(rec) }
+                        return
+                    }
+                    guard let rec else {
+                        logger.error("create_funasr failed: \(String(cString: err), privacy: .public)")
+                        self.fallbackToApple(gen: gen)
+                        return
+                    }
+                    let engine = ONNXSpeechEngine(recognizer: rec, locale: self.speechEngine.locale)
+                    self.speechEngine = engine
+                    self.setupSpeechCallbacks()
+                    self.speechSessionHost?.replaceEngine(engine)
+                    self.selectedTextEditorController?.replaceEngine(engine)
+                    self.recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
+                    SpeechEngineStatusStore.shared.update(.onnx)
+                }
+            }
             return
         }
 
@@ -469,12 +539,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard #available(macOS 15, *) else { return }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            let model = self.senseVoiceModelStore.loadModel()  // heavy disk load, OFF main
+            let mlModel = self.senseVoiceModelStore.loadModel()  // heavy disk load, OFF main
             DispatchQueue.main.async {
                 // A newer decision superseded us — drop this swap.
                 guard gen == self.speechEngineGeneration else { return }
-                guard let model,
-                      let engine = self.makeSenseVoiceEngineIfPossible(model: model) else {
+                guard let mlModel,
+                      let engine = self.makeSenseVoiceEngineIfPossible(model: mlModel) else {
                     // Model failed to load (e.g. corrupt) or resources missing → stay on Apple.
                     return
                 }
@@ -482,22 +552,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.setupSpeechCallbacks()
                 self.speechSessionHost?.replaceEngine(engine)
                 self.selectedTextEditorController?.replaceEngine(engine)
-                self.lastSenseVoiceEnabled = enabled
-                self.lastSenseVoiceLanguage = langKey
-                self.lastSenseVoiceModelReady = true
-                self.lastSpeechLocaleCode = self.selectedLocaleCode
+                self.recordSpeechBaseline(model: model, lang: langKey, svReady: true, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.senseVoice)
             }
         }
     }
 
-    /// Snapshot the SenseVoice inputs that determine engine selection, so the next
-    /// `syncMenuStates()` only re-decides when one of them changes.
-    private func recordSenseVoiceBaseline() {
-        lastSenseVoiceEnabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
-        lastSenseVoiceLanguage = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
-        lastSenseVoiceModelReady = senseVoiceModelStore.state == .ready
+    /// Synchronously revert to the Apple engine (used when the ONNX path fails to load runtime or
+    /// build the recognizer). No-op if a newer engine decision has already superseded `gen`.
+    private func fallbackToApple(gen: Int) {
+        guard gen == speechEngineGeneration else { return }
+        speechEngine = makeAppleEngine()
+        setupSpeechCallbacks()
+        speechSessionHost?.replaceEngine(speechEngine)
+        selectedTextEditorController?.replaceEngine(speechEngine)
+        SpeechEngineStatusStore.shared.update(.sfSpeechRecognizer)
+    }
+
+    private func recordSpeechBaseline(model: String, lang: String, svReady: Bool, rtReady: Bool, onnxReady: Bool) {
+        lastVoiceModel = model
+        lastSenseVoiceLanguage = lang
+        lastSenseVoiceModelReady = svReady
+        lastOnnxRuntimeReady = rtReady
+        lastOnnxModelReady = onnxReady
+        // Also baseline the locale so a locale change re-decides the engine (SpeechAnalyzer
+        // asset support is locale-specific).
         lastSpeechLocaleCode = selectedLocaleCode
+    }
+
+    /// Snapshot the inputs that determine engine selection, so the next `syncMenuStates()` only
+    /// re-decides when one of them changes.
+    private func recordSpeechBaselineFromCurrent() {
+        recordSpeechBaseline(
+            model: UserDefaults.standard.string(forKey: AppDelegate.voiceModelKey) ?? "apple",
+            lang: currentSpeechLanguageCode,
+            svReady: senseVoiceModelStore.state == .ready,
+            rtReady: ONNXRuntimeLoader.shared.store.state == .ready,
+            onnxReady: onnxModelStore.state == .ready)
     }
 
     /// Re-decide the speech engine iff a SenseVoice-relevant input changed (toggle, language,
@@ -505,13 +596,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// high-frequency `syncMenuStates()` stays cheap and never dispatches an off-main load when
     /// nothing changed.
     private func syncSpeechEngineIfNeeded() {
-        let enabled = UserDefaults.standard.bool(forKey: AppDelegate.senseVoiceEnabledKey)
-        let language = UserDefaults.standard.string(forKey: AppDelegate.senseVoiceLanguageKey) ?? "auto"
-        let modelReady = senseVoiceModelStore.state == .ready
+        let model = UserDefaults.standard.string(forKey: AppDelegate.voiceModelKey) ?? "apple"
+        let language = currentSpeechLanguageCode
+        let svReady = senseVoiceModelStore.state == .ready
+        let rtReady = ONNXRuntimeLoader.shared.store.state == .ready
+        let onnxReady = onnxModelStore.state == .ready
         let localeCode = selectedLocaleCode
-        if enabled == lastSenseVoiceEnabled,
+        if model == lastVoiceModel,
            language == lastSenseVoiceLanguage,
-           modelReady == lastSenseVoiceModelReady,
+           svReady == lastSenseVoiceModelReady,
+           rtReady == lastOnnxRuntimeReady,
+           onnxReady == lastOnnxModelReady,
            localeCode == lastSpeechLocaleCode {
             return
         }
@@ -752,9 +847,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             setVoiceEnabled(defaultsVoice)
         }
 
-        // SenseVoice settings (enable / language / model readiness) reach us via
+        // Voice-model picker / language / store readiness reach us via
         // UserDefaults.didChangeNotification — same channel as the Apple locale below.
-        // Only rebuild the engine when a SenseVoice- or locale-relevant input actually changed.
+        // Only rebuild the engine when an engine- or locale-relevant input actually changed.
         syncSpeechEngineIfNeeded()
 
         // Apple locale only applies when the live engine is the Apple one; SenseVoice picks

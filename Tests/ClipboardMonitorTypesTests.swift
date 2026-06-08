@@ -69,10 +69,13 @@ struct ClipboardMonitorTypesTestRunner {
         )
         monitor.tickForTesting()  // consume baseline
 
-        // 1. Image capture takes priority over a co-present .string
+        // 1. Image capture takes priority over a co-present .string.
+        // captureImage runs off-main (Task.detached) then commits on the main actor
+        // (see ClipboardMonitor.captureImage), so drain the main run loop until it lands.
         let pngBytes = makePNGBytes()
         fake.simulate(image: pngBytes, mime: "public.png")
         monitor.tickForTesting()
+        drainUntil { store.fetchAll().first?.kind == .image }
         expect(store.fetchAll().first?.kind == .image, "image captured")
         expect(store.fetchAll().first?.imageRelativePath != nil, "cache file path set")
 
@@ -114,6 +117,16 @@ struct ClipboardMonitorTypesTestRunner {
     private static func makePNGBytes() -> Data {
         let signature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
         return Data(signature + Array(repeating: 0, count: 32))
+    }
+
+    /// Pump the main run loop until `condition` holds or `timeout` elapses. The image-capture
+    /// path is async (off-main prepare + main-actor commit), so a synchronous assertion right
+    /// after `tickForTesting()` would race the commit.
+    private static func drainUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) {
+        let deadline = Date(timeIntervalSinceNow: timeout)
+        while !condition(), Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date(timeIntervalSinceNow: 0.02))
+        }
     }
 
     private static func expect(_ condition: @autoclosure () -> Bool, _ message: String) {

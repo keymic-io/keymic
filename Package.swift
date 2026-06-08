@@ -12,10 +12,15 @@ let package = Package(
         )
     ],
     targets: [
+        .target(
+            name: "CSherpaOnnx",
+            path: "Sources/CSherpaOnnx"
+        ),
         .executableTarget(
             name: "KeyMic",
             dependencies: [
-                .product(name: "Sparkle", package: "Sparkle")
+                .product(name: "Sparkle", package: "Sparkle"),
+                "CSherpaOnnx"
             ],
             path: "Sources/KeyMic",
             resources: [

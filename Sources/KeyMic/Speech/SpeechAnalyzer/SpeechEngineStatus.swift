@@ -5,6 +5,7 @@ import Foundation
 /// by AppDelegate + SettingsUI).
 enum SpeechEngineStatus: Equatable {
     case senseVoice
+    case onnx
     case speechAnalyzer
     case sfSpeechRecognizer
     /// Apple path is on legacy SFSpeechRecognizer while a SpeechAnalyzer language
@@ -16,6 +17,8 @@ enum SpeechEngineStatus: Equatable {
         switch status {
         case .senseVoice:
             return String(localized: "SenseVoice (on-device)")
+        case .onnx:
+            return String(localized: "Fun-ASR (on-device)")
         case .speechAnalyzer:
             return String(localized: "Apple SpeechAnalyzer")
         case .sfSpeechRecognizer:

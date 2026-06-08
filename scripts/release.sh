@@ -9,6 +9,32 @@ SPARKLE_TOOLS_DIR="${HOME}/.sparkle-tools"
 KEYCHAIN_ACCOUNT="ed25519"  # Sparkle EdDSA signing key
 RELEASE_REPO_SLUG="${RELEASE_REPO_SLUG:-$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo "keymic-io/keymic")}"
 
+# 一次性:把 sherpa-onnx v1.13.2 的 universal2 dylib 作为独立 release 资产上传(不进 .app/.dmg)。
+# 用法:bash scripts/release.sh --publish-onnx-runtime <tarball-dir>
+# <tarball-dir> 内含 libonnxruntime.1.24.4.dylib + libsherpa-onnx-c-api.dylib(原始字节,不重签)。
+publish_onnx_runtime() {
+    local dir="$1"
+    local tag="onnx-runtime-v1.13.2"
+    shasum -a 256 "$dir/libonnxruntime.1.24.4.dylib" "$dir/libsherpa-onnx-c-api.dylib"
+    gh release create "$tag" \
+        "$dir/libonnxruntime.1.24.4.dylib" \
+        "$dir/libsherpa-onnx-c-api.dylib" \
+        --repo "${RELEASE_REPO_SLUG}" --title "ONNX runtime v1.13.2" \
+        --notes "sherpa-onnx v1.13.2 universal2 shared dylibs (lazy-downloaded by KeyMic ONNX engine)." || \
+    gh release upload "$tag" \
+        "$dir/libonnxruntime.1.24.4.dylib" \
+        "$dir/libsherpa-onnx-c-api.dylib" \
+        --repo "${RELEASE_REPO_SLUG}" --clobber
+    echo "确认上述 sha256 与 VoiceModelCatalog.runtime 常量一致。"
+}
+
+# Early dispatch — handled BEFORE the strict version/flag parser below (which would otherwise
+# reject the unknown flag and exit). One-shot, independent of the normal release flow.
+if [[ "${1:-}" == "--publish-onnx-runtime" ]]; then
+    publish_onnx_runtime "${2:?usage: --publish-onnx-runtime <tarball-dir>}"
+    exit 0
+fi
+
 FORCE=0
 VERSION=""
 for arg in "$@"; do
