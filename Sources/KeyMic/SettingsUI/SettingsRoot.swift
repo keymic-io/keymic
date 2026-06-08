@@ -518,6 +518,7 @@ private struct VoiceSettingsView: View {
     @AppStorage("voiceModel") private var voiceModel: String = "apple"
     @StateObject private var download = SenseVoiceDownloadController()
     @StateObject private var onnx = OnnxDownloadController(modelStore: OnnxStores.model)
+    @StateObject private var onnxMlt = OnnxDownloadController(modelStore: OnnxStores.mltModel)
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     private var triggerKey: Binding<String> { hotkeyBinding(hotkeyStore, for: .voiceTrigger) }
@@ -559,16 +560,28 @@ private struct VoiceSettingsView: View {
         }
     }
 
-    private var onnxDownloadFraction: Double? {
-        if case .downloading(let fraction) = onnx.combined { return fraction }
-        return nil
-    }
-
-    private var onnxDownloadDisabled: Bool {
-        switch onnx.combined {
-        case .ready, .downloading: return true
-        case .notDownloaded, .failed: return false
-        }
+    /// Reusable detail row for an ONNX engine, parameterized by its download controller + store.
+    @ViewBuilder
+    private func onnxModelRow(_ controller: OnnxDownloadController, store: AssetStore) -> some View {
+        let fraction: Double? = {
+            if case .downloading(let f) = controller.combined { return f }
+            return nil
+        }()
+        let busy: Bool = {
+            switch controller.combined {
+            case .ready, .downloading: return true
+            case .notDownloaded, .failed: return false
+            }
+        }()
+        ModelDownloadRow(
+            statusText: modelStatusText(DownloadPhase(controller.combined), sizeText: selectedModel?.sizeText),
+            fraction: fraction,
+            isReady: controller.combined == .ready,
+            downloadTitle: "Download runtime + model",
+            downloadDisabled: !Self.senseVoiceSupported || busy,
+            folderURL: store.destDir,
+            onDownload: { controller.download() }
+        )
     }
 
     /// Distinct, region-free languages (deduped by language code). Stable across redraws.
@@ -638,15 +651,9 @@ private struct VoiceSettingsView: View {
                 onDownload: { download.download() }
             )
         case "funasrNano":
-            ModelDownloadRow(
-                statusText: modelStatusText(DownloadPhase(onnx.combined), sizeText: selectedModel?.sizeText),
-                fraction: onnxDownloadFraction,
-                isReady: onnx.combined == .ready,
-                downloadTitle: "Download runtime + model",
-                downloadDisabled: !Self.senseVoiceSupported || onnxDownloadDisabled,
-                folderURL: OnnxStores.model.destDir,
-                onDownload: { onnx.download() }
-            )
+            onnxModelRow(onnx, store: OnnxStores.model)
+        case "funasrMltNano":
+            onnxModelRow(onnxMlt, store: OnnxStores.mltModel)
         default:  // "apple" + unavailable models: no download, no on-disk folder.
             LabeledContent("Download:") {
                 Text("Built into macOS — no download required")
