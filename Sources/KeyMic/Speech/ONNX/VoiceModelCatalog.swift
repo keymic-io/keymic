@@ -15,7 +15,7 @@ struct AssetBundle {
 }
 
 extension AssetBundle {
-    /// 该 bundle 是否有对应可下载资产(runtime / funasrNano 均为 true)。MLT 不建 AssetBundle。
+    /// 该 bundle 是否有对应可下载资产(runtime / funasrNano / funasrMltNano 均为 true)。
     var available: Bool { true }
 }
 
@@ -42,6 +42,9 @@ struct VoiceModelOption {
 enum VoiceModelCatalog {
     private static func hf(_ file: String) -> URL {
         URL(string: "https://huggingface.co/csukuangfj/sherpa-onnx-funasr-nano-int8-2025-12-30/resolve/main/\(file)")!
+    }
+    private static func hfMlt(_ file: String) -> URL {
+        URL(string: "https://huggingface.co/lorneluo/sherpa-onnx-funasr-mlt-nano-int8-2512/resolve/main/\(file)")!
     }
     private static func runtimeURL(_ file: String) -> URL {
         URL(string: "https://github.com/keymic-io/keymic/releases/download/onnx-runtime-v1.13.2/\(file)")!
@@ -83,7 +86,31 @@ enum VoiceModelCatalog {
                       relPath: "Qwen3-0.6B/merges.txt"),
         ])
 
-    /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano 走 ONNX;MLT 暂不可用(无 sherpa 包)。
+    static let funasrMltNano = AssetBundle(
+        id: "funasr-mlt-nano-int8-2512",
+        destDirName: "models/funasr-mlt-nano-ar",
+        files: [
+            AssetFile(url: hfMlt("encoder_adaptor.int8.onnx"),
+                      sha256: "d38cf070a354f5166bc24a4cd885cceb0fa465c7b0410b11d6c376ce77e256bd",
+                      relPath: "encoder_adaptor.int8.onnx"),
+            AssetFile(url: hfMlt("llm.int8.onnx"),
+                      sha256: "ef4308d86844c7f3ddb90b237014ca0a3830aadcfc5551e65d813e63098b131b",
+                      relPath: "llm.int8.onnx"),
+            AssetFile(url: hfMlt("embedding.int8.onnx"),
+                      sha256: "8bc272cde3148b17fbef94f34fa25605f5a98fdb6fd0bc71a8410148f2b1d217",
+                      relPath: "embedding.int8.onnx"),
+            AssetFile(url: hfMlt("Qwen3-0.6B/tokenizer.json"),
+                      sha256: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+                      relPath: "Qwen3-0.6B/tokenizer.json"),
+            AssetFile(url: hfMlt("Qwen3-0.6B/vocab.json"),
+                      sha256: "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+                      relPath: "Qwen3-0.6B/vocab.json"),
+            AssetFile(url: hfMlt("Qwen3-0.6B/merges.txt"),
+                      sha256: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+                      relPath: "Qwen3-0.6B/merges.txt"),
+        ])
+
+    /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano / funasrMltNano 均走 ONNX(sherpa funasr runtime)。
     static let selectableModels: [VoiceModelOption] = [
         VoiceModelOption(id: "apple", displayName: "Apple (system)", available: true, sizeText: nil,
                          supportedLanguages: nil),
@@ -91,7 +118,10 @@ enum VoiceModelCatalog {
                          supportedLanguages: ["zh", "yue", "en", "ja", "ko"]),
         VoiceModelOption(id: "funasrNano", displayName: "Fun-ASR-Nano (zh/en/ja)", available: true, sizeText: "≈ 1 GB",
                          supportedLanguages: ["zh", "en", "ja"]),
-        VoiceModelOption(id: "funasrMltNano", displayName: "Fun-ASR-MLT-Nano (31 langs) — coming soon", available: false,
-                         sizeText: nil, supportedLanguages: nil),
+        VoiceModelOption(id: "funasrMltNano", displayName: "Fun-ASR-MLT-Nano (31 langs)", available: true,
+                         sizeText: "≈ 1 GB",
+                         supportedLanguages: ["zh", "en", "yue", "ja", "ko", "vi", "id", "th", "ms", "fil",
+                                              "ar", "hi", "bg", "hr", "cs", "da", "nl", "et", "fi", "el",
+                                              "hu", "ga", "lv", "lt", "mt", "pl", "pt", "ro", "sk", "sl", "sv"]),
     ]
 }
