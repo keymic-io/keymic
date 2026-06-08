@@ -23,6 +23,8 @@ struct SpeechEngineFactoryTests {
             senseVoiceReady: false, onnxRuntimeReady: true, onnxModelReady: true), .onnx, "MLT ready -> onnx")
         assertEqual(SpeechEngineFactory.choose(model: "funasrMltNano", osIsSonomaOrEarlier: false,
             senseVoiceReady: false, onnxRuntimeReady: true, onnxModelReady: false), .apple, "MLT model not ready -> apple")
+        assertEqual(SpeechEngineFactory.choose(model: "funasrMltNano", osIsSonomaOrEarlier: false,
+            senseVoiceReady: false, onnxRuntimeReady: false, onnxModelReady: true), .apple, "MLT runtime not ready -> apple")
         // Sonoma-or-earlier -> always apple (both onnx models + senseVoice need macOS 15+)
         assertEqual(SpeechEngineFactory.choose(model: "funasrNano", osIsSonomaOrEarlier: true,
             senseVoiceReady: true, onnxRuntimeReady: true, onnxModelReady: true), .apple, "Nano on old OS -> apple")

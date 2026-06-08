@@ -61,8 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static let voiceEnabledKey = "voiceEnabled"
     private static let selectedLocaleCodeKey = "selectedLocaleCode"
-    /// Single model picker (D2): "apple" | "senseVoice" | "funasrNano". Replaces the old
-    /// `senseVoiceEnabled` toggle as the engine selector.
+    /// Single model picker (D2): "apple" | "senseVoice" | "funasrNano" | "funasrMltNano". Replaces the
+    /// old `senseVoiceEnabled` toggle as the engine selector.
     private static let voiceModelKey = "voiceModel"
     private static let clipboardSchemaVersionKey = "clipboardSchemaVersion"
     private static let clipboardSchemaVersion = 2

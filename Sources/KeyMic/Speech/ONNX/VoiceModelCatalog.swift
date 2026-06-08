@@ -99,6 +99,8 @@ enum VoiceModelCatalog {
             AssetFile(url: hfMlt("embedding.int8.onnx"),
                       sha256: "8bc272cde3148b17fbef94f34fa25605f5a98fdb6fd0bc71a8410148f2b1d217",
                       relPath: "embedding.int8.onnx"),
+            // Qwen3-0.6B tokenizer files are byte-identical to funasrNano's (same tokenizer); each
+            // bundle keeps its own copy under its destDir — intentional, not a copy-paste error.
             AssetFile(url: hfMlt("Qwen3-0.6B/tokenizer.json"),
                       sha256: "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
                       relPath: "Qwen3-0.6B/tokenizer.json"),
