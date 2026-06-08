@@ -16,9 +16,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// by `applySpeechEnginePreference()` once the model finishes loading off the main thread.
     private var speechEngine: (any SpeechEngineProtocol)!
     private let senseVoiceModelStore = SenseVoiceModelStore.shared
-    /// Shared Fun-ASR-Nano model store — same instance the settings download controller observes,
-    /// so download progress/readiness stays consistent between UI and engine decision.
-    private var onnxModelStore: AssetStore { OnnxStores.model }
+    /// The ONNX model store for the currently-selected engine. funasrNano and funasrMltNano are
+    /// both `.onnx`-backed but live in separate stores/dirs; readiness + destDir track the active one.
+    private var onnxModelStore: AssetStore {
+        (UserDefaults.standard.string(forKey: Self.voiceModelKey) == "funasrMltNano")
+            ? OnnxStores.mltModel : OnnxStores.model
+    }
     /// Last-applied engine inputs, so `syncMenuStates()` only re-decides the engine when one of
     /// them changes (the change-detection guard avoids dispatching an off-main load on every
     /// defaults notification).
@@ -254,7 +257,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ONNXRuntimeLoader.shared.store.addStateObserver { [weak self] _ in
             DispatchQueue.main.async { self?.syncSpeechEngineIfNeeded() }
         }
-        onnxModelStore.addStateObserver { [weak self] _ in
+        OnnxStores.model.addStateObserver { [weak self] _ in
+            DispatchQueue.main.async { self?.syncSpeechEngineIfNeeded() }
+        }
+        OnnxStores.mltModel.addStateObserver { [weak self] _ in
             DispatchQueue.main.async { self?.syncSpeechEngineIfNeeded() }
         }
         clipboardTransformController = ClipboardTransformController(
