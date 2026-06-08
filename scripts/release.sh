@@ -46,15 +46,26 @@ echo "==> Preparing release assets"
 rm -rf "${RELEASE_DIR}"
 mkdir -p "${RELEASE_DIR}"
 
+# SpeechAnalyzer (LOR-28) needs the macOS 26 SDK. When building against SDK major >= 26,
+# pass -DKEYMIC_HAS_SPEECH_ANALYZER so the guarded Speech code is compiled into the release.
+# Older SDKs leave it empty (the #if excludes the new-API files). String var + unquoted
+# expansion keeps this safe on macOS's bash 3.2 (no empty-array-under-set-u pitfall).
+SDK_MAJOR="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null | cut -d. -f1)"
+SPEECH_ANALYZER_FLAGS=""
+if [ -n "${SDK_MAJOR}" ] && [ "${SDK_MAJOR}" -ge 26 ] 2>/dev/null; then
+    SPEECH_ANALYZER_FLAGS="-Xswiftc -DKEYMIC_HAS_SPEECH_ANALYZER"
+fi
+echo "==> SpeechAnalyzer flags: ${SPEECH_ANALYZER_FLAGS:-<none>} (SDK major: ${SDK_MAJOR:-unknown})"
+
 # Build each arch separately
 for ARCH in arm64 x86_64; do
     echo "==> Building ${APP_NAME} ${VERSION} (${ARCH})"
-    swift build -c release --arch "${ARCH}"
+    swift build -c release ${SPEECH_ANALYZER_FLAGS} --arch "${ARCH}"
 done
 
-ARM64_BIN="$(swift build -c release --arch arm64 --show-bin-path)/${APP_NAME}"
-X86_BIN="$(swift build -c release --arch x86_64 --show-bin-path)/${APP_NAME}"
-ARM64_SPARKLE="$(swift build -c release --arch arm64 --show-bin-path)/Sparkle.framework"
+ARM64_BIN="$(swift build -c release ${SPEECH_ANALYZER_FLAGS} --arch arm64 --show-bin-path)/${APP_NAME}"
+X86_BIN="$(swift build -c release ${SPEECH_ANALYZER_FLAGS} --arch x86_64 --show-bin-path)/${APP_NAME}"
+ARM64_SPARKLE="$(swift build -c release ${SPEECH_ANALYZER_FLAGS} --arch arm64 --show-bin-path)/Sparkle.framework"
 
 # Merge into universal binary
 echo "==> Merging into universal binary with lipo"

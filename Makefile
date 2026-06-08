@@ -1,15 +1,23 @@
 APP_NAME := KeyMic
 APP_BUNDLE := $(APP_NAME).app
 ENTITLEMENTS := $(APP_NAME).entitlements
-BUILD_DIR := $(shell swift build -c release --show-bin-path 2>/dev/null || echo .build/release)
+# SpeechAnalyzer (LOR-28) needs the macOS 26 SDK. Detect SDK major version and,
+# when >= 26, pass -DKEYMIC_HAS_SPEECH_ANALYZER so the guarded Speech code compiles.
+# Older SDKs build fine without it (the #if excludes the new-API files).
+SDK_MAJOR := $(shell xcrun --sdk macosx --show-sdk-version 2>/dev/null | cut -d. -f1)
+SPEECH_ANALYZER_FLAGS :=
+ifeq ($(shell [ "$(SDK_MAJOR)" -ge 26 ] 2>/dev/null && echo yes),yes)
+SPEECH_ANALYZER_FLAGS := -Xswiftc -DKEYMIC_HAS_SPEECH_ANALYZER
+endif
+BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
 .PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait
 
 
 build:
-	swift build -c release
-	$(eval BUILD_DIR := $(shell swift build -c release --show-bin-path))
+	swift build -c release $(SPEECH_ANALYZER_FLAGS)
+	$(eval BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path))
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS
 	mkdir -p $(APP_BUNDLE)/Contents/Resources
@@ -32,8 +40,8 @@ build:
 	@echo "\n✅ Built $(APP_BUNDLE)"
 
 build-arm64:
-	swift build -c release --arch arm64
-	$(eval ARM64_BUILD := $(shell swift build -c release --arch arm64 --show-bin-path))
+	swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch arm64
+	$(eval ARM64_BUILD := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch arm64 --show-bin-path))
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(APP_BUNDLE)/Contents/Frameworks
 	cp $(ARM64_BUILD)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
@@ -53,8 +61,8 @@ build-arm64:
 	@echo "\n✅ Built $(APP_BUNDLE) (arm64)"
 
 build-x86_64:
-	swift build -c release --arch x86_64
-	$(eval X86_BUILD := $(shell swift build -c release --arch x86_64 --show-bin-path))
+	swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch x86_64
+	$(eval X86_BUILD := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --arch x86_64 --show-bin-path))
 	rm -rf $(APP_BUNDLE)
 	mkdir -p $(APP_BUNDLE)/Contents/MacOS $(APP_BUNDLE)/Contents/Resources $(APP_BUNDLE)/Contents/Frameworks
 	cp $(X86_BUILD)/$(APP_NAME) $(APP_BUNDLE)/Contents/MacOS/
@@ -362,6 +370,13 @@ test-speech-factory:
 	       Tests/SpeechEngineFactoryTests.swift \
 	       -o .build/speech-factory-tests
 	.build/speech-factory-tests
+
+test-speech-status:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SpeechAnalyzer/SpeechEngineStatus.swift \
+	       Tests/SpeechEngineStatusTests.swift \
+	       -o .build/speech-status-tests
+	.build/speech-status-tests
 
 test-audio-capture-16k:
 	mkdir -p .build
@@ -680,7 +695,7 @@ test-window-ocr:
 	       -o .build/window-ocr-tests
 	.build/window-ocr-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-ctc-decoder test-sensevoice-model-input
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
