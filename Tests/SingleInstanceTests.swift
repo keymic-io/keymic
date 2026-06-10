@@ -16,22 +16,24 @@ struct SingleInstanceTestRunner {
 
         let lockDirectory = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
             .appendingPathComponent("keymic-single-instance-tests-\(UUID().uuidString)", isDirectory: true)
-        try! FileManager.default.createDirectory(at: lockDirectory, withIntermediateDirectories: true)
-        let livePID = ProcessInfo.processInfo.processIdentifier
-        let firstLock = SingleInstance.acquireLock(bundleIdentifier: "io.keymic.app", currentProcessIdentifier: livePID, lockDirectory: lockDirectory)
-        expect(firstLock != nil, "first process acquires singleton lock")
-        let secondLock = SingleInstance.acquireLock(bundleIdentifier: "io.keymic.app", currentProcessIdentifier: 456, lockDirectory: lockDirectory)
-        expect(secondLock == nil, "second process cannot acquire singleton lock")
+        // acquireLock creates the lock directory itself — do NOT pre-create it here.
+        let firstLock = SingleInstance.acquireLock(bundleIdentifier: "io.keymic.app", lockDirectory: lockDirectory)
+        expect(firstLock != nil, "first acquirer takes the singleton lock (and creates the lock directory)")
+        // flock conflicts between distinct open file descriptions even within one
+        // process, so a second acquire here models a second process.
+        let secondLock = SingleInstance.acquireLock(bundleIdentifier: "io.keymic.app", lockDirectory: lockDirectory)
+        expect(secondLock == nil, "second acquirer cannot take a held lock")
         if let firstLock { SingleInstance.releaseLock(at: firstLock) }
-        let thirdLock = SingleInstance.acquireLock(bundleIdentifier: "io.keymic.app", currentProcessIdentifier: 456, lockDirectory: lockDirectory)
+        let thirdLock = SingleInstance.acquireLock(bundleIdentifier: "io.keymic.app", lockDirectory: lockDirectory)
         expect(thirdLock != nil, "lock can be reacquired after release")
         if let thirdLock { SingleInstance.releaseLock(at: thirdLock) }
 
-        let staleLock = lockDirectory.appendingPathComponent("stale.bundle.lock", isDirectory: true)
-        try! FileManager.default.createDirectory(at: staleLock, withIntermediateDirectories: false)
-        try! "999999".write(to: staleLock.appendingPathComponent("pid"), atomically: true, encoding: .utf8)
-        let recoveredLock = SingleInstance.acquireLock(bundleIdentifier: "stale.bundle", currentProcessIdentifier: 456, lockDirectory: lockDirectory)
-        expect(recoveredLock != nil, "stale lock is replaced")
+        // A leftover lock file with no live flock (crash/SIGKILL residue — the
+        // kernel dropped the lock with the dead process's fd) must be reacquirable.
+        let staleFile = lockDirectory.appendingPathComponent("stale.bundle.lock")
+        expect(FileManager.default.createFile(atPath: staleFile.path, contents: Data("999999".utf8)), "fixture lock file created")
+        let recoveredLock = SingleInstance.acquireLock(bundleIdentifier: "stale.bundle", lockDirectory: lockDirectory)
+        expect(recoveredLock != nil, "unlocked leftover lock file is acquired")
         if let recoveredLock { SingleInstance.releaseLock(at: recoveredLock) }
         try? FileManager.default.removeItem(at: lockDirectory)
 

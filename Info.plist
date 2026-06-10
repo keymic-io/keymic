@@ -40,7 +40,7 @@
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>KeyMic uses speech recognition to convert your voice to text.</string>
 	<key>SUEnableAutomaticChecks</key>
-	<true/>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://keymic-io.github.io/keymic/appcast.xml</string>
 	<key>SUPublicEDKey</key>

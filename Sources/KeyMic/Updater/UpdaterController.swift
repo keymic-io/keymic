@@ -54,16 +54,20 @@ final class UpdaterController {
     }
 
     /// Schedule a daily check at 11:00 AM local time.
-    /// SUScheduledCheckInterval in Info.plist is disabled (0) to avoid double-checking.
+    /// SUEnableAutomaticChecks is false in Info.plist so Sparkle's own scheduler
+    /// stays off and this is the only background check. (Setting
+    /// SUScheduledCheckInterval to 0 does NOT disable Sparkle's scheduler — it
+    /// clamps the interval to its 1-hour minimum, i.e. hourly checks.)
     private func scheduleDailyCheck() {
         let now = Date()
         let cal = Calendar.current
         let today11 = cal.date(bySettingHour: 11, minute: 0, second: 0, of: now)!
         let next11 = today11 > now ? today11 : cal.date(byAdding: .day, value: 1, to: today11)!
         let delay = next11.timeIntervalSince(now)
-        // Ensure at least 1 hour between checks so we catch the next 11 AM window
-        // even after a long sleep (>24h).
-        let adjustedDelay = max(delay, 3600)
+        // Floor only guards against a non-positive/tiny delay from clock edge
+        // cases; anything larger must pass through unchanged so a 10:50 launch
+        // still hits today's 11:00 slot.
+        let adjustedDelay = max(delay, 60)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + adjustedDelay) { [weak self] in
             self?.performScheduledCheck()

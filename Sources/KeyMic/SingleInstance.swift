@@ -6,47 +6,44 @@ struct RunningApplicationSnapshot: Equatable {
     let bundleIdentifier: String?
 }
 
+/// Single-instance guard backed by a real `flock(2)` on a file in
+/// `~/Library/Application Support/KeyMic/`. The kernel makes acquisition
+/// atomic (no mkdir/write-pid TOCTOU window) and releases the lock
+/// automatically when the holder's fd closes — including crash/SIGKILL —
+/// so there is no stale-pid detection and no pid-reuse false positive.
+/// The lock file itself is never meaningful on disk: only a live flock is.
 enum SingleInstance {
+    /// fd per acquired lock URL, held open for the lifetime of the process.
+    private static var lockFileDescriptors: [URL: Int32] = [:]
+
+    static func defaultLockDirectory() -> URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("KeyMic", isDirectory: true)
+    }
+
     static func acquireLock(
         bundleIdentifier: String,
-        currentProcessIdentifier: pid_t = ProcessInfo.processInfo.processIdentifier,
-        lockDirectory: URL = FileManager.default.temporaryDirectory
+        lockDirectory: URL = defaultLockDirectory()
     ) -> URL? {
-        let lockURL = lockDirectory.appendingPathComponent("\(bundleIdentifier).lock", isDirectory: true)
-        if createLock(at: lockURL, currentProcessIdentifier: currentProcessIdentifier) {
-            return lockURL
+        let lockURL = lockDirectory.appendingPathComponent("\(bundleIdentifier).lock")
+        try? FileManager.default.createDirectory(at: lockDirectory, withIntermediateDirectories: true)
+        let fd = open(lockURL.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)
+        guard fd >= 0 else { return nil }
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            close(fd)
+            return nil
         }
-        if isStaleLock(at: lockURL) {
-            releaseLock(at: lockURL)
-            if createLock(at: lockURL, currentProcessIdentifier: currentProcessIdentifier) {
-                return lockURL
-            }
-        }
-        return nil
+        lockFileDescriptors[lockURL] = fd
+        return lockURL
     }
 
     static func releaseLock(at lockURL: URL) {
-        try? FileManager.default.removeItem(at: lockURL)
-    }
-
-    private static func createLock(at lockURL: URL, currentProcessIdentifier: pid_t) -> Bool {
-        do {
-            try FileManager.default.createDirectory(at: lockURL, withIntermediateDirectories: false)
-            let pidURL = lockURL.appendingPathComponent("pid")
-            try "\(currentProcessIdentifier)".write(to: pidURL, atomically: true, encoding: .utf8)
-            return true
-        } catch {
-            return false
-        }
-    }
-
-    private static func isStaleLock(at lockURL: URL) -> Bool {
-        let pidURL = lockURL.appendingPathComponent("pid")
-        guard let content = try? String(contentsOf: pidURL, encoding: .utf8),
-              let pid = pid_t(content.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return true
-        }
-        return kill(pid, 0) != 0 && errno == ESRCH
+        guard let fd = lockFileDescriptors.removeValue(forKey: lockURL) else { return }
+        flock(fd, LOCK_UN)
+        close(fd)
+        // The file is left on disk intentionally: deleting it would let a
+        // concurrent starter recreate-and-lock a *different* inode while a
+        // third process still locks the old one.
     }
 
     static func existingInstance(

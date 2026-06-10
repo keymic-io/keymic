@@ -263,7 +263,9 @@ final class HotkeySettingsStore {
             hotkeySettingsLogger.error("failed to encode hotkey settings")
             return
         }
+        // `defaults.set` itself posts UserDefaults.didChangeNotification; do NOT
+        // post it manually here or every observer (menu sync, KeyMonitor reload,
+        // clipboard prefs, updater policy) runs twice per save.
         defaults.set(data, forKey: userDefaultsKey)
-        NotificationCenter.default.post(name: UserDefaults.didChangeNotification, object: defaults)
     }
 }

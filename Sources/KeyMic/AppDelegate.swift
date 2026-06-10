@@ -61,6 +61,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
 
+    /// Everything that, when changed, can invalidate KeyMonitor's in-flight
+    /// input state (held trigger, repeat timers, modifier tracking). Cached so
+    /// `syncMenuStates` only resets the input state machine when one of these
+    /// actually changed — NOT on every `UserDefaults.didChangeNotification`
+    /// (Sparkle's SULastCheckTime, screenshot prefs, any @AppStorage write…),
+    /// which would interrupt an in-progress dictation session.
+    private struct InputConfigSnapshot: Equatable {
+        let hotkeys: HotkeySettingsSnapshot
+        let keyMappings: [KeyMapping]
+        let keyMappingEnabled: Bool
+
+        static func current() -> InputConfigSnapshot {
+            InputConfigSnapshot(
+                hotkeys: HotkeySettingsStore.shared.snapshot,
+                keyMappings: KeyMappingManager.shared.mappings,
+                keyMappingEnabled: KeyMappingManager.shared.isEnabled
+            )
+        }
+    }
+    private var lastInputConfigSnapshot: InputConfigSnapshot?
+
     private var personaEngine: PersonaEngine!
     private var voiceTrigger: VoiceTrigger!
     private var speechSessionHost: DefaultSpeechSessionHost!
@@ -225,18 +246,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         keyMonitor.onTriggerDown = { [weak self] in
             guard let self, self.isVoiceEnabled else { return }
+            self.updateStatusIcon(recording: true)
             Task { @MainActor in self.voiceTrigger.onTriggerDown() }
         }
         keyMonitor.onTriggerUp = { [weak self] in
-            Task { @MainActor in self?.voiceTrigger.onTriggerUp() }
+            guard let self else { return }
+            self.updateStatusIcon(recording: false)
+            Task { @MainActor in self.voiceTrigger.onTriggerUp() }
         }
         keyMonitor.onTriggerInterrupted = { [weak self] in
-            Task { @MainActor in self?.voiceTrigger.onTriggerInterrupted() }
+            guard let self else { return }
+            self.updateStatusIcon(recording: false)
+            Task { @MainActor in self.voiceTrigger.onTriggerInterrupted() }
         }
         keyMonitor.onExtraneousKeyDuringVoice = { [weak self] in
-            Task { @MainActor in self?.voiceTrigger.onExtraneousKeyDuringVoice() }
+            guard let self else { return }
+            self.updateStatusIcon(recording: false)
+            Task { @MainActor in self.voiceTrigger.onExtraneousKeyDuringVoice() }
         }
         keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isActive ?? false }
+        keyMonitor.isVoiceEnabled = { [weak self] in self?.isVoiceEnabled ?? false }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onVaultHotkey = { [weak self] in
             self?.clipboardController.toggle(initialTab: .vault)
@@ -292,6 +321,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ = UpdaterController.shared
 
         HotkeySettingsStore.shared.ensureInitialized()
+        lastInputConfigSnapshot = InputConfigSnapshot.current()
 
         // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
         let registry = HotkeyRegistry.shared
@@ -320,7 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(syncMenuStates),
+            selector: #selector(userDefaultsDidChange),
             name: UserDefaults.didChangeNotification,
             object: nil
         )
@@ -810,8 +840,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(enabled, forKey: Self.voiceEnabledKey)
         voiceToggleView?.needsDisplay = true
 
-        if !enabled, let voiceTrigger {
-            Task { @MainActor in voiceTrigger.onTriggerInterrupted() }
+        if !enabled {
+            updateStatusIcon(recording: false)
+            if let voiceTrigger {
+                Task { @MainActor in voiceTrigger.onTriggerInterrupted() }
+            }
         }
     }
 
@@ -834,7 +867,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         cachedFrontBundleID = app?.bundleIdentifier
     }
 
-    @objc private func syncMenuStates() {
+    @objc private func userDefaultsDidChange() {
+        // UserDefaults.didChangeNotification is delivered synchronously on the
+        // posting thread — which can be inside the event-tap callback (e.g. a
+        // HotkeyRecorder commit writing hotkeySettings.v1) or a background
+        // queue. Hop to the main queue so menu/NSMenu/KeyMonitor work never
+        // runs in the tap callback path or off the main thread.
+        DispatchQueue.main.async { [weak self] in self?.syncMenuStates() }
+    }
+
+    private func syncMenuStates() {
         // Mirror runtime state from UserDefaults whenever any preference changes
         // (SwiftUI Settings writes directly via @AppStorage). The toggle rows use
         // custom views that read live state at draw time, so they refresh on the
@@ -866,8 +908,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardToggleView?.updateHotkey(HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString())
         rebuildPersonasMenu()
 
-        // Voice trigger key may have changed — clear any stuck trigger state.
-        keyMonitor.resetAllInputState(reason: .settingsReload)
+        // Reset input state only when hotkey / voice-trigger / key-mapping
+        // configuration actually changed (it can invalidate held-trigger and
+        // repeat-timer state). Unrelated defaults writes must not interrupt an
+        // in-flight dictation session or clear live modifier tracking.
+        let config = InputConfigSnapshot.current()
+        if config != lastInputConfigSnapshot {
+            lastInputConfigSnapshot = config
+            keyMonitor.resetAllInputState(reason: .settingsReload)
+        }
     }
 
     private func rebuildPersonasMenu() {
@@ -880,9 +929,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Fast path: if persona identity + title + hotkey are unchanged, just redraw
         // existing views (preserves NSMenu tracking state while the submenu is open).
+        // Title and hotkey must be compared too: the views render immutable copies,
+        // so a renamed persona or re-recorded hotkey needs a full rebuild.
         let existing = personasMenu.items.compactMap { $0.view as? PersonaMenuItemView }
         if existing.count == personas.count,
-           zip(existing, personas).allSatisfy({ $0.personaId == $1.id }) {
+           zip(existing, personas).allSatisfy({ view, persona in
+               view.personaId == persona.id
+                   && view.title == persona.name
+                   && view.hotkeyText == HotkeySettingsStore.shared
+                       .personaHotkey(personaId: persona.id)?
+                       .displayString()
+           }) {
             existing.forEach { $0.needsDisplay = true }
             return
         }
