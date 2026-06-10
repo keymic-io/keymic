@@ -37,6 +37,10 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else { throw VoiceError.microphoneAccessDenied(status) }
 
+        // Self-heal: a second entry point (e.g. the selected-text editor bypassing the
+        // session host) may still have our tap installed — installing twice throws an
+        // Obj-C NSException and crashes. Mirror SpeechAnalyzerSpeechEngine.startSession.
+        teardown()
         sessionGeneration &+= 1
         capture.reset()
         let input = engine.inputNode
@@ -60,16 +64,27 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         teardown()
         let samples = capture.snapshot()
         let gen = sessionGeneration
-        guard !samples.isEmpty else { onFinalResult?(""); return }
-        let rec = recognizer
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var out = [CChar](repeating: 0, count: 8192)
+        guard !samples.isEmpty else {
+            // 与正常路径保持异步语义:同步回调会在 onTriggerUp 的栈内跑完
+            // handleFinal → cleanup,之后才设 grace timer,留下孤儿 timer 把
+            // 触发键吞掉 2 秒。
+            DispatchQueue.main.async { [weak self] in
+                guard let self, gen == self.sessionGeneration else { return }
+                self.onFinalResult?("")
+            }
+            return
+        }
+        // 强持有 self:deinit 会 sherpa_destroy(recognizer),与在途 sherpa_decode
+        // 并发即 native UAF。块为一次性,结束后释放引用,不构成泄漏环。
+        DispatchQueue.global(qos: .userInitiated).async {
+            // 输出缓冲按 6 分钟录音上限放大(对应 SherpaBridge.c 的 max_new_tokens)。
+            var out = [CChar](repeating: 0, count: 32768)
             let rc = samples.withUnsafeBufferPointer { buf in
-                sherpa_decode(rec, buf.baseAddress, Int32(buf.count), 16000, &out, Int32(out.count))
+                sherpa_decode(self.recognizer, buf.baseAddress, Int32(buf.count), 16000, &out, Int32(out.count))
             }
             let text = String(cString: out)
             DispatchQueue.main.async {
-                guard let self, gen == self.sessionGeneration else { return }   // 丢弃 stale
+                guard gen == self.sessionGeneration else { return }   // 丢弃 stale
                 if rc == 0 { self.onFinalResult?(text) }
                 else {
                     logger.error("onnx decode failed rc=\(rc)")

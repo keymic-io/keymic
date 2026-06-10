@@ -64,7 +64,12 @@ void *sherpa_create_funasr(const char *encoder_adaptor, const char *llm,
     config.model_config.funasr_nano.llm             = llm;
     config.model_config.funasr_nano.embedding       = embedding;
     config.model_config.funasr_nano.tokenizer       = tokenizer_dir;
-    config.model_config.funasr_nano.max_new_tokens  = 200;
+    // 按应用录音上限(6 分钟)定容:360s × ~7 token/s(快速中文 ~5 字/s ≈ 5 token/s,
+    // 英文 wordpiece 更碎)≈ 2520,取 3000 留余量。max_new_tokens 只是生成上限,
+    // greedy 解码遇 EOS 即停,大 cap 对短语音零成本;200 会把 ~200 字后的内容静默截断。
+    // (该字段是创建期配置,无法按单次解码的音频时长动态调整;Swift 侧输出缓冲
+    //  已同步放大,见 ONNXSpeechEngine.endAudio。)
+    config.model_config.funasr_nano.max_new_tokens  = 3000;
     config.model_config.funasr_nano.temperature     = 0.0f;   // 贪心确定性
     config.model_config.funasr_nano.top_p           = 1.0f;
     config.model_config.funasr_nano.seed            = 42;
