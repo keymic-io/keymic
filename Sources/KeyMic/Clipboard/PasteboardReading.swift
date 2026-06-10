@@ -69,6 +69,18 @@ final class SystemPasteboard: PasteboardReading {
         return pasteboard.changeCount
     }
 
+    /// Writes secret text alongside the `org.nspasteboard` concealed/transient marker
+    /// types so third-party clipboard managers (Maccy, Paste, …) skip persisting it.
+    /// Used by the Vault paste path. Returns the new changeCount.
+    @discardableResult
+    func writeConcealed(_ text: String) -> Int {
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+        pasteboard.setData(Data(), forType: NSPasteboard.PasteboardType(ConfidentialClipboardType.concealed))
+        pasteboard.setData(Data(), forType: NSPasteboard.PasteboardType(ConfidentialClipboardType.transient))
+        return pasteboard.changeCount
+    }
+
     /// Writes one or more typed payloads atomically. Returns the new changeCount.
     @discardableResult
     func write(payloads: [(type: String, data: Data)]) -> Int {

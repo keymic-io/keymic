@@ -114,7 +114,10 @@ final class ClipboardStore {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
-        if let existing = findExisting(text: trimmed) {
+        // Dedup on the *raw* text — the same canonical form that is stored. Looking up
+        // a trimmed variant while storing raw made "hello\n" / "hello" bump each other
+        // and let true duplicates accumulate. (add(richText:) dedups on raw too.)
+        if let existing = findExisting(text: text) {
             let previousDate = existing.createdAt
             existing.createdAt = Date()
             if !saveDedup(newest: existing) {

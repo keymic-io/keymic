@@ -23,6 +23,8 @@ final class ClipboardController {
 
     private static let pasteSourceID: CGEventSourceStateID = .combinedSessionState
 
+    private var observedPreferences = ObservedPreferences.current()
+
     init() {
         self.store = ClipboardStore.makeDefault(maxHistory: ClipboardPreferences.maxHistory)
         self.pasteboard = SystemPasteboard()
@@ -165,21 +167,62 @@ final class ClipboardController {
     }
 
     /// Hook for other components (e.g. TextInjector) that write to the pasteboard themselves
-    /// and want their writes excluded from clipboard history.
+    /// and want their writes excluded from clipboard history. Preferred variant: the writer
+    /// passes the changeCount its own write returned, so a third-party process claiming the
+    /// pasteboard between the write and this call can't get its copy wrongly excluded.
+    func markPasteboardWrite(_ changeCount: Int) {
+        monitor.markIgnoredChangeCount(changeCount)
+    }
+
+    /// Legacy variant for writers that only expose the written text (SelectionTextProvider,
+    /// OutputRouter): falls back to reading the pasteboard's current changeCount.
     func markPasteboardWrite(_ text: String) {
         monitor.markIgnoredChangeCount(pasteboard.changeCount)
     }
 
+    /// Clipboard-relevant UserDefaults values, snapshotted so `preferencesChanged`
+    /// can ignore the (very chatty) `UserDefaults.didChangeNotification` unless one
+    /// of these actually changed.
+    private struct ObservedPreferences: Equatable {
+        var enabled: Bool
+        var maxHistory: Int
+        var cleanupMode: CleanupMode
+        var cleanupDays: Int
+
+        static func current() -> ObservedPreferences {
+            ObservedPreferences(
+                enabled: ClipboardPreferences.enabled,
+                maxHistory: ClipboardPreferences.maxHistory,
+                cleanupMode: ClipboardPreferences.cleanupMode,
+                cleanupDays: ClipboardPreferences.cleanupDays
+            )
+        }
+    }
+
     @objc private func preferencesChanged() {
-        store.updateMaxHistory(ClipboardPreferences.maxHistory)
-        store.applyCleanup()
-        let enabled = ClipboardPreferences.enabled
-        Self.logger.debug("preferencesChanged — clipboard enabled=\(enabled, privacy: .public)")
-        if enabled {
-            monitor.start()
-        } else {
-            monitor.stop()
-            panel.dismiss()
+        // UserDefaults.didChangeNotification fires for *every* defaults write (voice/LLM
+        // settings, panel size, …). Only react when a clipboard-relevant key changed —
+        // otherwise each unrelated write would run a fetchAll + truncate + save here.
+        let current = ObservedPreferences.current()
+        guard current != observedPreferences else { return }
+        let previous = observedPreferences
+        observedPreferences = current
+
+        if current.maxHistory != previous.maxHistory
+            || current.cleanupMode != previous.cleanupMode
+            || current.cleanupDays != previous.cleanupDays {
+            store.updateMaxHistory(current.maxHistory)
+            store.applyCleanup()
+        }
+
+        if current.enabled != previous.enabled {
+            Self.logger.debug("preferencesChanged — clipboard enabled=\(current.enabled, privacy: .public)")
+            if current.enabled {
+                monitor.start()
+            } else {
+                monitor.stop()
+                panel.dismiss()
+            }
         }
     }
 
@@ -206,8 +249,12 @@ final class ClipboardController {
     }
 
     private func pasteVault(_ item: VaultItem) {
+        // Drain any not-yet-polled user copy into history before this flow starts
+        // rewriting the pasteboard (the own-write ignore mark would skip it forever).
+        monitor.capturePendingChange()
         // Snapshot the current pasteboard *now*, before the biometric prompt.
-        let savedItems = pasteboard.copyItems()
+        let preRevealSnapshot = pasteboard.copyItems()
+        let preRevealChangeCount = pasteboard.changeCount
         // `vaultStore.reveal` awaits a TouchID/passcode prompt. Running it inside a
         // Task (rather than a synchronous call) keeps the main thread — and the
         // `CGEvent` tap on its run loop — responsive while the prompt is up; a prior
@@ -223,7 +270,19 @@ final class ClipboardController {
                 self.panel.dismiss()
                 return
             }
-            let writeChangeCount = self.pasteboard.write(plain)
+            // The biometric prompt can stay up for many seconds. If the user copied
+            // something while it was showing, restore *that* afterwards — not the
+            // stale pre-prompt snapshot, which would silently destroy their copy.
+            let savedItems: [NSPasteboardItem]?
+            if self.pasteboard.changeCount != preRevealChangeCount {
+                self.monitor.capturePendingChange()
+                savedItems = self.pasteboard.copyItems()
+            } else {
+                savedItems = preRevealSnapshot
+            }
+            // Concealed write: declares org.nspasteboard marker types so third-party
+            // clipboard managers don't persist the revealed secret.
+            let writeChangeCount = self.pasteboard.writeConcealed(plain)
             self.monitor.markIgnoredChangeCount(writeChangeCount)
             self.panel.dismiss()
             self.activateTargetAndSendCommandV()
@@ -254,6 +313,7 @@ final class ClipboardController {
     }
 
     private func pasteText(_ item: ClipboardItem) {
+        monitor.capturePendingChange()
         store.bumpToTop(id: item.id)
         let cc = pasteboard.write(item.text)
         monitor.markIgnoredChangeCount(cc)
@@ -274,6 +334,7 @@ final class ClipboardController {
             return
         }
         let format: ImageFormat = url.pathExtension.lowercased() == "tiff" ? .tiff : .png
+        monitor.capturePendingChange()
         store.bumpToTop(id: item.id)
         let cc = pasteboard.write(payloads: [(type: format.pasteboardType, data: data)])
         monitor.markIgnoredChangeCount(cc)
@@ -288,6 +349,7 @@ final class ClipboardController {
             return
         }
         let url = URL(fileURLWithPath: path)
+        monitor.capturePendingChange()
         store.bumpToTop(id: item.id)
         let cc = pasteboard.write(fileURL: url)
         monitor.markIgnoredChangeCount(cc)
@@ -305,6 +367,7 @@ final class ClipboardController {
             (type: format.pasteboardType, data: blob)
         ]
         payloads.append((type: "public.utf8-plain-text", data: Data(item.text.utf8)))
+        monitor.capturePendingChange()
         store.bumpToTop(id: item.id)
         let cc = pasteboard.write(payloads: payloads)
         monitor.markIgnoredChangeCount(cc)
@@ -328,9 +391,19 @@ final class ClipboardController {
         }
         let text = item.text
         let bundleID = item.sourceBundleID
+        let itemID = item.id
         scanner.scan(text) { [weak self] match in
             guard let self, let match else { return }
-            _ = self.vaultStore.ingest(match: match, copiedFrom: bundleID)
+            guard self.vaultStore.ingest(match: match, copiedFrom: bundleID) != nil else {
+                // Keychain write failed — keep the history row rather than losing the
+                // user's copy entirely (plaintext retention is the lesser evil here).
+                Self.logger.error(
+                    "vault ingest failed — keeping clipboard item \(itemID.uuidString, privacy: .public) in history")
+                return
+            }
+            // Divert, don't copy: once the secret is safely in the Keychain, remove
+            // the plaintext row from the (unencrypted) SwiftData history store.
+            self.store.delete(id: itemID)
             self.overlayPanel?.showSecretToast(ruleName: match.rule.description)
         }
     }

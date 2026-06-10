@@ -98,6 +98,22 @@ struct ClipboardStoreTestRunner {
         wipeStore.deleteAllClipboardItems()
         expect(wipeStore.fetchAll().isEmpty, "wipe removed all ClipboardItem rows")
 
+        // Dedup key matches the stored (raw) text: "hello\n" and "hello" are
+        // distinct entries, and re-copying "hello\n" bumps the right row.
+        let rawStore = ClipboardStore(container: container, maxHistory: 10)
+        rawStore.add(text: "hello\n", sourceBundleID: nil, sourceAppName: nil)
+        rawStore.add(text: "hello", sourceBundleID: nil, sourceAppName: nil)
+        expect(rawStore.fetchAll().count == 2, "trailing-newline variant is a distinct entry")
+        let bareRow = rawStore.fetchAll().first(where: { $0.text == "hello" })!
+        let bareDate = bareRow.createdAt
+        Thread.sleep(forTimeInterval: 0.01)
+        rawStore.add(text: "hello\n", sourceBundleID: nil, sourceAppName: nil)
+        expect(rawStore.fetchAll().count == 2, "raw duplicate dedups instead of inserting")
+        expect(rawStore.fetchAll().first!.text == "hello\n", "the raw-equal row was bumped")
+        expect(
+            rawStore.fetchAll().first(where: { $0.text == "hello" })!.createdAt == bareDate,
+            "the trimmed-equal row was NOT bumped")
+
         print("ClipboardStoreTests passed")
     }
 

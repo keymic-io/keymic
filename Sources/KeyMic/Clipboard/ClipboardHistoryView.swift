@@ -73,6 +73,10 @@ struct ClipboardHistoryView: View {
         filtered = computeFiltered()
         let visibleIDs = filtered.all.map(\.id)
         selectionBridge.visibleOrderedIDs = visibleIDs
+        // Mirror the section sizes so ClipboardPanel.sendEvent can decide whether an
+        // ⌥-shortcut has an actual target while the user is typing in the search field.
+        focus.visiblePinnedCount = filtered.pinned.count
+        focus.visibleHistoryCount = filtered.history.count
 
         switch mode {
         case .selectFirst:
@@ -438,9 +442,15 @@ struct ClipboardHistoryView: View {
         onDelete(item.id)
     }
 
-    private func triggerTogglePin() {
-        guard let id = primaryID else { return }
+    @discardableResult
+    private func triggerTogglePin() -> Bool {
+        guard let id = primaryID else { return false }
         onTogglePin(id)
+        // togglePin mutates isPinned/pinnedAt in place; the @Query array's membership,
+        // order, and object identities are all unchanged, so `.onChange(of: items)`
+        // never fires — re-partition Pinned/History explicitly.
+        refreshFiltered(selection: .pruneInvisible)
+        return true
     }
 
     private func extendRange(to targetID: UUID) {
@@ -456,14 +466,18 @@ struct ClipboardHistoryView: View {
         selectionBridge.selectedIDs.formUnion(ids)
     }
 
-    private func triggerQuickPaste(_ index: Int) {
-        guard filtered.history.indices.contains(index) else { return }
+    @discardableResult
+    private func triggerQuickPaste(_ index: Int) -> Bool {
+        guard filtered.history.indices.contains(index) else { return false }
         onPaste(filtered.history[index])
+        return true
     }
 
-    private func triggerPinnedQuickPaste(_ index: Int) {
-        guard filtered.pinned.indices.contains(index) else { return }
+    @discardableResult
+    private func triggerPinnedQuickPaste(_ index: Int) -> Bool {
+        guard filtered.pinned.indices.contains(index) else { return false }
         onPaste(filtered.pinned[index])
+        return true
     }
 }
 
@@ -684,10 +698,13 @@ private struct KeyEventMonitor: NSViewRepresentable {
     let onArrowDown: () -> Void
     let onReturn: () -> Void
     let onCommandDelete: () -> Void
-    let onTogglePin: () -> Void
+    /// ⌥-shortcut handlers return whether they actually executed, so the monitor can
+    /// pass the keystroke through to a focused text field when there was no target
+    /// (e.g. ⌥E dead key / ⌥A=å typed into the search field).
+    let onTogglePin: () -> Bool
     let onEscape: () -> Void
-    let onQuickPaste: (Int) -> Void
-    let onPinnedQuickPaste: (Int) -> Void
+    let onQuickPaste: (Int) -> Bool
+    let onPinnedQuickPaste: (Int) -> Bool
 
     func makeNSView(context: Context) -> NSView {
         let view = MonitorView()
@@ -718,10 +735,10 @@ private struct KeyEventMonitor: NSViewRepresentable {
         var onArrowDown: (() -> Void)?
         var onReturn: (() -> Void)?
         var onCommandDelete: (() -> Void)?
-        var onTogglePin: (() -> Void)?
+        var onTogglePin: (() -> Bool)?
         var onEscape: (() -> Void)?
-        var onQuickPaste: ((Int) -> Void)?
-        var onPinnedQuickPaste: ((Int) -> Void)?
+        var onQuickPaste: ((Int) -> Bool)?
+        var onPinnedQuickPaste: ((Int) -> Bool)?
 
         private var monitor: Any?
 
@@ -747,19 +764,25 @@ private struct KeyEventMonitor: NSViewRepresentable {
                 && !event.modifierFlags.contains(.control)
                 && !event.modifierFlags.contains(.shift)
 
+            // While the user is typing in a text field (the search box is focused as
+            // soon as the panel opens), only swallow an ⌥-shortcut when it actually
+            // fires; otherwise let the field handle it (⌥-letter composed characters,
+            // dead keys on international layouts).
+            let typingInText = window.firstResponder is NSText
+
             if isAltOnly, event.keyCode == 0x23 {
-                onTogglePin?()
-                return nil
+                let executed = onTogglePin?() ?? false
+                return (executed || !typingInText) ? nil : event
             }
 
             if isAltOnly, let pinIndex = pinnedQuickPasteIndex(for: event.keyCode) {
-                onPinnedQuickPaste?(pinIndex)
-                return nil
+                let executed = onPinnedQuickPaste?(pinIndex) ?? false
+                return (executed || !typingInText) ? nil : event
             }
 
             if isAltOnly, let index = quickPasteIndex(for: event.keyCode) {
-                onQuickPaste?(index)
-                return nil
+                let executed = onQuickPaste?(index) ?? false
+                return (executed || !typingInText) ? nil : event
             }
 
             switch (event.keyCode, isCmd) {
