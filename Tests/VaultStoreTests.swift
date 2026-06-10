@@ -21,9 +21,19 @@ struct VaultStoreTestRunner {
         let match = SecretMatch(rule: rule, secret: "AKIAABCDEFGHIJKLMNOP")
         let v = store.ingest(match: match, copiedFrom: "com.example.app")!
         expect(store.fetchAll().count == 1, "one vault item after ingest")
-        expect(v.maskedPreview == "AKIA****MNOP", "mask formatted")
+        expect(v.maskedPreview == "AK****OP", "mask keeps only 2+2 chars")
         let plain = try await store.reveal(v)
         expect(plain == "AKIAABCDEFGHIJKLMNOP", "reveal returns plaintext")
+
+        // secretHash is salted: not the plain SHA-256 of the secret, and the salt
+        // is persisted in the keychain (not the SwiftData store).
+        let salt = try backend.readNonInteractive(account: VaultConfig.hashSaltAccount)
+        expect(!salt.isEmpty, "hash salt persisted to keychain")
+        expect(v.secretHash == VaultMask.saltedHashHex("AKIAABCDEFGHIJKLMNOP", salt: salt), "secretHash uses keychain salt")
+
+        // Short secrets get a fixed-length mask that leaks neither content nor length.
+        expect(VaultMask.mask("short") == "********", "short secret mask is fixed length")
+        expect(VaultMask.mask("0123456789a") == "********", "sub-minimum secret mask is fixed length")
 
         let firstCopiedAt = v.copiedAt
         Thread.sleep(forTimeInterval: 0.01)

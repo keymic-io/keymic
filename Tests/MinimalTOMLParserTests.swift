@@ -71,6 +71,35 @@ struct MinimalTOMLParserTestRunner {
             expect(g.trimmingCharacters(in: .whitespaces) == "2", "secretGroup bare literal preserved")
         } else { fatalError("secretGroup not bareLiteral") }
 
+        // TOML spec: a newline immediately following the opening ''' is trimmed.
+        let multiline = MinimalTOMLParser.parseRules(
+            "[[rules]]\nid = \"ml\"\nregex = '''\nabc[0-9]+'''")
+        expect(multiline[0]["regex"]?.asString == "abc[0-9]+", "leading newline after ''' trimmed")
+        // …but only that newline — later lines keep their content verbatim.
+        let multiline2 = MinimalTOMLParser.parseRules(
+            "[[rules]]\nid = \"ml2\"\nregex = '''head\ntail'''")
+        expect(multiline2[0]["regex"]?.asString == "head\ntail", "interior newline preserved")
+
+        // Triple-quoted entries inside arrays don't leave residual quotes.
+        let tripleArray = MinimalTOMLParser.parseRules("""
+        [[rules]]
+        id = "ta"
+        regex = '''x'''
+        keywords = ['''foo''', "bar"]
+        """)
+        expect(tripleArray[0]["keywords"]?.asArray == ["foo", "bar"], "triple-quoted array element unwrapped")
+
+        // Unknown escapes in double-quoted strings keep the backslash verbatim.
+        let unknownEscape = MinimalTOMLParser.parseRules("""
+        [[rules]]
+        id = "esc"
+        regex = "\\\\Aanchor\\\\z"
+        """)
+        expect(unknownEscape[0]["regex"]?.asString == "\\Aanchor\\z", "known \\\\ escape decoded")
+        let rawUnknown = MinimalTOMLParser.parseRules(
+            "[[rules]]\nid = \"esc2\"\nregex = \"\\Aanchor\"")
+        expect(rawUnknown[0]["regex"]?.asString == "\\Aanchor", "unknown escape keeps backslash")
+
         print("MinimalTOMLParserTests passed")
     }
 

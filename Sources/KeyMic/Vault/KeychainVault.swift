@@ -91,6 +91,24 @@ struct KeychainVault: KeychainBackend {
         }
     }
 
+    func readNonInteractive(account: String) throws -> String {
+        var query = baseQuery(account: account)
+        query[kSecReturnData as String] = true
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        switch status {
+        case errSecSuccess:
+            guard let data = result as? Data, let s = String(data: data, encoding: .utf8) else {
+                throw KeychainError.decodeFailed
+            }
+            return s
+        case errSecItemNotFound:
+            throw KeychainError.missing
+        default:
+            throw KeychainError.readFailed(status)
+        }
+    }
+
     func delete(account: String) throws {
         let status = SecItemDelete(baseQuery(account: account) as CFDictionary)
         if status != errSecSuccess && status != errSecItemNotFound {

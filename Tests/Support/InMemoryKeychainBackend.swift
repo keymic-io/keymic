@@ -8,5 +8,9 @@ final class InMemoryKeychainBackend: KeychainBackend {
         guard let v = store[account] else { throw KeychainError.missing }
         return v
     }
+    func readNonInteractive(account: String) throws -> String {
+        guard let v = store[account] else { throw KeychainError.missing }
+        return v
+    }
     func delete(account: String) throws { store.removeValue(forKey: account) }
 }
