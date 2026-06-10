@@ -237,11 +237,22 @@ final class OutputRouter {
         onMarkIgnored(text)
     }
 
-    /// Restores focus to the originating app, yields one runloop tick to let it settle.
-    /// Used by async route() paths.
+    /// Restores focus to the originating app and waits (bounded) until it is actually
+    /// frontmost — activation takes tens of milliseconds and a single runloop yield
+    /// routinely observed the OLD frontmost app, sending AX reads/writes to the wrong
+    /// target. Polls every 20 ms up to 500 ms; on timeout falls through so callers'
+    /// existing fallback paths (e.g. clipboard) take over. Used by async route() paths.
     func activateOriginatingApp(_ app: NSRunningApplication?) async {
-        activateOriginatingAppSync(app)
-        await Task.yield()
+        guard let app, !app.isTerminated else { return }
+        app.activate(options: [])
+        let deadline = Date().addingTimeInterval(0.5)
+        while Date() < deadline {
+            if workspace.frontmostApplication?.processIdentifier == app.processIdentifier {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        routerLogger.debug("activateOriginatingApp: \(app.bundleIdentifier ?? "?", privacy: .public) not frontmost after 500ms")
     }
 
     /// Sync version for callers (like ClipboardController) that already provide their own

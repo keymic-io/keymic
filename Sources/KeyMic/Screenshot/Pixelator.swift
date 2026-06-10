@@ -17,9 +17,11 @@ struct Pixelator {
     static func blur(image: CGImage, radius: CGFloat = 10) -> CGImage? {
         let ciImage = CIImage(cgImage: image)
         guard let filter = CIFilter(name: "CIGaussianBlur") else { return nil }
-        filter.setValue(ciImage, forKey: kCIInputImageKey)
+        // Clamp edges before blurring so the kernel doesn't mix in transparent
+        // pixels outside the image, which darkens/fades a band along the borders.
+        filter.setValue(ciImage.clampedToExtent(), forKey: kCIInputImageKey)
         filter.setValue(radius, forKey: kCIInputRadiusKey)
-        guard let output = filter.outputImage else { return nil }
+        guard let output = filter.outputImage?.cropped(to: ciImage.extent) else { return nil }
         return ciContext.createCGImage(output, from: ciImage.extent)
     }
 

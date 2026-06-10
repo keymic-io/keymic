@@ -168,8 +168,23 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
 
     private func saveAndDismiss() {
         guard let img = renderFinalImage() else { cancel(); return }
+        // Overlay panels live at CGShieldingWindowLevel — above the NSOpenPanel.
+        // Temporarily drop them to .normal (same pattern as cancel()) so the folder
+        // picker is visible and interactive, then restore if the user cancels.
+        let savedLevels: [(NSPanel, NSWindow.Level)] = overlayPanels.map { ($0, $0.level) }
+        let savedToolbarLevel = toolbarPanel?.level
+        for p in overlayPanels { p.level = .normal }
+        toolbarPanel?.level = .normal
+        NSApp.activate(ignoringOtherApps: true)
         exporter.saveWithFolderPicker(img, from: nil) { [weak self] ok in
-            if ok { self?.dismissAll() }
+            guard let self = self else { return }
+            if ok {
+                self.dismissAll()
+            } else {
+                // User cancelled the picker — restore overlay panels and stay in editor.
+                for (p, lvl) in savedLevels { p.level = lvl }
+                if let lvl = savedToolbarLevel { self.toolbarPanel?.level = lvl }
+            }
         }
     }
 
