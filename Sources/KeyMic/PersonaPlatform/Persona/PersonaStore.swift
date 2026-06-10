@@ -80,7 +80,8 @@ final class PersonaStore {
             contextSources: source.contextSources,
             builtIn: false,
             createdAt: now,
-            updatedAt: now
+            updatedAt: now,
+            injectionStrategy: source.injectionStrategy
         )
         personas.append(copy)
         save()
@@ -113,8 +114,25 @@ final class PersonaStore {
                 save()
             }
         } catch {
-            logger.error("load failed: \(error.localizedDescription, privacy: .public). Re-seeding.")
+            logger.error("load failed: \(error.localizedDescription, privacy: .public). Backing up store and re-seeding.")
+            backUpCorruptStore()
             seedFirstLaunch()
+        }
+    }
+
+    /// A decode failure must not silently destroy the user's custom personas:
+    /// `seedFirstLaunch()` overwrites personas.json. Move the unreadable file aside
+    /// (timestamped, so repeated failures never clobber an earlier backup) first.
+    private func backUpCorruptStore() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        let backupURL = storeURL.appendingPathExtension("bak-\(formatter.string(from: Date()))")
+        do {
+            try FileManager.default.moveItem(at: storeURL, to: backupURL)
+            logger.error("corrupt persona store backed up to \(backupURL.lastPathComponent, privacy: .public)")
+        } catch {
+            logger.error("failed to back up corrupt persona store: \(error.localizedDescription, privacy: .public)")
         }
     }
 

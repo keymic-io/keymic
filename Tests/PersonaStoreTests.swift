@@ -79,6 +79,12 @@ struct PersonaStoreTestRunner {
         expect(!dup.builtIn, "duplicate is not built-in")
         expect(dup.name.contains("Auto Translate"), "duplicate name derived from source")
 
+        // duplicate: injectionStrategy is preserved (was silently reset to
+        // .replaceFocusedText — same class of bug as the mergeWithBuiltIns one)
+        let cliDup = store3.duplicate(id: "builtin-cli")!
+        expect(cliDup.injectionStrategy == .runShell(commandTemplate: "{query}"),
+               "duplicate preserves source injectionStrategy")
+
         // persona(forHotkey:)
         var withHotkey = dup
         withHotkey.hotkey = "alt+q"
@@ -89,8 +95,33 @@ struct PersonaStoreTestRunner {
                "missing hotkey returns nil")
 
         testBuiltinCliInjectionStrategyPromotedOnMerge()
+        testCorruptStoreBackedUpBeforeReseed()
 
         print("✅ PersonaStoreTests passed")
+    }
+
+    /// A decode failure must back up the unreadable personas.json (timestamped .bak)
+    /// before re-seeding overwrites it — user-defined personas must not be destroyed.
+    static func testCorruptStoreBackedUpBeforeReseed() {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymic-persona-corrupt-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let storeURL = tmpDir.appendingPathComponent("personas.json")
+
+        let corrupt = #"{"version": 1, "personas": [{"id": "user-x", BROKEN"#
+        try? corrupt.write(to: storeURL, atomically: true, encoding: .utf8)
+
+        let store = PersonaStore(storeURL: storeURL)
+        expect(store.personas.count == 6, "corrupt store re-seeds built-ins")
+
+        let siblings = (try? FileManager.default.contentsOfDirectory(atPath: tmpDir.path)) ?? []
+        let backups = siblings.filter { $0.hasPrefix("personas.json.bak-") }
+        expect(backups.count == 1, "corrupt store file backed up before re-seed")
+        if let backup = backups.first {
+            let backedUp = try? String(contentsOf: tmpDir.appendingPathComponent(backup), encoding: .utf8)
+            expect(backedUp == corrupt, "backup preserves original corrupt bytes")
+        }
     }
 
     /// Existing installs have `builtin-cli.injectionStrategy = .replaceFocusedText` on disk

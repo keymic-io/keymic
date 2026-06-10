@@ -17,10 +17,6 @@ final class PersonaEngine {
         self.outputRouter = outputRouter
     }
 
-    func cancel() {
-        llmClient.cancel()
-    }
-
     @discardableResult
     func run(
         _ invocation: Invocation,
@@ -55,7 +51,10 @@ final class PersonaEngine {
             sources: invocation.persona.contextSources
         )
 
-        try Task.checkCancellation()
+        // Map cancellation to InvocationError.cancelled (not a bare CancellationError):
+        // VoiceTrigger's generic catch falls back to injecting the raw transcript, which
+        // must never happen for a cancelled run.
+        if Task.isCancelled { throw InvocationError.cancelled }
 
         let refined: String
         do {
@@ -66,12 +65,16 @@ final class PersonaEngine {
             )
         } catch is CancellationError {
             throw InvocationError.cancelled
+        } catch let error as URLError where error.code == .cancelled {
+            // URLSession surfaces Swift Task cancellation as URLError(.cancelled),
+            // NOT CancellationError — unify so callers see a single cancel signal.
+            throw InvocationError.cancelled
         } catch {
             logger.error("LLM request failed: \(error.localizedDescription, privacy: .public)")
             throw InvocationError.llmFailed(underlying: error)
         }
 
-        try Task.checkCancellation()
+        if Task.isCancelled { throw InvocationError.cancelled }
 
         let finalText = refined.isEmpty ? transcript : refined
         let routeResult = await outputRouter.route(

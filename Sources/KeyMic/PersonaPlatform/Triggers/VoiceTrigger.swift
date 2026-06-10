@@ -67,7 +67,8 @@ final class VoiceTrigger: SpeechClient {
 
     func onTriggerInterrupted() {
         guard isActive else { return }
-        engine.cancel()
+        // Structured cancellation: cancelling runTask propagates into
+        // PersonaEngine.run / URLSession (mapped to InvocationError.cancelled).
         runTask?.cancel()
         runTask = nil
         session?.cancel()
@@ -79,11 +80,18 @@ final class VoiceTrigger: SpeechClient {
     }
 
     func handlePartial(_ text: String) {
+        // Drop callbacks that arrive after the session ended (grace timeout /
+        // interruption) — a stale partial must not overwrite the overlay.
+        guard session != nil else { return }
         lastPartial = text
         overlayPanel.updateText(text)
     }
 
     func handleFinal(_ text: String) {
+        // A final arriving after the session ended (e.g. a slow batch engine
+        // delivering past the 2s grace timeout) must be dropped, otherwise it
+        // would trigger a second finish() and inject the same utterance twice.
+        guard session != nil else { return }
         lastPartial = text
         isRecording = false
         finalResultTimer?.invalidate()
@@ -104,6 +112,9 @@ final class VoiceTrigger: SpeechClient {
     }
 
     private func finish() {
+        // One-shot: a second finish() (late final racing the grace timer) would
+        // overwrite runTask and run two concurrent LLM runs → double injection.
+        guard runTask == nil else { return }
         finalResultTimer?.invalidate()
         finalResultTimer = nil
 
@@ -132,6 +143,11 @@ final class VoiceTrigger: SpeechClient {
         )
 
         overlayPanel.showRefining()
+        // Release the speech session BEFORE starting the run: this detaches us from
+        // the session host so any late final/partial from a slow engine can no longer
+        // re-enter handleFinal/handlePartial while the LLM run is in flight.
+        session?.release()
+        session = nil
         runTask = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -161,6 +177,13 @@ final class VoiceTrigger: SpeechClient {
                     self.overlayPanel.dismiss()
                 }
             } catch {
+                // A cancelled run must never fall back to injecting the raw
+                // transcript — focus may have moved since. Covers any cancellation
+                // shape not already mapped to InvocationError.cancelled upstream.
+                guard !Task.isCancelled else {
+                    await MainActor.run { self.overlayPanel.dismiss() }
+                    return
+                }
                 logger.error("Persona run failed: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     self.overlayPanel.showMessage(String(localized: "Refine failed: \(error.localizedDescription)"))
