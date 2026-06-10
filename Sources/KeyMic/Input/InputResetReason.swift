@@ -10,6 +10,7 @@ enum InputResetReason: String, CustomStringConvertible {
     case tapHealthCheckReenable
     case secureInputEnter
     case settingsReload
+    case hotkeyRecorderStart
     case stop
 
     var description: String { rawValue }

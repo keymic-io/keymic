@@ -18,6 +18,11 @@ final class KeyMonitor {
     /// O(1) lookup of whether the voice state machine is non-idle. Used by
     /// the extraneous-key branch so it doesn't need to track session state.
     var isVoiceActive: (() -> Bool)?
+    /// O(1) lookup of the user-level "Voice Enabled" toggle. When it returns
+    /// false, voice-trigger and persona push-to-talk *activation* must not
+    /// swallow events — fn keeps its system behavior and persona hotkeys pass
+    /// through. Deactivation of an already-running session stays ungated.
+    var isVoiceEnabled: (() -> Bool)?
     var onClipboardHotkey: (() -> Void)?
     var onVaultHotkey: (() -> Void)?
     var onClipboardQuickPaste: ((Int) -> Void)?
@@ -47,6 +52,17 @@ final class KeyMonitor {
     /// would happily reinstall a tap on a stopped monitor.
     private var isRunning = false
     private var state = InputState()
+    /// After any `resetAllInputState` the tracked modifier sets are empty while
+    /// keys may physically still be held, so per-key toggle tracking can't be
+    /// trusted. While set, `updateTrackedModifierState`/`isModifierKeyDown` use
+    /// recovery semantics (mask bit present ⇒ insert); cleared once a
+    /// flagsChanged event reports no live modifiers at all (sets and hardware
+    /// agree again). Starts `true` because launch has the same unknown-physical-
+    /// state premise as a reset.
+    private var isResetRecoveryMode = true
+    /// Tracks the recording-session edge so `handle()` resets input state
+    /// exactly once when a `HotkeyRecorder` starts capturing.
+    private var wasHotkeyRecording = false
     /// When `true`, app-level hotkey dispatch (clipboard/vault/settings/screenshot/persona/action/voice trigger)
     /// is bypassed. Set on Secure Input enter, cleared on Secure Input exit.
     /// Physical events still pass through unchanged.
@@ -112,7 +128,12 @@ final class KeyMonitor {
             options: .defaultTap,
             eventsOfInterest: mask,
             callback: { _, type, event, refcon -> Unmanaged<CGEvent>? in
-                guard let refcon else { return Unmanaged.passRetained(event) }
+                // Pass-through paths must return the incoming event UNRETAINED:
+                // the caller only balances the retain it already holds when the
+                // same event comes back; an extra retain here leaks one CGEvent
+                // per keystroke. Only newly-created replacement events are
+                // returned retained (+1 ownership transfer).
+                guard let refcon else { return Unmanaged.passUnretained(event) }
                 let monitor = Unmanaged<KeyMonitor>.fromOpaque(refcon).takeUnretainedValue()
                 return monitor.handle(type: type, event: event)
             },
@@ -199,6 +220,7 @@ final class KeyMonitor {
         let priorTimerCount = repeatTimers.count
         let prior = state.resetTransient()
         cancelAllRepeatTimers()
+        isResetRecoveryMode = true
 
         // Interrupt any active voice session — fn-held trigger OR persona-hotkey
         // push-to-talk. AppDelegate's cancelRecording is idempotent so a single
@@ -297,7 +319,21 @@ final class KeyMonitor {
                     DispatchQueue.main.async { [weak self] in self?.rebuildTap() }
                 }
             }
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
+        }
+
+        // Reset-recovery convergence: once the hardware reports no live
+        // modifiers, physical reality matches the (cleared) tracked sets and
+        // normal per-key toggle tracking is trustworthy again. Drop anything a
+        // recovery-mode insert may have wrongly left behind (releasing one of
+        // two same-mask keys is ambiguous while in recovery). `cgModifierMask`
+        // deliberately excludes `.maskAlphaShift` — that is a lock bit which
+        // stays set while Caps Lock is on, not a held-key indicator.
+        if isResetRecoveryMode, type == .flagsChanged,
+           event.flags.intersection(HotkeyConfig.cgModifierMask).isEmpty {
+            isResetRecoveryMode = false
+            state.heldModifiers.removeAll()
+            state.remappedKeysDown.removeAll()
         }
 
         // Recorder capture must take precedence over remap: the user is trying
@@ -306,12 +342,22 @@ final class KeyMonitor {
         // ordering the recorder either records the remapped key or never sees
         // the keystroke at all because remapIfNeeded swallowed it.
         if HotkeyRecorder.isAnyRecording {
+            // Everything below remapIfNeeded is skipped while recording, so
+            // modifier tracking and repeat timers would run blind: a source key
+            // held when recording starts (repeat timer live) releases into this
+            // branch and the timer would never stop. Reset once on entry —
+            // cancels timers and clears state we can no longer keep consistent.
+            if !wasHotkeyRecording {
+                wasHotkeyRecording = true
+                resetAllInputState(reason: .hotkeyRecorderStart)
+            }
             if let recorder = HotkeyRecorder.activeRecorder,
                recorder.handleCGEvent(type: type, event: event) {
                 return nil
             }
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
+        wasHotkeyRecording = false
 
         if let remapped = remapIfNeeded(type: type, event: event) {
             return remapped
@@ -354,12 +400,12 @@ final class KeyMonitor {
                 personaHotkeyKeyDown: state.personaHotkeyKeyDown
             ) {
                 DispatchQueue.main.async { [weak self] in self?.onExtraneousKeyDuringVoice?() }
-                return Unmanaged.passRetained(event)
+                return Unmanaged.passUnretained(event)
             }
             if dispatchFRowHotkey(keyCode: fKey, flags: event.flags, fnHeld: state.heldModifiers.contains(0x3F)) {
                 return nil
             }
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
 
         if type == .keyDown {
@@ -379,7 +425,7 @@ final class KeyMonitor {
                 personaHotkeyKeyDown: state.personaHotkeyKeyDown
             ) {
                 DispatchQueue.main.async { [weak self] in self?.onExtraneousKeyDuringVoice?() }
-                return Unmanaged.passRetained(event)
+                return Unmanaged.passUnretained(event)
             }
 
             if isClipboardPanelVisible?() == true,
@@ -462,8 +508,11 @@ final class KeyMonitor {
             // push-to-talk session whose keyUp might be eaten by Secure Input,
             // leaving a session logically stuck. Already-running sessions still
             // get their keyUp handled above — that path is intentionally ungated.
+            // Also gate on the user-level Voice Enabled toggle: with voice off,
+            // a persona hotkey must pass through instead of becoming a dead key.
             if !isAutoRepeat,
                !secureInputSuspended,
+               isVoiceEnabled?() ?? true,
                state.personaHotkeyKeyDown == nil,
                !state.triggerActive {
                 let hotkeys = HotkeySettingsStore.shared
@@ -489,14 +538,16 @@ final class KeyMonitor {
         // its release would prematurely stop the persona recording.
         let nowActive = computeTriggerActive(type: type, event: event)
         if state.personaHotkeyKeyDown != nil {
-            return Unmanaged.passRetained(event)
+            return Unmanaged.passUnretained(event)
         }
         // Voice trigger: gate *activation* on `!secureInputSuspended` so we
         // never start a recording session whose release keyUp could be lost,
-        // but always honour *deactivation* — if Secure Input toggles on while
+        // and on the Voice Enabled toggle so a disabled trigger key keeps its
+        // system behavior instead of being swallowed into a no-op session.
+        // Always honour *deactivation* — if Secure Input toggles on while
         // a session is already running, releasing the trigger must still stop
         // the recording cleanly.
-        if nowActive && !state.triggerActive && !secureInputSuspended {
+        if nowActive && !state.triggerActive && !secureInputSuspended && (isVoiceEnabled?() ?? true) {
             state.triggerActive = true
             DispatchQueue.main.async { [weak self] in self?.onTriggerDown?() }
             return nil
@@ -506,7 +557,7 @@ final class KeyMonitor {
             return nil
         }
 
-        return Unmanaged.passRetained(event)
+        return Unmanaged.passUnretained(event)
     }
 
     /// Match a synthetic F-row keyDown (built from a systemDefined media-key
@@ -637,7 +688,7 @@ final class KeyMonitor {
                     heldModifiers: &state.heldModifiers,
                     keyCode: keyCode,
                     eventFlags: event.flags,
-                    isResetRecoveryMode: false
+                    isResetRecoveryMode: isResetRecoveryMode
                 )
             }
         }
@@ -674,13 +725,23 @@ final class KeyMonitor {
             virtualKey: toKeyCode,
             keyDown: isKeyDown
         ) else {
-            return .some(Unmanaged.passRetained(event))
+            return .some(Unmanaged.passUnretained(event))
         }
         remapped.flags = remappedFlags(for: event.flags, mapping: mapping, isKeyDown: isKeyDown)
+        // Preserve hardware auto-repeat on forwarded events from non-modifier
+        // sources (flagsChanged events carry 0 here, so this is a no-op for
+        // modifier sources).
+        remapped.setIntegerValueField(
+            .keyboardEventAutorepeat,
+            value: event.getIntegerValueField(.keyboardEventAutorepeat)
+        )
 
-        // Auto-repeat: when target is a non-modifier key (e.g., Forward Delete) and the
-        // source is held down, post repeat keyDowns until released.
-        if mapping.toFlag == nil {
+        // Auto-repeat timer: only for a *modifier* source mapped to a non-modifier
+        // target (e.g., Right Cmd → Forward Delete). Modifier sources never repeat
+        // in hardware, so we synthesize repeats; non-modifier sources already
+        // deliver hardware auto-repeat keyDowns (forwarded above), and a timer
+        // would stack a second, fixed-rate repeat stream on top.
+        if mapping.fromFlag != nil && mapping.toFlag == nil {
             if isKeyDown {
                 startRepeatTimer(for: keyCode, targetKeyCode: toKeyCode)
             } else {
@@ -702,7 +763,7 @@ final class KeyMonitor {
                 remappedKeysDown: &state.remappedKeysDown,
                 keyCode: keyCode,
                 eventFlags: event.flags,
-                isResetRecoveryMode: false
+                isResetRecoveryMode: isResetRecoveryMode
             )
         default:
             return true
