@@ -180,6 +180,15 @@ final class ClipboardController {
         monitor.markIgnoredChangeCount(pasteboard.changeCount)
     }
 
+    /// Hook for components that overwrite the pasteboard themselves (e.g. TextInjector's
+    /// voice-injection path). Call right before the own write so a user copy made since the
+    /// monitor's last 0.5 s tick is drained into history first — otherwise the own write
+    /// advances `lastChangeCount` past it while its changeCount is marked ignored, and that
+    /// copy is lost forever. The controller's own paste paths already do this internally.
+    func capturePendingChange() {
+        monitor.capturePendingChange()
+    }
+
     /// Clipboard-relevant UserDefaults values, snapshotted so `preferencesChanged`
     /// can ignore the (very chatty) `UserDefaults.didChangeNotification` unless one
     /// of these actually changed.

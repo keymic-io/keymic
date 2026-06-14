@@ -8,6 +8,14 @@ final class TextInjector {
     /// the hook runs.
     var onMarkIgnored: ((Int) -> Void)?
 
+    /// Optional hook called synchronously right before KeyMic overwrites the pasteboard
+    /// with the transcript. Lets ClipboardMonitor drain a user copy made since its last
+    /// 0.5 s tick into history *before* our own write advances the monitor's changeCount
+    /// past it (that copy's changeCount is marked ignored, so it would otherwise be lost
+    /// forever). Mirrors the capture-before-write that ClipboardController performs on its
+    /// own paste paths.
+    var onCapturePending: (() -> Void)?
+
     /// Deferred-restore state of the most recent injection. Kept as a single controlled
     /// instance so overlapping `inject` calls (<0.5 s apart) can settle the previous
     /// one instead of trampling its saved clipboard / input source.
@@ -59,6 +67,12 @@ final class TextInjector {
                 return newItem
             }
         }
+
+        // Drain any pending user copy into history before we overwrite the pasteboard.
+        // Safe to call unconditionally: if the pasteboard currently holds our own
+        // previous transcript (carried-over injection), the monitor's ignore/last-seen
+        // guards skip it; only a genuine user copy gets recorded.
+        onCapturePending?()
 
         // Write transcription to clipboard
         pasteboard.clearContents()

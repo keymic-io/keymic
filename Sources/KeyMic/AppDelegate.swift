@@ -218,6 +218,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         textInjector.onMarkIgnored = { [weak self] text in
             self?.clipboardController.markPasteboardWrite(text)
         }
+        textInjector.onCapturePending = { [weak self] in
+            self?.clipboardController.capturePendingChange()
+        }
         SelectionTextProvider.onMarkIgnored = { [weak self] text in
             self?.clipboardController.markPasteboardWrite(text)
         }
