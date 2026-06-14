@@ -4,7 +4,11 @@ enum WindowFinder {
     /// Returns the AppKit-coordinate rect (bottom-left origin) of the topmost normal window at
     /// the given screen point. Returns nil if no suitable window is found.
     static func windowRect(atScreenPoint point: NSPoint) -> NSRect? {
-        guard let globalMaxY = NSScreen.screens.map(\.frame.maxY).max() else { return nil }
+        // CG global coordinates have their origin at the PRIMARY screen's top-left, so the
+        // Y-flip basis must be the primary screen's height (NSScreen.screens.first — its
+        // AppKit frame origin is always (0,0), so maxY == height). Using the max over all
+        // screens breaks when an external display is arranged above the primary one.
+        guard let primaryMaxY = NSScreen.screens.first?.frame.maxY else { return nil }
         guard let list = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
         ) as? [[String: Any]] else { return nil }
@@ -24,7 +28,7 @@ enum WindowFinder {
             // AppKit uses bottom-left origin with Y increasing upward.
             let appKitRect = NSRect(
                 x: cgRect.minX,
-                y: globalMaxY - cgRect.maxY,
+                y: primaryMaxY - cgRect.maxY,
                 width: cgRect.width,
                 height: cgRect.height
             )

@@ -8,8 +8,10 @@ import AppKit
 /// handles automatically via its tracking).
 final class PersonaMenuItemView: NSView {
     let personaId: String
-    private let title: String
-    private let hotkeyText: String?
+    /// Exposed (with `hotkeyText`) so `rebuildPersonasMenu`'s fast path can
+    /// detect rename/re-record and rebuild instead of redrawing stale copies.
+    let title: String
+    let hotkeyText: String?
     private let onClick: () -> Void
 
     /// Re-read at draw time so view state always reflects the latest store value.

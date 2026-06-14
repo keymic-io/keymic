@@ -113,17 +113,36 @@ final class ShellRunner {
         errPipe.fileHandleForReading.readabilityHandler = nil
 
         // Drain any data the readability handler may not have delivered yet.
-        // Process has already exited, so the write ends are closed and these
-        // reads return promptly. Serialize through the same queues to avoid
-        // racing with the (now-removed but possibly in-flight) handlers.
-        let trailingOut = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let trailingErr = errPipe.fileHandleForReading.readDataToEndOfFile()
-        if !trailingOut.isEmpty { outQ.sync { stdoutData.append(trailingOut) } }
-        if !trailingErr.isEmpty { errQ.sync { stderrData.append(trailingErr) } }
+        // NOT readDataToEndOfFile(): if the command exited but left a daemonized
+        // child that inherited the pipe write end (`my-server &`), EOF never
+        // arrives and a blocking read would hang this serial queue forever —
+        // killing every subsequent hotkey action. A non-blocking drain returns
+        // whatever the kernel buffer holds (≤64 KB) and bails on EAGAIN.
+        // Serialize through the same queues to avoid racing a possibly in-flight
+        // handler's read on the same fd.
+        outQ.sync { stdoutData.append(Self.drainNonBlocking(outPipe.fileHandleForReading)) }
+        errQ.sync { stderrData.append(Self.drainNonBlocking(errPipe.fileHandleForReading)) }
 
         let outStr = outQ.sync { String(data: stdoutData, encoding: .utf8) ?? "" }
         let errStr = errQ.sync { String(data: stderrData, encoding: .utf8) ?? "" }
         return (p.terminationStatus, outStr, errStr)
+    }
+
+    /// Sets O_NONBLOCK on the handle's fd and reads until the kernel buffer is
+    /// empty (EAGAIN) or EOF. Never blocks, even if another process still holds
+    /// the pipe's write end.
+    private static func drainNonBlocking(_ handle: FileHandle) -> Data {
+        let fd = handle.fileDescriptor
+        let flags = fcntl(fd, F_GETFL)
+        if flags >= 0 { _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK) }
+        var out = Data()
+        var buf = [UInt8](repeating: 0, count: 65536)
+        while true {
+            let n = read(fd, &buf, buf.count)
+            guard n > 0 else { break } // 0 = EOF, -1 = EAGAIN/error — stop either way
+            out.append(buf, count: n)
+        }
+        return out
     }
 
     private func collectProcessTree(_ rootPid: Int32) -> [Int32] {
@@ -132,11 +151,16 @@ final class ShellRunner {
         p.arguments = ["-axo", "pid,ppid"]
         let pipe = Pipe()
         p.standardOutput = pipe
-        p.standardError = Pipe()
+        p.standardError = FileHandle.nullDevice
         guard (try? p.run()) != nil else { return [rootPid] }
+        // Drain BEFORE waitUntilExit: readDataToEndOfFile blocks until ps closes
+        // stdout at exit, so it consumes output concurrently. The old order
+        // (waitUntilExit first) deadlocked once ps output exceeded the 64 KB pipe
+        // buffer — ps blocked writing, we blocked waiting.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
 
-        let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let output = String(data: data, encoding: .utf8) ?? ""
         var children: [Int32: [Int32]] = [:]
         for line in output.components(separatedBy: "\n") {
             let cols = line.trimmingCharacters(in: .whitespaces)

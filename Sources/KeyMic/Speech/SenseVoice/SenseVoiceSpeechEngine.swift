@@ -59,6 +59,10 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else { throw VoiceError.microphoneAccessDenied(status) }
 
+        // Self-heal: a second entry point (e.g. the selected-text editor bypassing the
+        // session host) may still have our tap installed — installing twice throws an
+        // Obj-C NSException and crashes. Mirror SpeechAnalyzerSpeechEngine.startSession.
+        teardown()
         sessionGeneration &+= 1
         capture.reset()
         let input = engine.inputNode
@@ -135,9 +139,10 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     ///
     /// A partial dispatched just before `endAudio()` can finish AFTER the final
     /// result (both hop through `main.async`), so `onPartialResult` may fire with
-    /// stale text post-final. That's harmless: `finalResult` drives the state
-    /// machine to `.idle`, whose catch-all drops any later `partialResult`
-    /// (`VoiceStateMachine`) — final stays authoritative for the overlay/injection.
+    /// stale text post-final. That's harmless: `VoiceTrigger.finish()` releases its
+    /// speech session before starting the LLM run, and `handlePartial`/`handleFinal`
+    /// drop callbacks once the session is gone — final stays authoritative for the
+    /// overlay/injection.
     /// Such a late partial also runs `runPipeline` concurrently with the final
     /// decode, i.e. two `model.infer` on the shared CoreML model; `MLModel`
     /// serializes concurrent predictions internally, so it's safe (transient 2x).

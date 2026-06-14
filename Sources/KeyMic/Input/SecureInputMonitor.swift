@@ -34,6 +34,10 @@ final class SecureInputMonitor {
         guard timer == nil else { return }
         lastState = probe()
         log.info("SecureInputMonitor start initialState=\(self.lastState, privacy: .public)")
+        // Secure Input may already be engaged at launch (login-item start at the
+        // lock screen, a frontmost password field). Surface it immediately —
+        // otherwise the consumer never suspends until the *next* transition.
+        if lastState { onEnter?() }
         let t = DispatchSource.makeTimerSource(queue: .main)
         t.schedule(deadline: .now() + pollInterval, repeating: pollInterval)
         t.setEventHandler { [weak self] in self?.tick() }

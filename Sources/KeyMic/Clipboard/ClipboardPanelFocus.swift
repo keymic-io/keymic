@@ -14,4 +14,9 @@ final class ClipboardPanelFocus {
     var initialTab: PanelTab = .clipboard
     var tabRequestID = 0
     var currentTab: PanelTab = .clipboard
+    /// Section sizes of the currently filtered clipboard list, mirrored by
+    /// `ClipboardHistoryView.refreshFiltered` so `ClipboardPanel.sendEvent` can tell
+    /// whether an ⌥-shortcut has a target while the search field is being typed in.
+    var visiblePinnedCount = 0
+    var visibleHistoryCount = 0
 }

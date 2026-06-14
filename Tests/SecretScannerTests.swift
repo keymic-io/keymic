@@ -61,6 +61,30 @@ struct SecretScannerTestRunner {
         expect(fullMatchEntropyScanner.firstMatch(in: "key-aaaaaaaaaaaa") == nil, "rejects low entropy full match")
         expect(fullMatchEntropyScanner.firstMatch(in: "key-aB3dE5gH7jK9")?.secret == "key-aB3dE5gH7jK9", "accepts high entropy full match")
 
+        // RE2→ICU dialect transcription: `(?P<name>…)` named groups (gitleaks
+        // jwt-base64 style) must compile and match via NSRegularExpression.
+        let goNamedGroups = SecretRule(raw: [
+            "id": .string("go-named-groups"),
+            "regex": .string(#"\bZXlK(?:(?P<alg>aGJHY2lPaU)|(?P<key_ops>clpYbGZiM0J6SWpwY)|(?P<kid>cmFXUWlP))[a-zA-Z0-9/\\_+\-]{8,}"#),
+            "description": .string("jwt-like")
+        ])
+        expect(goNamedGroups != nil, "(?P<name>…) pattern transcribed and compiled")
+        let goScanner = SecretScanner(rules: [goNamedGroups!])
+        expect(
+            goScanner.firstMatch(in: "ZXlKaGJHY2lPaUpJVXpJMU5pSXNJbn") != nil,
+            "transcribed named-group pattern matches")
+
+        // RE2→ICU dialect transcription: a bare `}}` (gitleaks kubernetes-secret-yaml
+        // style) is retried with the braces escaped.
+        let bareBraces = SecretRule(raw: [
+            "id": .string("bare-closing-braces"),
+            "regex": .string(#"\{\{[ \t\w"|$:=,.-]+}}"#),
+            "description": .string("template ref")
+        ])
+        expect(bareBraces != nil, "bare }} pattern compiled via escaped retry")
+        let braceScanner = SecretScanner(rules: [bareBraces!])
+        expect(braceScanner.firstMatch(in: "password: {{ .Values.secret }}")?.secret == "{{ .Values.secret }}", "escaped-brace pattern matches")
+
         print("SecretScannerTests passed")
     }
 

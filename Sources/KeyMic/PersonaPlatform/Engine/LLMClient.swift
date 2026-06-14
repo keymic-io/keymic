@@ -3,17 +3,18 @@ import os.log
 
 private let logger = Logger(subsystem: "io.keymic.app", category: "LLMClient")
 
+/// Cancellation relies on structured concurrency: cancelling the Task that awaits
+/// `complete` cancels the underlying `URLSession` request (surfaced as
+/// `URLError(.cancelled)`, mapped to `InvocationError.cancelled` by PersonaEngine).
 protocol LLMClient: AnyObject {
     var isReady: Bool { get }
     func complete(systemPrompt: String,
                   userText: String,
                   temperature: Double) async throws -> String
-    func cancel()
 }
 
 final class OpenAICompatibleLLMClient: LLMClient {
     private let defaults: UserDefaults
-    private var currentTask: URLSessionDataTask?
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -49,7 +50,7 @@ final class OpenAICompatibleLLMClient: LLMClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 10
+        request.timeoutInterval = 30
         let body: [String: Any] = [
             "model": model,
             "messages": [
@@ -74,11 +75,6 @@ final class OpenAICompatibleLLMClient: LLMClient {
         let preview = String(data: data.prefix(1024), encoding: .utf8) ?? "<non-utf8>"
         logger.error("invalid response — status=\(status, privacy: .public) bytes=\(data.count, privacy: .public) err=\(errMsg, privacy: .public) preview=\(preview, privacy: .public)")
         throw LLMClientError.invalidResponse(message: errMsg.isEmpty ? nil : errMsg)
-    }
-
-    func cancel() {
-        currentTask?.cancel()
-        currentTask = nil
     }
 
     // MARK: - Parsers (verbatim from old LLMRefiner)

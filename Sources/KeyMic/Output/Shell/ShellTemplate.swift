@@ -8,11 +8,33 @@ import Foundation
 /// verbatim in the confirmation sheet and signal misconfiguration to the user.
 enum ShellTemplate {
     static func substitute(template: String, text: String, context: PersonaContext?) -> String? {
-        var out = template
-        out = out.replacingOccurrences(of: "{query}", with: shellEscape(text))
-        out = out.replacingOccurrences(of: "{selection}", with: shellEscape(context?.selection ?? ""))
-        out = out.replacingOccurrences(of: "{clipboardTop}", with: shellEscape(context?.clipboardTop ?? ""))
-        out = out.replacingOccurrences(of: "{clipboard}", with: shellEscape(context?.clipboardTop ?? ""))
+        // SECURITY: single-pass scan. Sequential `replacingOccurrences` passes would
+        // re-scan already-substituted values — if a value literally contains another
+        // placeholder (e.g. text == "{clipboard}"), a later pass would expand it
+        // INSIDE the already-shell-quoted segment, breaking quote pairing and letting
+        // attacker-controlled clipboard content escape the single quotes.
+        // `{clipboardTop}` is listed before `{clipboard}` so the longer token wins.
+        let replacements: [(placeholder: String, value: String)] = [
+            ("{query}", text),
+            ("{selection}", context?.selection ?? ""),
+            ("{clipboardTop}", context?.clipboardTop ?? ""),
+            ("{clipboard}", context?.clipboardTop ?? ""),
+        ]
+        var out = ""
+        out.reserveCapacity(template.count)
+        var idx = template.startIndex
+        scan: while idx < template.endIndex {
+            if template[idx] == "{" {
+                for (placeholder, value) in replacements
+                where template[idx...].hasPrefix(placeholder) {
+                    out += shellEscape(value)
+                    idx = template.index(idx, offsetBy: placeholder.count)
+                    continue scan
+                }
+            }
+            out.append(template[idx])
+            idx = template.index(after: idx)
+        }
         return out
     }
 

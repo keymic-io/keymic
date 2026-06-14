@@ -51,10 +51,14 @@ final class EditorToolbarPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     /// Compute and apply the panel's frame for a given selection on a given screen.
+    /// `selection` is in the overlay view's local coordinates (origin at the panel's
+    /// bottom-left); ToolbarPositioner expects global screen coordinates, so offset
+    /// by the owning screen's frame origin first (a no-op only on the primary screen).
     func reposition(for selection: NSRect, on screen: NSScreen) {
         let fittingSize = hostingView.fittingSize
         let size = NSSize(width: max(360, fittingSize.width), height: max(40, fittingSize.height))
-        let origin = ToolbarPositioner.origin(for: size, selection: selection, screenFrame: screen.frame)
+        let globalSelection = selection.offsetBy(dx: screen.frame.origin.x, dy: screen.frame.origin.y)
+        let origin = ToolbarPositioner.origin(for: size, selection: globalSelection, screenFrame: screen.frame)
         setFrame(NSRect(origin: origin, size: size), display: true)
     }
 

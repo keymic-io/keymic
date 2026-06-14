@@ -59,6 +59,12 @@ final class ClipboardMonitor {
 
     func tickForTesting() { tick() }
 
+    /// Synchronously drains any pending pasteboard change into history. Call right
+    /// before KeyMic performs its own pasteboard write: a user copy made since the
+    /// last 0.5 s tick would otherwise be skipped forever, because the own write
+    /// advances `lastChangeCount` past it while its changeCount is marked ignored.
+    func capturePendingChange() { tick() }
+
     private func tick() {
         let current = pasteboard.changeCount
         guard current != lastChangeCount else { return }

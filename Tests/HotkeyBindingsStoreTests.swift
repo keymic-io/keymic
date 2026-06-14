@@ -28,6 +28,21 @@ struct HotkeyBindingsStoreTestRunner {
         defaults.set(Data([0x00, 0x01]), forKey: "hotkeyBindings")
         let store3 = HotkeyBindingsStore(defaults: defaults)
         expect(store3.bindings.isEmpty, "corrupt data → empty")
+        // …且 init 不会立即把空数组写回覆盖原始数据
+        expect(
+            defaults.data(forKey: "hotkeyBindings") == Data([0x00, 0x01]),
+            "decode failure must not overwrite persisted data")
+
+        // 单条损坏 → 跳过该条，其余绑定保留（FailableDecodable 逐元素容错）
+        let goodJSON = String(data: try! JSONEncoder().encode([b]), encoding: .utf8)!
+        let mixedJSON = goodJSON.dropLast() + #", {"trigger": 42}]"#
+        defaults.set(Data(mixedJSON.utf8), forKey: "hotkeyBindings")
+        let store4 = HotkeyBindingsStore(defaults: defaults)
+        expect(store4.bindings.count == 1, "one bad element skipped, good one kept")
+        expect(store4.bindings[0].trigger == "ctrl+cmd+c", "surviving binding intact")
+        expect(
+            defaults.data(forKey: "hotkeyBindings") == Data(mixedJSON.utf8),
+            "partial decode must not write back during init")
 
         print("HotkeyBindingsStoreTests passed")
     }

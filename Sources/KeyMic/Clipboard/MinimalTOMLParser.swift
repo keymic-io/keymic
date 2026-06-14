@@ -49,14 +49,18 @@ enum MinimalTOMLParser {
                     current?[key] = .string(body)
                 } else {
                     var collected = body
+                    // TOML: a newline immediately following the opening ''' is trimmed.
+                    var trimLeadingNewline = body.isEmpty
                     while i < lines.count {
                         let next = lines[i]; i += 1
+                        let separator = trimLeadingNewline ? "" : "\n"
+                        trimLeadingNewline = false
                         if let end = next.range(of: "'''") {
-                            collected += "\n" + String(next[..<end.lowerBound])
+                            collected += separator + String(next[..<end.lowerBound])
                             current?[key] = .string(collected)
                             break
                         } else {
-                            collected += "\n" + next
+                            collected += separator + next
                         }
                     }
                 }
@@ -140,9 +144,14 @@ enum MinimalTOMLParser {
                 switch n {
                 case "n": out.append("\n")
                 case "t": out.append("\t")
+                case "r": out.append("\r")
                 case "\"": out.append("\"")
                 case "\\": out.append("\\")
-                default: out.append(n)
+                default:
+                    // Unknown escape: keep the sequence verbatim (dropping the
+                    // backslash would corrupt regex patterns like `\A`).
+                    out.append(c)
+                    out.append(n)
                 }
                 i = rhs.index(after: next)
                 continue
@@ -198,10 +207,12 @@ enum MinimalTOMLParser {
                 else if c == "," { items.append(cur); cur = "" }
                 else { cur.append(c) }
             } else if inTriple {
-                cur.append(c)
+                // Check for the closing delimiter *before* consuming the character —
+                // appending first duplicated the leading quote of the closing '''.
                 if body[i...].hasPrefix("'''") {
                     inTriple = false; cur.append("'''"); i = body.index(i, offsetBy: 3); continue
                 }
+                cur.append(c)
             } else if inDouble {
                 cur.append(c)
                 if c == "\\", let next = body.index(i, offsetBy: 1, limitedBy: body.endIndex), next < body.endIndex {
@@ -223,6 +234,10 @@ enum MinimalTOMLParser {
         let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !s.isEmpty else { return nil }
         if s.hasPrefix("\""), let unq = parseDoubleQuoted(s) { return unq }
+        if s.hasPrefix("'''") {
+            guard s.count >= 6, s.hasSuffix("'''") else { return nil }
+            return String(s.dropFirst(3).dropLast(3))
+        }
         if s.hasPrefix("'") {
             let body = s.dropFirst()
             if let end = body.lastIndex(of: "'") { return String(body[..<end]) }

@@ -44,7 +44,11 @@ final class ScreenshotExporter {
         if let host = host {
             panel.beginSheetModal(for: host, completionHandler: handler)
         } else {
+            // No host window (LSUIElement): make sure the picker floats above the
+            // screenshot overlay panels (dropped to .normal by the caller).
+            panel.level = .floating
             panel.begin(completionHandler: handler)
+            panel.makeKeyAndOrderFront(nil)
         }
     }
 

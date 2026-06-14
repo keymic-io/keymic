@@ -12,28 +12,31 @@ final class AudioCapture16k {
         commonFormat: .pcmFormatFloat32, sampleRate: SenseVoiceConfig.sampleRate,
         channels: 1, interleaved: false)!
     private var converter: AVAudioConverter?
-    /// Guards `samples` against the audio-tap thread (append) racing the partial
-    /// timer thread (snapshot). RMS math stays outside the lock to keep the
-    /// real-time audio thread unblocked.
+    /// Guards `samples` and `converter` against the audio-tap thread (append)
+    /// racing the partial timer / main thread (snapshot, reset). RMS math stays
+    /// outside the lock to keep the real-time audio thread unblocked.
     private let lock = NSLock()
 
     func reset() {
         lock.lock()
         samples.removeAll(keepingCapacity: true)
-        lock.unlock()
         converter = nil
+        lock.unlock()
     }
 
     /// 由 tap 回调调用:转 16k、累积、报 RMS(回调投递到主线程)。
     func append(_ buffer: AVAudioPCMBuffer) {
+        lock.lock()
         let conv: AVAudioConverter
         if let c = converter { conv = c }
         else {
             guard let c = AVAudioConverter(from: buffer.format, to: targetFormat) else {
+                lock.unlock()
                 logger.error("AVAudioConverter init failed"); return
             }
             converter = c; conv = c
         }
+        lock.unlock()
         let ratio = targetFormat.sampleRate / buffer.format.sampleRate
         let outCap = AVAudioFrameCount(Double(buffer.frameLength) * ratio + 16)
         guard let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: outCap) else { return }

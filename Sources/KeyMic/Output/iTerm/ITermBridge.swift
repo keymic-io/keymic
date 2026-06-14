@@ -16,7 +16,13 @@ enum ITermBridge {
         case paneOutOfRange              // returned "out-of-range" sentinel
     }
 
-    @MainActor
+    /// Serial queue for AppleScript execution. Apple Events are synchronous and the
+    /// default AE timeout is about two minutes — running them on the main thread would
+    /// freeze the whole app (including the event-tap run loop) whenever iTerm is hung
+    /// or an Automation-permission prompt is pending. Serial so scripts never run
+    /// concurrently (NSAppleScript is not thread-safe across instances of work).
+    private static let scriptQueue = DispatchQueue(label: "io.keymic.app.iterm-bridge", qos: .userInitiated)
+
     static func write(text: String, paneIndex: Int) async throws {
         let escaped = escapeForAppleScript(text)
         // Pane index +1 because AppleScript is 1-indexed.
@@ -38,7 +44,23 @@ enum ITermBridge {
         end tell
         """
 
-        guard let script = NSAppleScript(source: scriptSource) else {
+        // Execute off the main thread — the caller's await suspends instead of blocking.
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Swift.Error>) in
+            scriptQueue.async {
+                do {
+                    try executeSync(source: scriptSource)
+                    cont.resume()
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+        itermLogger.debug("iTerm write pane=\(paneIndex, privacy: .public) length=\(text.count, privacy: .public)")
+    }
+
+    /// Blocking AppleScript execution. Must only be called on `scriptQueue`.
+    private static func executeSync(source: String) throws {
+        guard let script = NSAppleScript(source: source) else {
             throw Error.appleScriptFailed("NSAppleScript init returned nil")
         }
         var errorDict: NSDictionary?
@@ -58,13 +80,15 @@ enum ITermBridge {
         case "out-of-range":  throw Error.paneOutOfRange
         default: break
         }
-        itermLogger.debug("iTerm write pane=\(paneIndex, privacy: .public) length=\(text.count, privacy: .public)")
     }
 
     /// Escapes for embedding in an AppleScript string literal.
     /// - `\` → `\\`
     /// - `"` → `\"`
-    /// - newline → `" & return & "`
+    /// - newline / CR / CRLF → `" & return & "` (AppleScript treats a raw CR as a
+    ///   line separator, so an unescaped CR truncates the string literal and the
+    ///   script fails to compile; CRLF is a single Swift Character and needs its
+    ///   own case).
     static func escapeForAppleScript(_ text: String) -> String {
         var out = ""
         out.reserveCapacity(text.count)
@@ -72,7 +96,7 @@ enum ITermBridge {
             switch ch {
             case "\\": out.append("\\\\")
             case "\"": out.append("\\\"")
-            case "\n": out.append("\" & return & \"")
+            case "\n", "\r", "\r\n": out.append("\" & return & \"")
             default:   out.append(ch)
             }
         }

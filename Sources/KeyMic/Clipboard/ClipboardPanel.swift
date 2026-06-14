@@ -5,6 +5,7 @@ import SwiftUI
 
 final class ClipboardPanel: NSPanel, NSWindowDelegate {
     private let focus = ClipboardPanelFocus()
+    private let selectionBridge: ClipboardPanelSelectionBridge
     private let hostingController: NSHostingController<AnyView>
 
     init(
@@ -33,6 +34,7 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         )
         .modelContainer(modelContainer)
 
+        self.selectionBridge = selectionBridge
         hostingController = NSHostingController(rootView: AnyView(view))
 
         super.init(
@@ -65,6 +67,14 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
     }
 
     func windowDidResize(_ notification: Notification) {
+        // During a live resize this fires for every mouse move; each save posts
+        // UserDefaults.didChangeNotification, which fans out to preference observers
+        // on the main thread (shared with the event tap). Persist once at drag end.
+        guard !inLiveResize else { return }
+        ClipboardPreferences.savePanelSize(frame.size)
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
         ClipboardPreferences.savePanelSize(frame.size)
     }
 
@@ -74,27 +84,38 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
     override var canBecomeMain: Bool { false }
 
     override func sendEvent(_ event: NSEvent) {
-        if let handledShortcut = handledClipboardShortcut(for: event) {
+        let typingInText = firstResponder is NSText
+        if let handledShortcut = handledClipboardShortcut(for: event, typingInText: typingInText) {
             handledShortcut()
             return
         }
         // Don't hijack ⌥+number while typing in the Vault search field — the
         // SwiftUI view's text-input guard doesn't run at the panel level.
-        let typingInVault = focus.currentTab == .vault && firstResponder is NSText
+        let typingInVault = focus.currentTab == .vault && typingInText
         if !typingInVault, let quickPasteIndex = quickPasteIndex(for: event) {
-            focus.quickPasteIndex = quickPasteIndex
-            focus.quickPasteRequestID += 1
-            return
+            // While typing in the clipboard search field, only hijack ⌥<number> when
+            // a history item actually exists at that index; otherwise let the field
+            // receive the keystroke (⌥-number composed characters on intl layouts).
+            let typingInClipboard = focus.currentTab == .clipboard && typingInText
+            if !typingInClipboard || quickPasteIndex < focus.visibleHistoryCount {
+                focus.quickPasteIndex = quickPasteIndex
+                focus.quickPasteRequestID += 1
+                return
+            }
         }
         super.sendEvent(event)
     }
 
-    private func handledClipboardShortcut(for event: NSEvent) -> (() -> Void)? {
+    private func handledClipboardShortcut(for event: NSEvent, typingInText: Bool) -> (() -> Void)? {
         guard focus.currentTab == .clipboard, isAltOnlyKeyDown(event) else { return nil }
         if event.keyCode == 0x23 {
+            // While typing, only hijack ⌥P when there is a pin target.
+            guard !typingInText || !selectionBridge.selectedIDs.isEmpty else { return nil }
             return { [focus] in focus.togglePinRequestID += 1 }
         }
         if let index = pinnedQuickPasteIndex(for: event.keyCode) {
+            // While typing, only hijack ⌥<letter> when a pinned item exists at that index.
+            guard !typingInText || index < focus.visiblePinnedCount else { return nil }
             return { [focus] in
                 focus.pinnedQuickPasteIndex = index
                 focus.pinnedQuickPasteRequestID += 1
