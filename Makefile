@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx test-pcm-resampler
 
 
 build:
@@ -385,6 +385,13 @@ test-audio-capture-16k:
 	       Tests/AudioCapture16kTests.swift \
 	       -o .build/audio-capture-16k-tests
 	.build/audio-capture-16k-tests
+
+test-pcm-resampler:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-pcm-resampler \
+	    Tests/PCMResampler16kTests.swift \
+	    Sources/KeyMic/Meeting/PCMResampler16k.swift
+	.build/t-pcm-resampler
 
 test-sensevoice-vocab:
 	mkdir -p .build
