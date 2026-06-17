@@ -7,4 +7,6 @@ enum OnnxStores {
     /// Fun-ASR-MLT-Nano (31 langs) store — distinct destDir (`models/funasr-mlt-nano-ar`), so it
     /// coexists on disk with `model`. The active engine uses whichever the picker selects.
     static let mltModel = AssetStore(bundle: VoiceModelCatalog.funasrMltNano)
+    /// Streaming model store (meeting transcription). Distinct destDir from the offline models.
+    static let streaming = AssetStore(bundle: VoiceModelCatalog.streamingZipformerBilingual)
 }

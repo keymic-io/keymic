@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx
 
 
 build:
@@ -798,6 +798,27 @@ test-streaming-bridge-nil:
 	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
 	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
 	.build/t-streaming-bridge-nil
+
+# 手动真机冒烟(需 runtime + streaming 模型已下载到 App Support)。验证流式 partial/final。
+# NOTE: swiftc 不会把 -Xcc 传给它内部的 C 编译,故须先用 clang 把 SherpaBridge.c 编成 .o 再链接
+# (与 test-streaming-bridge-nil 同一模式,Task 4 验证)。
+smoke-streaming-onnx:
+	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/streaming-zipformer-bilingual-zh-en} populated"
+	@mkdir -p .build
+	clang -c Sources/CSherpaOnnx/SherpaBridge.c \
+	    -I Sources/CSherpaOnnx/include \
+	    -o .build/SherpaBridge.o
+	swiftc -parse-as-library -o .build/streaming-smoke \
+	    -I Sources/CSherpaOnnx/include \
+	    -Xcc -fmodule-map-file=Sources/CSherpaOnnx/include/module.modulemap \
+	    .build/SherpaBridge.o \
+	    Tests/StreamingSmoke.swift \
+	    Sources/KeyMic/Speech/ONNX/StreamingASRBridge.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
+	    Sources/KeyMic/Speech/ONNX/OnnxStores.swift \
+	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
+	.build/streaming-smoke
 
 # 手动真机冒烟(需预放/下载 runtime+模型;非 CI)。用真实 AR 模型转写 Tests/fixtures/zh.wav。
 smoke-onnx:
