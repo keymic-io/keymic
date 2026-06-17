@@ -19,7 +19,7 @@ final class StreamingASRBridge {
             logger.error("streaming create: runtime not loaded")
             return nil
         }
-        var err = [CChar](repeating: 0, count: 1024)
+        var err = [CChar](repeating: 0, count: 2048)
         guard let h = sherpa_create_online(modelDir.path, &err, Int32(err.count)) else {
             logger.error("sherpa_create_online failed: \(String(cString: err), privacy: .public)")
             return nil
@@ -29,18 +29,24 @@ final class StreamingASRBridge {
 
     func accept(_ samples: [Float], sampleRate: Int32 = 16000) {
         guard !samples.isEmpty else { return }
+        // baseAddress is non-nil: guarded !samples.isEmpty above
         samples.withUnsafeBufferPointer { buf in
             sherpa_online_accept(handle, buf.baseAddress, Int32(buf.count), sampleRate)
         }
     }
 
     func currentText() -> String {
+        // pre-zeroed: String(cString:) safe even if n == 0
         var out = [CChar](repeating: 0, count: 8192)
         let n = sherpa_online_result(handle, &out, Int32(out.count))
         return n >= 0 ? String(cString: out) : ""
     }
 
-    func isEndpoint() -> Bool { sherpa_online_is_endpoint(handle) == 1 }
+    func isEndpoint() -> Bool {
+        let r = sherpa_online_is_endpoint(handle)
+        if r < 0 { logger.error("sherpa_online_is_endpoint returned \(r)") }
+        return r == 1
+    }
 
     func reset() { sherpa_online_reset(handle) }
 
