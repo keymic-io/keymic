@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store smoke-onnx
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog smoke-onnx
 
 
 build:
@@ -775,6 +775,13 @@ test-asset-store:
 	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
 	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift
 	.build/t-store
+
+test-streaming-catalog:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-streaming-catalog \
+	    Tests/StreamingModelCatalogTests.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift
+	.build/t-streaming-catalog
 
 # 手动真机冒烟(需预放/下载 runtime+模型;非 CI)。用真实 AR 模型转写 Tests/fixtures/zh.wav。
 smoke-onnx:

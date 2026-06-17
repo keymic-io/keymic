@@ -58,6 +58,9 @@ enum VoiceModelCatalog {
     private static func msMlt(_ file: String) -> URL {
         URL(string: "https://www.modelscope.cn/models/lorneluo2/sherpa-onnx-funasr-mlt-nano-int8-2512/resolve/master/\(file)")!
     }
+    private static func hfStreaming(_ file: String) -> URL {
+        URL(string: "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/\(file)")!
+    }
     private static func runtimeURL(_ file: String) -> URL {
         URL(string: "https://github.com/keymic-io/keymic/releases/download/onnx-runtime-v1.13.2/\(file)")!
     }
@@ -128,6 +131,28 @@ enum VoiceModelCatalog {
                       sha256: "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
                       relPath: "Qwen3-0.6B/merges.txt",
                       mirrors: [msMlt("Qwen3-0.6B/merges.txt")]),
+        ])
+
+    /// Sentinel SHA256 for assets whose real hash is baked on first download (dev defers the
+    /// download). Non-empty so catalog wiring is valid; AssetStore.verifySHA256 refuses any
+    /// download against this value, so an unverified blob can never be silently accepted.
+    static let pendingSHA = "PENDING_BAKE_ON_FIRST_DOWNLOAD"
+
+    /// Streaming bilingual (zh/en) zipformer transducer for meeting transcription (M1).
+    /// 4 files: int8 encoder + decoder + int8 joiner + tokens. relPaths are normalized to
+    /// fixed short names so the bridge config can hardcode them regardless of upstream naming.
+    static let streamingZipformerBilingual = AssetBundle(
+        id: "streaming-zipformer-bilingual-zh-en-2023-02-20",
+        destDirName: "models/streaming-zipformer-bilingual-zh-en",
+        files: [
+            AssetFile(url: hfStreaming("encoder-epoch-99-avg-1.int8.onnx"),
+                      sha256: pendingSHA, relPath: "encoder.onnx"),
+            AssetFile(url: hfStreaming("decoder-epoch-99-avg-1.onnx"),
+                      sha256: pendingSHA, relPath: "decoder.onnx"),
+            AssetFile(url: hfStreaming("joiner-epoch-99-avg-1.int8.onnx"),
+                      sha256: pendingSHA, relPath: "joiner.onnx"),
+            AssetFile(url: hfStreaming("tokens.txt"),
+                      sha256: pendingSHA, relPath: "tokens.txt"),
         ])
 
     /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano / funasrMltNano 均走 ONNX(sherpa funasr runtime)。
