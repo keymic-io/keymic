@@ -29,6 +29,7 @@ final class KeyMonitor {
     var isClipboardPanelVisible: (() -> Bool)?
     var onSettingsHotkey: (() -> Void)?
     var onScreenshotHotkey: (() -> Void)?
+    var onMeetingTranscribeHotkey: (() -> Void)?
     var onSelectedTextEditorHotkey: (() -> Void)?
     var onClipboardTransformHotkey: (() -> Void)?
     var onAction: (([HotkeyAction]) -> Void)?
@@ -71,6 +72,7 @@ final class KeyMonitor {
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
+    private var meetingTranscribeHotkey: HotkeyConfig?
     private var selectedTextEditorHotkey: HotkeyConfig?
     private var clipboardTransformHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
@@ -253,6 +255,7 @@ final class KeyMonitor {
         vaultHotkey = hotkeys.hotkey(for: .vaultPanel)
         settingsHotkey = hotkeys.hotkey(for: .settingsWindow)
         screenshotHotkey = hotkeys.hotkey(for: .screenshot)
+        meetingTranscribeHotkey = hotkeys.hotkey(for: .meetingTranscribe)
         selectedTextEditorHotkey = hotkeys.hotkey(for: .selectedTextEditor)
         clipboardTransformHotkey = hotkeys.hotkey(for: .clipboardTransform)
         voiceTriggerHotkey = hotkeys.hotkey(for: .voiceTrigger)
@@ -484,6 +487,13 @@ final class KeyMonitor {
                 return nil
             }
 
+            // Meeting transcribe hotkey
+            if let cfg = meetingTranscribeHotkey, !cfg.isPureModifier,
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
+                DispatchQueue.main.async { [weak self] in self?.onMeetingTranscribeHotkey?() }
+                return nil
+            }
+
             // Selected Text Editor hotkey
             if let cfg = selectedTextEditorHotkey,
                !cfg.isPureModifier,
@@ -594,6 +604,11 @@ final class KeyMonitor {
            cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld),
            UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
             DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
+            return true
+        }
+        if let cfg = meetingTranscribeHotkey, !cfg.isPureModifier,
+           cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
+            DispatchQueue.main.async { [weak self] in self?.onMeetingTranscribeHotkey?() }
             return true
         }
         if let cfg = selectedTextEditorHotkey, !cfg.isPureModifier,

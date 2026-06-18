@@ -57,6 +57,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenshotController: ScreenshotController?
     private var selectedTextEditorController: SelectedTextEditorController!
     private var clipboardTransformController: ClipboardTransformController!
+    private var transcriptStore: TranscriptStore!
+    private var meetingController: MeetingController!
+    /// When `true`, the voice push-to-talk trigger is suppressed because a meeting
+    /// transcription session is active (PRD §4.1 voice mutex).
+    private var meetingVoiceSuspended = false
 
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
@@ -108,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var voiceEnabledMenuItem: NSMenuItem!
     private weak var voiceToggleView: ToggleMenuItemView?
+    private var meetingMenuItem: NSMenuItem!
     private var personasRootMenuItem: NSMenuItem!
     private var personasMenu: NSMenu?
     private var keyMappingMenuItem: NSMenuItem!
@@ -248,7 +254,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             textInjector: textInjector
         )
         keyMonitor.onTriggerDown = { [weak self] in
-            guard let self, self.isVoiceEnabled else { return }
+            guard let self, self.isVoiceEnabled, !self.meetingVoiceSuspended else { return }
             self.updateStatusIcon(recording: true)
             Task { @MainActor in self.voiceTrigger.onTriggerDown() }
         }
@@ -278,6 +284,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
+        keyMonitor.onMeetingTranscribeHotkey = { [weak self] in self?.toggleMeetingTranscribe() }
         selectedTextEditorController = SelectedTextEditorController(
             speechEngine: speechEngine,
             overlayPanel: overlayPanel
@@ -322,6 +329,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         secureInputMonitor.start()
         clipboardController.start()
         _ = UpdaterController.shared
+
+        // Meeting transcription controller — must be built at launch so MeetingSettingsView
+        // can bind to a live controller via MeetingRuntime.shared (Task 4).
+        transcriptStore = TranscriptStore.makeDefault()
+        meetingController = MeetingController(
+            store: transcriptStore,
+            onPauseVoice: { [weak self] in self?.setMeetingVoiceSuspended(true) },
+            onResumeVoice: { [weak self] in self?.setMeetingVoiceSuspended(false) },
+            audioSourceProvider: { MeetingPreferences.audioSource() },
+            localeProvider: { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "" })
+        MeetingRuntime.shared.controller = meetingController
+        MeetingRuntime.shared.store = transcriptStore
+
+        // Sleep / lock auto-stop (PRD §4.1)
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(self, selector: #selector(meetingShouldStopForSystemEvent),
+                       name: NSWorkspace.willSleepNotification, object: nil)
+        ws.addObserver(self, selector: #selector(meetingShouldStopForSystemEvent),
+                       name: NSWorkspace.screensDidSleepNotification, object: nil)
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(meetingShouldStopForSystemEvent),
+            name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
 
         HotkeySettingsStore.shared.ensureInitialized()
         lastInputConfigSnapshot = InputConfigSnapshot.current()
@@ -734,6 +763,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildPersonasMenu()
         menu.addItem(personasRootMenuItem)
 
+        meetingMenuItem = NSMenuItem(
+            title: String(localized: "Start Meeting Transcription"),
+            action: #selector(toggleMeetingTranscribe), keyEquivalent: "")
+        meetingMenuItem.target = self
+        menu.addItem(meetingMenuItem)
+
         menu.addItem(.separator())
 
         // Group 2: key mapping, shortcuts, clipboard history
@@ -830,6 +865,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image.isTemplate = true
         return image
     }()
+
+    // MARK: - Meeting transcription
+
+    @objc private func toggleMeetingTranscribe() {
+        meetingController.toggle()
+        updateMeetingMenuItemTitle()
+    }
+
+    private func updateMeetingMenuItemTitle() {
+        meetingMenuItem?.title = meetingController.isTranscribing
+            ? String(localized: "Stop Meeting Transcription")
+            : String(localized: "Start Meeting Transcription")
+    }
+
+    /// Suppresses or re-enables the voice push-to-talk trigger while a meeting session runs.
+    /// Called via `MeetingController`'s `onPauseVoice`/`onResumeVoice` closures (PRD §4.1).
+    func setMeetingVoiceSuspended(_ suspended: Bool) {
+        meetingVoiceSuspended = suspended
+    }
+
+    @objc private func meetingShouldStopForSystemEvent() {
+        guard meetingController?.isTranscribing == true else { return }
+        meetingController.stop()
+        updateMeetingMenuItemTitle()
+    }
 
     // MARK: - Actions
 
