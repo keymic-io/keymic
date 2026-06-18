@@ -873,4 +873,3 @@ test-meeting-controller:
 	    Sources/KeyMic/Meeting/TranscriptStore.swift \
 	    Sources/KeyMic/Meeting/MeetingModels.swift
 	.build/t-meeting-controller
-	.build/t-meeting-preferences

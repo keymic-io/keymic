@@ -18,6 +18,7 @@ struct MeetingControllerTests {
             localeProvider: { "zh-Hans" })
 
         assert(!c.isTranscribing, "starts idle")
+        assert(c.currentOffset() == 0, "currentOffset must be 0 when idle (no startedAt)")
 
         // start → transcribing, session row created (endedAt nil), voice paused
         c.start()
@@ -25,6 +26,7 @@ struct MeetingControllerTests {
         assert(store.allSessions().count == 1, "start creates one session")
         assert(store.allSessions().first?.endedAt == nil, "session in-progress")
         assert(paused == 1 && resumed == 0, "start pauses voice once")
+        assert(c.currentOffset() >= 0, "currentOffset must be >= 0 while transcribing")
 
         // double-start is idempotent (no second session, no extra pause)
         c.start()
