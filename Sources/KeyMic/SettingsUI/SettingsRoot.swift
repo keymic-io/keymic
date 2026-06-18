@@ -43,7 +43,7 @@ final class SwiftUISettingsWindow: NSPanel {
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot
+    case general, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot, meeting
 
     var id: String { rawValue }
 
@@ -57,6 +57,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .shortcuts: String(localized: "Shortcuts")
         case .clipboard: String(localized: "Clipboard")
         case .screenshot: String(localized: "Screenshot")
+        case .meeting: String(localized: "Meeting")
         }
     }
 
@@ -70,6 +71,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
         case .shortcuts: "command.square"
         case .clipboard: "doc.on.clipboard"
         case .screenshot: "camera.on.rectangle"
+        case .meeting: "waveform.badge.mic"
         }
     }
 }
@@ -160,12 +162,13 @@ struct SettingsRootView: View {
         case .keyMapping: KeyMappingSettingsSection()
         case .shortcuts: ShortcutsSettingsSection()
         case .screenshot: ScreenshotSettingsView()
+        case .meeting: MeetingSettingsView()
         }
     }
 }
 
 
-private func hotkeyBinding(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> Binding<String> {
+func hotkeyBinding(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> Binding<String> {
     Binding(
         get: { store.rawHotkey(for: feature) },
         set: { newValue in
@@ -179,7 +182,7 @@ private func hotkeyBinding(_ store: HotkeySettingsStore, for feature: HotkeyFeat
     )
 }
 
-private func resetHotkey(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> String? {
+func resetHotkey(_ store: HotkeySettingsStore, for feature: HotkeyFeature) -> String? {
     do {
         try store.resetHotkey(for: feature)
         return nil

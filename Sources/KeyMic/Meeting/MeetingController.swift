@@ -83,3 +83,12 @@ final class MeetingController {
         Self.logger.info("stopPipeline (M3 TODO)")
     }
 }
+
+/// Bridges the AppDelegate-owned controller/store to SwiftUI settings views, which are
+/// constructed by SettingsRootView without injection. Set once at launch (Task 5).
+@MainActor
+final class MeetingRuntime {
+    static let shared = MeetingRuntime()
+    var controller: MeetingController?
+    var store: TranscriptStore?
+}
