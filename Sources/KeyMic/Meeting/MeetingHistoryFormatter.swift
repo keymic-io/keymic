@@ -13,8 +13,8 @@ enum MeetingHistoryFormatter {
 
     static func sourceLabel(_ source: Int) -> String {
         switch source {
-        case 0: return String(localized: "我")
-        case 1: return String(localized: "对方")
+        case 0: return "我"
+        case 1: return "对方"
         default: return "?"
         }
     }
