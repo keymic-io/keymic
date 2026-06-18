@@ -838,7 +838,7 @@ smoke-system-audio:
 	@echo "manual: grant Screen Recording to the runner; PLAY audio during the 5s window"
 	@mkdir -p .build
 	swiftc -parse-as-library -o .build/system-audio-smoke \
-	    Sources/KeyMic/Meeting/SystemAudioSmoke.swift \
+	    Tests/SystemAudioSmoke.swift \
 	    Sources/KeyMic/Meeting/SystemAudioCapture.swift \
 	    Sources/KeyMic/Meeting/PCMResampler16k.swift
 	.build/system-audio-smoke
