@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx test-pcm-resampler smoke-system-audio
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx test-pcm-resampler smoke-system-audio test-transcript-store
 
 
 build:
@@ -842,3 +842,11 @@ smoke-system-audio:
 	    Sources/KeyMic/Meeting/SystemAudioCapture.swift \
 	    Sources/KeyMic/Meeting/PCMResampler16k.swift
 	.build/system-audio-smoke
+
+test-transcript-store:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-transcript-store \
+	    Tests/TranscriptStoreTests.swift \
+	    Sources/KeyMic/Meeting/MeetingModels.swift \
+	    Sources/KeyMic/Meeting/TranscriptStore.swift
+	.build/t-transcript-store
