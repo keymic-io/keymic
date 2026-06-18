@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx test-pcm-resampler
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx test-pcm-resampler smoke-system-audio
 
 
 build:
@@ -832,3 +832,13 @@ smoke-onnx:
 	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/funasr-nano-ar} populated"
 	swift build
 	@echo "(invoke ONNX path via the running app; this target only builds)"
+
+# 手动真机冒烟(需 Screen Recording 权限 + 正在播放音频)。验证系统音频采集 → 16k 流。
+smoke-system-audio:
+	@echo "manual: grant Screen Recording to the runner; PLAY audio during the 5s window"
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/system-audio-smoke \
+	    Sources/KeyMic/Meeting/SystemAudioSmoke.swift \
+	    Sources/KeyMic/Meeting/SystemAudioCapture.swift \
+	    Sources/KeyMic/Meeting/PCMResampler16k.swift
+	.build/system-audio-smoke
