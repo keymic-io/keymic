@@ -13,6 +13,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
     case screenshot
     case selectedTextEditor
     case clipboardTransform
+    case meetingTranscribe
 
     var displayName: String {
         switch self {
@@ -23,6 +24,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         case .screenshot: return String(localized: "Screenshot")
         case .selectedTextEditor: return String(localized: "Selected text editor")
         case .clipboardTransform: return String(localized: "Clipboard transformer")
+        case .meetingTranscribe: return String(localized: "Meeting transcription")
         }
     }
 
@@ -34,6 +36,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.screenshot.rawValue: "ctrl+alt+a",            // Open screenshot selection and annotation.
         HotkeyFeature.selectedTextEditor.rawValue: "alt+e",         // Open Selected Text Editor panel.
         HotkeyFeature.clipboardTransform.rawValue: "alt+l",         // Transform selected clipboard items via LLM.
+        HotkeyFeature.meetingTranscribe.rawValue: "ctrl+alt+m",     // ⌃⌥M — start/stop meeting transcription.
     ]
 }
 
