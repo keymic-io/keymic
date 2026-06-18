@@ -18,6 +18,8 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
     private let queue = DispatchQueue(label: "io.keymic.app.systemaudio")
 
     func start() async throws {
+        guard stream == nil else { return }   // already capturing; idempotent
+
         let content: SCShareableContent
         do {
             // Triggers / verifies the Screen Recording TCC grant, same as ScreenCapturer.
@@ -51,9 +53,13 @@ final class SystemAudioCapture: NSObject, SCStreamOutput, SCStreamDelegate {
         logger.info("system audio capture started")
     }
 
+    /// Stops audio capture. Note: `SCStream` retains `self` as its output + delegate; calling
+    /// `stopCapture()` and dropping our reference (setting `stream = nil`) does not guarantee immediate deallocation
+    /// until ScreenCaptureKit releases its internal references — callers must not rely on immediate dealloc.
     func stop() async {
         guard let stream else { return }
-        try? await stream.stopCapture()
+        do { try await stream.stopCapture() }
+        catch { logger.error("stopCapture failed: \(error.localizedDescription, privacy: .public)") }
         self.stream = nil
         logger.info("system audio capture stopped")
     }
