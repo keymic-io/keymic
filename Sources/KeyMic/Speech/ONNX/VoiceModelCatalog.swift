@@ -133,26 +133,22 @@ enum VoiceModelCatalog {
                       mirrors: [msMlt("Qwen3-0.6B/merges.txt")]),
         ])
 
-    /// Sentinel SHA256 for assets whose real hash is baked on first download (dev defers the
-    /// download). Non-empty so catalog wiring is valid; AssetStore.verifySHA256 refuses any
-    /// download against this value, so an unverified blob can never be silently accepted.
-    static let pendingSHA = "PENDING_BAKE_ON_FIRST_DOWNLOAD"
-
     /// Streaming bilingual (zh/en) zipformer transducer for meeting transcription (M1).
     /// 4 files: int8 encoder + decoder + int8 joiner + tokens. relPaths are normalized to
     /// fixed short names so the bridge config can hardcode them regardless of upstream naming.
+    /// SHA256 baked from the real HF download verified by the M1 streaming-decode smoke (2026-06-19).
     static let streamingZipformerBilingual = AssetBundle(
         id: "streaming-zipformer-bilingual-zh-en-2023-02-20",
         destDirName: "models/streaming-zipformer-bilingual-zh-en",
         files: [
             AssetFile(url: hfStreaming("encoder-epoch-99-avg-1.int8.onnx"),
-                      sha256: pendingSHA, relPath: "encoder.onnx"),
+                      sha256: "8fa764187a261844f859d7143ebaa563af5d10adfece4c18a8f414c88cba2a9b", relPath: "encoder.onnx"),
             AssetFile(url: hfStreaming("decoder-epoch-99-avg-1.onnx"),
-                      sha256: pendingSHA, relPath: "decoder.onnx"),
+                      sha256: "2e3b5ec371f8899ee6acd829fd753ba45772df57a91bdf37cde3136354e7db7d", relPath: "decoder.onnx"),
             AssetFile(url: hfStreaming("joiner-epoch-99-avg-1.int8.onnx"),
-                      sha256: pendingSHA, relPath: "joiner.onnx"),
+                      sha256: "1ed689c5ed19dbaa725d9d191bb4822b5f4855a39e1ffd28cbc1f340d25b2ee0", relPath: "joiner.onnx"),
             AssetFile(url: hfStreaming("tokens.txt"),
-                      sha256: pendingSHA, relPath: "tokens.txt"),
+                      sha256: "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3", relPath: "tokens.txt"),
         ])
 
     /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano / funasrMltNano 均走 ONNX(sherpa funasr runtime)。
