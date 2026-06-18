@@ -17,6 +17,7 @@ struct MeetingHistoryView: View {
             transcriptDetail
                 .frame(minWidth: 280)
         }
+        .modelContainer(store.modelContainer)
     }
 
     private var sessionList: some View {
