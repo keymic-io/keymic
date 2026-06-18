@@ -20,8 +20,8 @@ struct PCMResampler16kTests {
         let resampler = PCMResampler16k()
         let out = resampler.resample(buf)
 
-        // 0.5s @ 16k ≈ 8000 samples; allow converter edge slack.
-        assert(out.count > 6400 && out.count < 8400, "unexpected resampled count: \(out.count)")
+        // 0.5s @ 16k = 8000 samples; full drain via endOfStream flush.
+        assert(out.count > 7600 && out.count < 8400, "unexpected resampled count: \(out.count)")
         let rms = sqrtf(out.reduce(0) { $0 + $1 * $1 } / Float(max(out.count, 1)))
         assert(rms > 0.1, "resampled signal should be non-silent, rms=\(rms)")
         print("PCMResampler16kTests passed")
