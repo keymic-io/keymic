@@ -863,6 +863,7 @@ test-meeting-preferences:
 	swiftc -parse-as-library -o .build/t-meeting-preferences \
 	    Tests/MeetingPreferencesTests.swift \
 	    Sources/KeyMic/Meeting/MeetingPreferences.swift
+	.build/t-meeting-preferences
 
 test-meeting-controller:
 	@mkdir -p .build
