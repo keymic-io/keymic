@@ -12,7 +12,7 @@ final class MeetingSetupWindow: NSPanel {
     init(onStart: @escaping () -> Void) {
         self.onStart = onStart
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 320),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 320), // Height is governed by the hosted SwiftUI content (NSHostingController sizes to fit); the literal is just an initial nominal.
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false)

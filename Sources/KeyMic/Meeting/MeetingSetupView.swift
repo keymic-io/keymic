@@ -19,7 +19,7 @@ extension MeetingPrerequisites {
     static func live() -> MeetingPrerequisites {
         MeetingPrerequisites(
             mic: MicPermission(AVCaptureDevice.authorizationStatus(for: .audio)),
-            runtimeReady: ONNXRuntimeLoader.shared.store.state == .ready,
+            runtimeReady: ONNXRuntimeLoader.shared.store.state == .ready, // .ready == downloaded, not dlopen'd; loading is the pipeline's backstop (design spec §7).
             modelReady: OnnxStores.streaming.state == .ready)
     }
 }
