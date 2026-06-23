@@ -333,12 +333,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Meeting transcription controller — must be built at launch so MeetingSettingsView
         // can bind to a live controller via MeetingRuntime.shared (Task 4).
         transcriptStore = TranscriptStore.makeDefault()
+        let meetingPipeline = LiveMeetingPipeline(
+            store: transcriptStore,
+            offsetProvider: { [weak self] in self?.meetingController.currentOffset() ?? 0 },
+            modelDirProvider: { OnnxStores.streaming.destDir },
+            onRequestStop: { [weak self] in self?.meetingController.stop() })
         meetingController = MeetingController(
             store: transcriptStore,
             onPauseVoice: { [weak self] in self?.setMeetingVoiceSuspended(true) },
             onResumeVoice: { [weak self] in self?.setMeetingVoiceSuspended(false) },
             audioSourceProvider: { MeetingPreferences.audioSource() },
-            localeProvider: { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "" })
+            localeProvider: { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "" },
+            pipeline: meetingPipeline)
+        // Refresh the menu item icon/title on ANY start/stop (menu, hotkey, settings, sleep/lock).
+        meetingController.onTranscribingChanged = { [weak self] _ in self?.updateMeetingMenuItemTitle() }
         MeetingRuntime.shared.controller = meetingController
         MeetingRuntime.shared.store = transcriptStore
 
@@ -768,6 +776,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             action: #selector(toggleMeetingTranscribe), keyEquivalent: "")
         meetingMenuItem.target = self
         menu.addItem(meetingMenuItem)
+        updateMeetingMenuItemTitle()   // sets the initial title + icon
 
         menu.addItem(.separator())
 
@@ -839,6 +848,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return image?.withSymbolConfiguration(config)
     }
 
+    /// Like `symbolImage`, but renders the symbol in a fixed color (non-template) — used for the
+    /// red recording-stop glyph so it stays red in the otherwise-monochrome menu.
+    private func coloredSymbolImage(_ name: String, color: NSColor) -> NSImage? {
+        let base = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        let config = base.applying(.init(paletteColors: [color]))
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = false
+        return image
+    }
+
     private func updateStatusIcon(recording: Bool) {
         guard let button = statusItem.button else { return }
         if recording {
@@ -874,9 +894,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func updateMeetingMenuItemTitle() {
-        meetingMenuItem?.title = meetingController.isTranscribing
+        let transcribing = meetingController?.isTranscribing ?? false
+        meetingMenuItem?.title = transcribing
             ? String(localized: "Stop Meeting Transcription")
             : String(localized: "Start Meeting Transcription")
+        // Idle → the same waveform glyph the settings tab uses. Recording → a red stop square
+        // (filled square inside a circle) to signal the active/stoppable state.
+        meetingMenuItem?.image = transcribing
+            ? coloredSymbolImage("stop.circle.fill", color: .systemRed)
+            : symbolImage("waveform.badge.mic")
     }
 
     /// Suppresses or re-enables the voice push-to-talk trigger while a meeting session runs.

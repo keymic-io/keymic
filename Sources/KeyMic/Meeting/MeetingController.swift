@@ -2,10 +2,19 @@ import Foundation
 import Observation
 import os
 
+/// The real capture + ASR + caption pipeline, injected into `MeetingController`. Kept behind
+/// a protocol so the controller's standalone test target needs no AVFoundation / AppKit /
+/// CSherpaOnnx. Production conformer is `LiveMeetingPipeline`; tests inject nil (no-op hooks).
+@MainActor
+protocol MeetingPipeline: AnyObject {
+    func start(session: UUID, source: MeetingAudioSource)
+    func stop()
+}
+
 /// Lifecycle coordinator for meeting transcription. THIS IS THE SHELL: it owns start/stop
-/// state, session persistence, the voice-input mutex, and exposes pipeline hooks. The actual
-/// audio capture + streaming ASR + caption window are filled in by M3 via `startPipeline`/
-/// `stopPipeline`. Mirrors the coordinator role of `ClipboardController`.
+/// state, session persistence, the voice-input mutex, and delegates the audio capture +
+/// streaming ASR + caption window to an injected `MeetingPipeline`. Mirrors the coordinator
+/// role of `ClipboardController`.
 @MainActor
 @Observable
 final class MeetingController {
@@ -18,6 +27,11 @@ final class MeetingController {
     @ObservationIgnored private let onResumeVoice: () -> Void
     @ObservationIgnored private let audioSourceProvider: () -> MeetingAudioSource
     @ObservationIgnored private let localeProvider: () -> String
+    @ObservationIgnored private let pipeline: MeetingPipeline?
+
+    /// Fired on every start/stop with the new `isTranscribing` value. Lets AppKit surfaces
+    /// (e.g. the menu-bar item icon/title) refresh regardless of which path toggled the meeting.
+    @ObservationIgnored var onTranscribingChanged: ((Bool) -> Void)?
 
     @ObservationIgnored private var activeSessionID: UUID?
     @ObservationIgnored private(set) var startedAt: Date?
@@ -27,13 +41,15 @@ final class MeetingController {
         onPauseVoice: @escaping () -> Void,
         onResumeVoice: @escaping () -> Void,
         audioSourceProvider: @escaping () -> MeetingAudioSource,
-        localeProvider: @escaping () -> String
+        localeProvider: @escaping () -> String,
+        pipeline: MeetingPipeline? = nil
     ) {
         self.store = store
         self.onPauseVoice = onPauseVoice
         self.onResumeVoice = onResumeVoice
         self.audioSourceProvider = audioSourceProvider
         self.localeProvider = localeProvider
+        self.pipeline = pipeline
     }
 
     func toggle() { isTranscribing ? stop() : start() }
@@ -50,6 +66,7 @@ final class MeetingController {
         isTranscribing = true
         onPauseVoice()   // mutex: pause push-to-talk while a meeting runs (PRD §4.1)
         startPipeline(session: sid, source: audioSourceProvider())
+        onTranscribingChanged?(true)
         Self.logger.info("meeting started session=\(sid.uuidString, privacy: .public)")
     }
 
@@ -62,6 +79,7 @@ final class MeetingController {
         activeSessionID = nil
         startedAt = nil
         onResumeVoice()
+        onTranscribingChanged?(false)
         Self.logger.info("meeting stopped session=\(sid.uuidString, privacy: .public)")
     }
 
@@ -71,16 +89,19 @@ final class MeetingController {
         return max(0, now.timeIntervalSince(startedAt))
     }
 
-    // MARK: - M3 fill-in hooks (shell defines no-ops; M3 implements the real pipeline)
+    // MARK: - M3 pipeline hooks (delegated to the injected MeetingPipeline)
 
-    /// M3: start mic + system-audio capture, spin up per-channel StreamingASREngine, show caption window.
+    /// Start mic capture + streaming ASR + caption window via the injected pipeline.
+    /// No-op when no pipeline is injected (e.g. the controller's standalone test target).
     func startPipeline(session: UUID, source: MeetingAudioSource) {
-        Self.logger.info("startPipeline (M3 TODO) source=\(source.rawValue, privacy: .public)")
+        Self.logger.info("startPipeline source=\(source.rawValue, privacy: .public)")
+        pipeline?.start(session: session, source: source)
     }
 
-    /// M3: tear down engines + capture, hide caption window.
+    /// Tear down capture + engine, hide the caption window.
     func stopPipeline() {
-        Self.logger.info("stopPipeline (M3 TODO)")
+        Self.logger.info("stopPipeline")
+        pipeline?.stop()
     }
 }
 

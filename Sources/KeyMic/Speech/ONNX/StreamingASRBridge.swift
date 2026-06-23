@@ -52,3 +52,7 @@ final class StreamingASRBridge {
 
     deinit { sherpa_online_destroy(handle) }
 }
+
+/// `accept(_:sampleRate:)`, `currentText()`, `isEndpoint()`, `reset()` already match the
+/// protocol (the default `sampleRate` argument still satisfies the requirement).
+extension StreamingASRBridge: StreamingRecognizing {}

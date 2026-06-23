@@ -9,6 +9,7 @@ struct MeetingSettingsView: View {
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     @State private var audioSource: MeetingAudioSource = MeetingPreferences.audioSource()
+    @State private var showClearAllHistory = false
 
     private var hotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .meetingTranscribe) }
 
@@ -66,11 +67,34 @@ struct MeetingSettingsView: View {
 
             // History (M4)
             Section {
-                if let store { MeetingHistoryView(store: store).frame(minHeight: 200) }
+                if let store { MeetingHistoryView(store: store) }
                 else { Text("History unavailable").foregroundStyle(.secondary) }
-            } header: { Text("History") }
+            } header: {
+                HStack {
+                    Text("History")
+                    Spacer()
+                    Button(role: .destructive) {
+                        showClearAllHistory = true
+                    } label: {
+                        Label("Clear All", systemImage: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .controlSize(.small)
+                    .disabled(store == nil)
+                }
+            }
         }
         .formStyle(.grouped)
+        .confirmationDialog(
+            Text("Delete all meeting history?"),
+            isPresented: $showClearAllHistory,
+            titleVisibility: .visible
+        ) {
+            Button("Delete All", role: .destructive) { store?.deleteAllSessions() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes every meeting and its transcript. This cannot be undone.")
+        }
         .onAppear { audioSource = MeetingPreferences.audioSource() }
     }
 }

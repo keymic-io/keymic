@@ -93,6 +93,16 @@ final class TranscriptStore {
         save("deleteSession")
     }
 
+    /// Remove every meeting session (and, by cascade, all their segments).
+    func deleteAllSessions() {
+        do {
+            try context.delete(model: MeetingSession.self)
+            save("deleteAllSessions")
+        } catch {
+            Self.logger.error("deleteAllSessions failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     var modelContainer: ModelContainer { container }
 
     static func defaultTitle(_ date: Date) -> String {

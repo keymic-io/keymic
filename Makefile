@@ -801,6 +801,7 @@ test-streaming-bridge-nil:
 	    .build/SherpaBridge.o \
 	    Tests/StreamingASRBridgeNilTests.swift \
 	    Sources/KeyMic/Speech/ONNX/StreamingASRBridge.swift \
+	    Sources/KeyMic/Meeting/StreamingASREngine.swift \
 	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
 	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
 	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
@@ -874,3 +875,11 @@ test-meeting-controller:
 	    Sources/KeyMic/Meeting/TranscriptStore.swift \
 	    Sources/KeyMic/Meeting/MeetingModels.swift
 	.build/t-meeting-controller
+
+# StreamingASREngine unit test — uses a fake recognizer (no CSherpaOnnx, no model, no mic).
+test-streaming-asr-engine:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-streaming-asr-engine \
+	    Tests/StreamingASREngineTests.swift \
+	    Sources/KeyMic/Meeting/StreamingASREngine.swift
+	.build/t-streaming-asr-engine

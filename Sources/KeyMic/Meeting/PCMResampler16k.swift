@@ -27,6 +27,10 @@ final class PCMResampler16k {
             sourceFormat = buffer.format
         }
         guard let conv = converter else { return [] }
+        // Each tap buffer is converted independently. We signal `.endOfStream` below to fully
+        // flush the polyphase tail, which leaves the converter in a terminal state — so reset
+        // it first or every call after the first returns zero frames (continuous-capture bug).
+        conv.reset()
 
         let ratio = targetFormat.sampleRate / buffer.format.sampleRate
         // Use a per-chunk output capacity; we loop until the converter signals endOfStream.

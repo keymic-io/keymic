@@ -24,6 +24,15 @@ struct PCMResampler16kTests {
         assert(out.count > 7600 && out.count < 8400, "unexpected resampled count: \(out.count)")
         let rms = sqrtf(out.reduce(0) { $0 + $1 * $1 } / Float(max(out.count, 1)))
         assert(rms > 0.1, "resampled signal should be non-silent, rms=\(rms)")
+
+        // Reuse across buffers (continuous capture): the SAME instance must keep producing
+        // output for every subsequent buffer — not just the first. Regression guard for the
+        // AVAudioConverter endOfStream-is-terminal bug that broke meeting transcription.
+        let out2 = resampler.resample(buf)
+        assert(out2.count > 7600 && out2.count < 8400, "2nd resample on reused instance returned \(out2.count) (converter left in terminal state?)")
+        let out3 = resampler.resample(buf)
+        assert(out3.count > 7600 && out3.count < 8400, "3rd resample on reused instance returned \(out3.count)")
+
         print("PCMResampler16kTests passed")
     }
 }
