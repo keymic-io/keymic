@@ -33,6 +33,15 @@ final class MeetingController {
     /// (e.g. the menu-bar item icon/title) refresh regardless of which path toggled the meeting.
     @ObservationIgnored var onTranscribingChanged: ((Bool) -> Void)?
 
+    /// Returns whether Start may proceed. `nil` (default) → always proceed, so existing call
+    /// sites and the standalone test target are unaffected. Injected by `AppDelegate` to evaluate
+    /// `MeetingPrerequisites.live().allReady`.
+    @ObservationIgnored var prerequisitesReady: (() -> Bool)?
+
+    /// Fired when `start()` is blocked by a missing prerequisite. The host surfaces the guided
+    /// setup window; the controller itself does NOT change state.
+    @ObservationIgnored var onPrerequisitesMissing: (() -> Void)?
+
     @ObservationIgnored private var activeSessionID: UUID?
     @ObservationIgnored private(set) var startedAt: Date?
 
@@ -55,10 +64,16 @@ final class MeetingController {
     func toggle() { isTranscribing ? stop() : start() }
 
     /// Begin a meeting. Idempotent if already transcribing. Prerequisite resolution
-    /// (model download / permission, PRD §4.8) is performed by the caller before invoking
-    /// start() — the shell assumes prerequisites are met here.
+    /// (model download / permission, PRD §4.8) is enforced at this chokepoint via the injected
+    /// `prerequisitesReady` closure; a missing prerequisite surfaces the guided setup window
+    /// and returns without starting.
     func start() {
         guard !isTranscribing else { return }
+        if let prerequisitesReady, !prerequisitesReady() {
+            Self.logger.info("meeting start blocked: prerequisites missing")
+            onPrerequisitesMissing?()
+            return
+        }
         let now = Date()
         let sid = store.startSession(localeCode: localeProvider(), startedAt: now)
         activeSessionID = sid

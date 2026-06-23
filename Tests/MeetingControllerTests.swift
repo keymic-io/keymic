@@ -48,6 +48,35 @@ struct MeetingControllerTests {
         c.toggle(); assert(!c.isTranscribing, "toggle stops")
         assert(store.allSessions().count == 2, "second start created a second session")
 
+        // --- Prerequisite gate -------------------------------------------------
+        // Fresh controller so the session counter is isolated from the cases above.
+        var gPaused = 0
+        let gated = MeetingController(
+            store: store,
+            onPauseVoice: { gPaused += 1 },
+            onResumeVoice: {},
+            audioSourceProvider: { .both },
+            localeProvider: { "zh-Hans" })
+
+        let baselineSessions = store.allSessions().count
+        var missingFired = 0
+        gated.prerequisitesReady = { false }
+        gated.onPrerequisitesMissing = { missingFired += 1 }
+
+        gated.start()
+        assert(!gated.isTranscribing, "gate-fail must not enter transcribing state")
+        assert(missingFired == 1, "gate-fail must fire onPrerequisitesMissing once")
+        assert(gPaused == 0, "gate-fail must not pause voice")
+        assert(store.allSessions().count == baselineSessions, "gate-fail must not create a session")
+
+        // Now prerequisites pass → start proceeds normally.
+        gated.prerequisitesReady = { true }
+        gated.start()
+        assert(gated.isTranscribing, "gate-pass starts the meeting")
+        assert(missingFired == 1, "gate-pass must not fire onPrerequisitesMissing")
+        assert(store.allSessions().count == baselineSessions + 1, "gate-pass creates a session")
+        gated.stop()
+
         print("MeetingControllerTests passed")
     }
 }
