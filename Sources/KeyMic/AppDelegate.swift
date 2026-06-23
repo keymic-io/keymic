@@ -122,6 +122,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
     private lazy var settingsWindow = SwiftUISettingsWindow()
+    private lazy var meetingSetupWindow = MeetingSetupWindow(
+        onStart: { [weak self] in self?.meetingController.start() })
     var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }
@@ -347,6 +349,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pipeline: meetingPipeline)
         // Refresh the menu item icon/title on ANY start/stop (menu, hotkey, settings, sleep/lock).
         meetingController.onTranscribingChanged = { [weak self] _ in self?.updateMeetingMenuItemTitle() }
+        // Prerequisite gate (PRD §4.8): every start path funnels through start(); a missing
+        // mic permission / runtime / model surfaces the guided setup window instead of starting.
+        meetingController.prerequisitesReady = { MeetingPrerequisites.live().allReady }
+        meetingController.onPrerequisitesMissing = { [weak self] in self?.showMeetingSetupWindow() }
         MeetingRuntime.shared.controller = meetingController
         MeetingRuntime.shared.store = transcriptStore
 
@@ -903,6 +909,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingMenuItem?.image = transcribing
             ? coloredSymbolImage("stop.circle.fill", color: .systemRed)
             : symbolImage("waveform.badge.mic")
+    }
+
+    /// Surface the guided setup window when a meeting can't start yet. Called from the controller's
+    /// `onPrerequisitesMissing` hook (menu / hotkey / settings Start all route through it).
+    private func showMeetingSetupWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        meetingSetupWindow.presentRefreshed()
     }
 
     /// Suppresses or re-enables the voice push-to-talk trigger while a meeting session runs.
