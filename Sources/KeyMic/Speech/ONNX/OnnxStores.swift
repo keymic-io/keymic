@@ -9,4 +9,6 @@ enum OnnxStores {
     static let mltModel = AssetStore(bundle: VoiceModelCatalog.funasrMltNano)
     /// Streaming model store (meeting transcription). Distinct destDir from the offline models.
     static let streaming = AssetStore(bundle: VoiceModelCatalog.streamingZipformerBilingual)
+    /// Offline speaker-diarization model store (P2.2). Distinct destDir from the ASR models.
+    static let diarization = AssetStore(bundle: VoiceModelCatalog.speakerDiarization)
 }

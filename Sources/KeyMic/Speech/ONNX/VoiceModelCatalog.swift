@@ -61,6 +61,12 @@ enum VoiceModelCatalog {
     private static func hfStreaming(_ file: String) -> URL {
         URL(string: "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/resolve/main/\(file)")!
     }
+    private static func hfPyannote(_ file: String) -> URL {
+        URL(string: "https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/\(file)")!
+    }
+    private static func hf3DSpeaker(_ file: String) -> URL {
+        URL(string: "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/\(file)")!
+    }
     private static func runtimeURL(_ file: String) -> URL {
         URL(string: "https://github.com/keymic-io/keymic/releases/download/onnx-runtime-v1.13.2/\(file)")!
     }
@@ -149,6 +155,21 @@ enum VoiceModelCatalog {
                       sha256: "1ed689c5ed19dbaa725d9d191bb4822b5f4855a39e1ffd28cbc1f340d25b2ee0", relPath: "joiner.onnx"),
             AssetFile(url: hfStreaming("tokens.txt"),
                       sha256: "a8e0e4ec53810e433789b54a5c0134a7eaa2ffca595a6334d54c00da858841d3", relPath: "tokens.txt"),
+        ])
+
+    /// Offline speaker-diarization models (P2.2): pyannote segmentation + 3D-Speaker campplus
+    /// embedding. relPaths normalized to fixed names so the bridge config can hardcode them.
+    /// SHA256 baked from the verified real downloads (computed at implementation time).
+    static let speakerDiarization = AssetBundle(
+        id: "speaker-diarization-pyannote-3dspeaker-1",
+        destDirName: "models/speaker-diarization",
+        files: [
+            AssetFile(url: hfPyannote("model.onnx"),
+                      sha256: "220ad67ca923bef2fa91f2390c786097bf305bceb5e261d4af67b38e938e1079",
+                      relPath: "segmentation.onnx"),
+            AssetFile(url: hf3DSpeaker("3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx"),
+                      sha256: "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
+                      relPath: "embedding.onnx"),
         ])
 
     /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano / funasrMltNano 均走 ONNX(sherpa funasr runtime)。
