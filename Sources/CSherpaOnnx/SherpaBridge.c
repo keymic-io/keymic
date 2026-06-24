@@ -49,6 +49,23 @@ static Fn_OnlineReset         g_onReset;
 static Fn_OnlineDestroyStream g_onDestroyStream;
 static Fn_OnlineDestroyRec    g_onDestroyRec;
 
+// ---- Offline speaker diarization fn pointers ----
+typedef const SherpaOnnxOfflineSpeakerDiarization *(*Fn_DiarCreate)(const SherpaOnnxOfflineSpeakerDiarizationConfig *);
+typedef void (*Fn_DiarDestroy)(const SherpaOnnxOfflineSpeakerDiarization *);
+typedef const SherpaOnnxOfflineSpeakerDiarizationResult *(*Fn_DiarProcess)(const SherpaOnnxOfflineSpeakerDiarization *, const float *, int32_t);
+typedef int32_t (*Fn_DiarNumSegments)(const SherpaOnnxOfflineSpeakerDiarizationResult *);
+typedef const SherpaOnnxOfflineSpeakerDiarizationSegment *(*Fn_DiarSort)(const SherpaOnnxOfflineSpeakerDiarizationResult *);
+typedef void (*Fn_DiarDestroySegment)(const SherpaOnnxOfflineSpeakerDiarizationSegment *);
+typedef void (*Fn_DiarDestroyResult)(const SherpaOnnxOfflineSpeakerDiarizationResult *);
+
+static Fn_DiarCreate         g_diarCreate;
+static Fn_DiarDestroy        g_diarDestroy;
+static Fn_DiarProcess        g_diarProcess;
+static Fn_DiarNumSegments    g_diarNumSegments;
+static Fn_DiarSort           g_diarSort;
+static Fn_DiarDestroySegment g_diarDestroySegment;
+static Fn_DiarDestroyResult  g_diarDestroyResult;
+
 // 内部句柄:绑定一个 recognizer 与它的一条 stream(单声道单流)。
 typedef struct {
     const SherpaOnnxOnlineRecognizer *rec;
@@ -94,6 +111,17 @@ int sherpa_load(const char *onnx_dir, char *err, int err_cap) {
         !g_onGetResult || !g_onDestroyResult || !g_onIsEndpoint || !g_onReset ||
         !g_onDestroyStream || !g_onDestroyRec) {
         snprintf(err, err_cap, "dlsym FAIL: one or more online symbols null"); return 4;
+    }
+    g_diarCreate         = (Fn_DiarCreate)dlsym(hsherpa, "SherpaOnnxCreateOfflineSpeakerDiarization");
+    g_diarDestroy        = (Fn_DiarDestroy)dlsym(hsherpa, "SherpaOnnxDestroyOfflineSpeakerDiarization");
+    g_diarProcess        = (Fn_DiarProcess)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationProcess");
+    g_diarNumSegments    = (Fn_DiarNumSegments)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationResultGetNumSegments");
+    g_diarSort           = (Fn_DiarSort)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationResultSortByStartTime");
+    g_diarDestroySegment = (Fn_DiarDestroySegment)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationDestroySegment");
+    g_diarDestroyResult  = (Fn_DiarDestroyResult)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationDestroyResult");
+    if (!g_diarCreate || !g_diarDestroy || !g_diarProcess || !g_diarNumSegments ||
+        !g_diarSort || !g_diarDestroySegment || !g_diarDestroyResult) {
+        snprintf(err, err_cap, "dlsym FAIL: one or more diarization symbols null"); return 5;
     }
     g_loaded = 1;
     return 0;
@@ -229,4 +257,46 @@ void sherpa_online_destroy(void *handle) {
     if (h->stream) g_onDestroyStream(h->stream);
     if (h->rec) g_onDestroyRec(h->rec);
     free(h);
+}
+
+int sherpa_diarize(const char *seg_model, const char *embedding_model, float threshold,
+                   const float *samples, int n,
+                   float *starts, float *ends, int *speakers, int max_segs,
+                   char *err, int err_cap) {
+    if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return -1; }
+    if (!samples || n <= 0) { snprintf(err, err_cap, "no samples"); return -2; }
+
+    SherpaOnnxOfflineSpeakerDiarizationConfig config;
+    memset(&config, 0, sizeof(config));
+    config.segmentation.pyannote.model = seg_model;
+    config.segmentation.num_threads    = 2;
+    config.segmentation.provider       = "cpu";
+    config.embedding.model             = embedding_model;
+    config.embedding.num_threads       = 2;
+    config.embedding.provider          = "cpu";
+    // num_clusters <= 0 → auto-estimate count using the distance threshold.
+    config.clustering.num_clusters     = -1;
+    config.clustering.threshold        = threshold;
+
+    const SherpaOnnxOfflineSpeakerDiarization *sd = g_diarCreate(&config);
+    if (!sd) { snprintf(err, err_cap, "CreateOfflineSpeakerDiarization NULL"); return -3; }
+
+    const SherpaOnnxOfflineSpeakerDiarizationResult *res = g_diarProcess(sd, samples, n);
+    if (!res) { snprintf(err, err_cap, "Diarization Process NULL"); g_diarDestroy(sd); return -4; }
+
+    int32_t count = g_diarNumSegments(res);
+    const SherpaOnnxOfflineSpeakerDiarizationSegment *segs = g_diarSort(res);
+    int written = 0;
+    if (segs) {
+        for (int32_t i = 0; i < count && written < max_segs; i++) {
+            starts[written]   = segs[i].start;
+            ends[written]     = segs[i].end;
+            speakers[written] = segs[i].speaker;
+            written++;
+        }
+        g_diarDestroySegment(segs);
+    }
+    g_diarDestroyResult(res);
+    g_diarDestroy(sd);
+    return written;
 }

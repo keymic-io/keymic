@@ -42,4 +42,15 @@ void sherpa_online_destroy(void *handle);
 
 void sherpa_destroy(void *recognizer);
 
+// ---- Offline speaker diarization (P2.2) ----
+// 须先 sherpa_load 成功。对 16k mono float [-1,1] 整段音频跑离线说话人分离。
+// seg_model = pyannote segmentation .onnx; embedding_model = 3D-Speaker campplus .onnx。
+// threshold = 聚类距离阈值(num_clusters 内部取 -1 → 自动估计人数)。
+// 结果分段(按 start 排序)写入 starts/ends/speakers(各 max_segs 容量)。
+// 返回写入的分段数(>=0),或负数错误码并把诊断写入 err。
+int sherpa_diarize(const char *seg_model, const char *embedding_model, float threshold,
+                   const float *samples, int n,
+                   float *starts, float *ends, int *speakers, int max_segs,
+                   char *err, int err_cap);
+
 #endif
