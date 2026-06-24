@@ -114,6 +114,7 @@ final class TranscriptStore {
     func remoteSegments(for sessionID: UUID) -> [(id: UUID, offset: Double)] {
         segments(for: sessionID)
             .filter { $0.source == 1 }
+            .sorted { $0.offset < $1.offset }
             .map { (id: $0.id, offset: $0.offset) }
     }
 
