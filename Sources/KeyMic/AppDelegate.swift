@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardTransformController: ClipboardTransformController!
     private var transcriptStore: TranscriptStore!
     private var meetingController: MeetingController!
+    private var meetingDiarizer: MeetingDiarizer!
     /// When `true`, the voice push-to-talk trigger is suppressed because a meeting
     /// transcription session is active (PRD §4.1 voice mutex).
     private var meetingVoiceSuspended = false
@@ -357,6 +358,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingController.onPrerequisitesMissing = { [weak self] in self?.showMeetingSetupWindow() }
         MeetingRuntime.shared.controller = meetingController
         MeetingRuntime.shared.store = transcriptStore
+
+        let meetingDiarizer = MeetingDiarizer(store: transcriptStore)
+        meetingController.onSessionFinished = { sid in meetingDiarizer.diarize(sessionID: sid) }
+        self.meetingDiarizer = meetingDiarizer
 
         // Sleep / lock auto-stop (PRD §4.1)
         let ws = NSWorkspace.shared.notificationCenter

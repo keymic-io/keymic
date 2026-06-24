@@ -133,21 +133,35 @@ private struct MeetingHistoryContent: View {
     @ViewBuilder
     private var transcriptDetail: some View {
         if let session = selectedSession {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(session.segments.sorted { $0.offset < $1.offset }, id: \.id) { seg in
-                        HStack(alignment: .top, spacing: 8) {
-                            Text(MeetingHistoryFormatter.sourceLabel(seg.source))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(seg.source == 0 ? .blue : .green)
-                                .frame(width: 36, alignment: .leading)
-                            Text(seg.text).textSelection(.enabled)
-                            Spacer(minLength: 0)
+            VStack(alignment: .leading, spacing: 0) {
+                switch session.diarizationState {
+                case "processing":
+                    Label("正在区分说话人…", systemImage: "person.2.wave.2")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                case "failed":
+                    Label("未能区分说话人", systemImage: "exclamationmark.triangle")
+                        .font(.caption).foregroundStyle(.orange)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                default:
+                    EmptyView()
+                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(session.segments.sorted { $0.offset < $1.offset }, id: \.id) { seg in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(seg.speakerLabel ?? MeetingHistoryFormatter.sourceLabel(seg.source))
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(seg.source == 0 ? .blue : .green)
+                                    .frame(width: 52, alignment: .leading)
+                                Text(seg.text).textSelection(.enabled)
+                                Spacer(minLength: 0)
+                            }
                         }
                     }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding()
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else {
             Text("选择一场会议查看转录稿")
