@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreGraphics
 import SwiftUI
 import os
 
@@ -14,13 +15,24 @@ extension MicPermission {
     }
 }
 
+extension ScreenRecordingPermission {
+    init(authorized: Bool) { self = authorized ? .authorized : .denied }
+}
+
 extension MeetingPrerequisites {
-    /// Snapshot of the three live prerequisite sources. Used by `AppDelegate` to drive the gate.
-    static func live() -> MeetingPrerequisites {
-        MeetingPrerequisites(
+    /// Snapshot of the live prerequisite sources for a given audio source. Screen Recording is
+    /// only required (and only read) when system audio is captured (`.both`/`.system`).
+    static func live(source: MeetingAudioSource) -> MeetingPrerequisites {
+        let needsScreen = (source == .both || source == .system)
+        return MeetingPrerequisites(
+            // .ready == downloaded, not dlopen'd; loading is the pipeline's backstop (design spec §7).
             mic: MicPermission(AVCaptureDevice.authorizationStatus(for: .audio)),
-            runtimeReady: ONNXRuntimeLoader.shared.store.state == .ready, // .ready == downloaded, not dlopen'd; loading is the pipeline's backstop (design spec §7).
-            modelReady: OnnxStores.streaming.state == .ready)
+            runtimeReady: ONNXRuntimeLoader.shared.store.state == .ready,
+            modelReady: OnnxStores.streaming.state == .ready,
+            requiresScreenRecording: needsScreen,
+            screenRecording: needsScreen
+                ? ScreenRecordingPermission(authorized: CGPreflightScreenCaptureAccess())
+                : .authorized)
     }
 }
 
@@ -31,30 +43,45 @@ extension MeetingPrerequisites {
 @MainActor
 final class MeetingSetupModel: ObservableObject {
     @Published var mic: MicPermission
+    @Published var screenRecording: ScreenRecordingPermission
+    var audioSource: MeetingAudioSource
     let onnx: OnnxDownloadController
 
     init() {
         self.mic = MicPermission(AVCaptureDevice.authorizationStatus(for: .audio))
+        self.audioSource = MeetingPreferences.audioSource()
+        self.screenRecording = ScreenRecordingPermission(authorized: CGPreflightScreenCaptureAccess())
         self.onnx = OnnxDownloadController(modelStore: OnnxStores.streaming)
     }
 
-    /// Re-read mic status (the user may have toggled it in System Settings while the window was up).
-    func refreshMic() {
+    /// Re-read mic + screen-recording permission and the selected audio source. Called when the
+    /// window appears and on focus (the user may have changed a grant in System Settings).
+    func refresh() {
         mic = MicPermission(AVCaptureDevice.authorizationStatus(for: .audio))
+        audioSource = MeetingPreferences.audioSource()
+        screenRecording = ScreenRecordingPermission(authorized: CGPreflightScreenCaptureAccess())
     }
 
-    /// In-app system prompt — only meaningful from `.notDetermined`.
     func requestMic() {
         AVCaptureDevice.requestAccess(for: .audio) { [weak self] _ in
-            DispatchQueue.main.async { self?.refreshMic() }
+            DispatchQueue.main.async { self?.refresh() }
         }
     }
 
+    /// Prompts once if undetermined; after a denial macOS requires the System Settings hand-off.
+    func requestScreenRecording() {
+        CGRequestScreenCaptureAccess()
+        refresh()
+    }
+
     var prerequisites: MeetingPrerequisites {
-        MeetingPrerequisites(
+        let needsScreen = (audioSource == .both || audioSource == .system)
+        return MeetingPrerequisites(
             mic: mic,
             runtimeReady: onnx.runtimeState == .ready,
-            modelReady: onnx.modelState == .ready)
+            modelReady: onnx.modelState == .ready,
+            requiresScreenRecording: needsScreen,
+            screenRecording: screenRecording)
     }
 }
 
@@ -65,6 +92,8 @@ struct MeetingSetupView: View {
     @ObservedObject var model: MeetingSetupModel
     let onGrantMic: () -> Void
     let onOpenMicSettings: () -> Void
+    let onGrantScreen: () -> Void
+    let onOpenScreenSettings: () -> Void
     let onDownloadModel: () -> Void
     let onStart: () -> Void
     let onCancel: () -> Void
@@ -81,6 +110,10 @@ struct MeetingSetupView: View {
                 .foregroundStyle(.secondary)
 
             micRow
+            if model.audioSource == .both || model.audioSource == .system {
+                Divider()
+                screenRow
+            }
             Divider()
             modelRow
 
@@ -124,6 +157,32 @@ struct MeetingSetupView: View {
                 Button("Grant", action: onGrantMic)
             case .denied:
                 Button("Open System Settings", action: onOpenMicSettings)
+            }
+        }
+    }
+
+    // MARK: Screen Recording row
+
+    @ViewBuilder
+    private var screenRow: some View {
+        HStack(alignment: .top, spacing: 12) {
+            statusGlyph(model.screenRecording == .authorized)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Screen Recording access").font(.body.weight(.medium))
+                switch model.screenRecording {
+                case .authorized:
+                    Text("Granted.").font(.callout).foregroundStyle(.secondary)
+                case .denied:
+                    Text("KeyMic needs Screen Recording to capture the other party's audio. Enable KeyMic under System Settings → Privacy & Security → Screen Recording, then return here.")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            switch model.screenRecording {
+            case .authorized:
+                EmptyView()
+            case .denied:
+                Button("Open System Settings", action: onOpenScreenSettings)
             }
         }
     }

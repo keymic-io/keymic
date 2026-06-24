@@ -351,7 +351,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetingController.onTranscribingChanged = { [weak self] _ in self?.updateMeetingMenuItemTitle() }
         // Prerequisite gate (PRD §4.8): every start path funnels through start(); a missing
         // mic permission / runtime / model surfaces the guided setup window instead of starting.
-        meetingController.prerequisitesReady = { MeetingPrerequisites.live().allReady }
+        meetingController.prerequisitesReady = {
+            MeetingPrerequisites.live(source: MeetingPreferences.audioSource()).allReady
+        }
         meetingController.onPrerequisitesMissing = { [weak self] in self?.showMeetingSetupWindow() }
         MeetingRuntime.shared.controller = meetingController
         MeetingRuntime.shared.store = transcriptStore

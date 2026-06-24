@@ -23,7 +23,9 @@ final class MeetingSetupWindow: NSPanel {
         let view = MeetingSetupView(
             model: model,
             onGrantMic: { [weak self] in self?.model.requestMic() },
-            onOpenMicSettings: { Self.openMicSystemSettings() },
+            onOpenMicSettings: { Self.openSettings("Privacy_Microphone") },
+            onGrantScreen: { [weak self] in self?.model.requestScreenRecording() },
+            onOpenScreenSettings: { Self.openSettings("Privacy_ScreenCapture") },
             onDownloadModel: { [weak self] in self?.model.onnx.download() },
             onStart: { [weak self] in self?.handleStart() },
             onCancel: { [weak self] in self?.close() })
@@ -37,12 +39,12 @@ final class MeetingSetupWindow: NSPanel {
     /// System Settings while this window was open.
     override func becomeKey() {
         super.becomeKey()
-        model.refreshMic()
+        model.refresh()
     }
 
-    /// Present (or re-present) the window with a fresh mic read.
+    /// Present (or re-present) the window with a fresh permission + source read.
     func presentRefreshed() {
-        model.refreshMic()
+        model.refresh()
         makeKeyAndOrderFront(nil)
     }
 
@@ -51,8 +53,8 @@ final class MeetingSetupWindow: NSPanel {
         onStart()
     }
 
-    private static func openMicSystemSettings() {
-        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") else { return }
+    private static func openSettings(_ anchor: String) {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") else { return }
         NSWorkspace.shared.open(url)
     }
 }
