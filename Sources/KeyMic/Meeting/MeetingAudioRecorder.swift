@@ -9,6 +9,7 @@ final class MeetingAudioRecorder {
     private let handle: FileHandle
     private var dataBytes: UInt32 = 0
     private var finished = false
+    private let lock = NSLock()
 
     /// Opens `url` for writing (creating parent dirs) and emits a WAV header with placeholder
     /// sizes. Returns nil if the file cannot be created.
@@ -16,7 +17,7 @@ final class MeetingAudioRecorder {
         self.fileURL = url
         let fm = FileManager.default
         try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        fm.createFile(atPath: url.path, contents: nil)
+        fm.createFile(atPath: url.path(percentEncoded: false), contents: nil)
         guard let h = try? FileHandle(forWritingTo: url) else { return nil }
         self.handle = h
         h.write(Self.header(sampleRate: UInt32(sampleRate), dataBytes: 0))
@@ -24,6 +25,8 @@ final class MeetingAudioRecorder {
 
     /// Convert to clamped 16-bit little-endian PCM and append. No-op after `finish()`.
     func append(_ samples: [Float]) {
+        lock.lock()
+        defer { lock.unlock() }
         guard !finished, !samples.isEmpty else { return }
         var bytes = [UInt8](); bytes.reserveCapacity(samples.count * 2)
         for f in samples {
@@ -38,6 +41,8 @@ final class MeetingAudioRecorder {
 
     /// Patch the RIFF/data chunk sizes and close. Idempotent.
     func finish() {
+        lock.lock()
+        defer { lock.unlock() }
         guard !finished else { return }
         finished = true
         try? handle.seek(toOffset: 4)
