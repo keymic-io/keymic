@@ -19,6 +19,10 @@ struct MeetingHistoryFormatterTests {
         assert(MeetingHistoryFormatter.isInterrupted(endedAt: nil) == true)
         assert(MeetingHistoryFormatter.isInterrupted(endedAt: Date()) == false)
 
+        // remoteSpeakerLabel: diarized speaker index → "对方 N"
+        assert(MeetingHistoryFormatter.remoteSpeakerLabel(0) == "对方 1", "index 0 → 对方 1")
+        assert(MeetingHistoryFormatter.remoteSpeakerLabel(2) == "对方 3", "index 2 → 对方 3")
+
         print("MeetingHistoryFormatterTests passed")
     }
 }

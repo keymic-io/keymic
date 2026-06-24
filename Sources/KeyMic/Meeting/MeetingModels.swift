@@ -11,6 +11,9 @@ final class MeetingSession {
     var endedAt: Date?
     var title: String          // default = localized start-time string; rename deferred
     var localeCode: String     // recognition-language snapshot
+    /// Offline speaker-diarization lifecycle: "none" (not run / no remote audio), "processing",
+    /// "done", or "failed". Defaulted so SwiftData migrates existing rows additively.
+    var diarizationState: String = "none"
     @Relationship(deleteRule: .cascade, inverse: \TranscriptSegment.session)
     var segments: [TranscriptSegment]
 
@@ -40,6 +43,9 @@ final class TranscriptSegment {
     var text: String
     var source: Int
     var isFinal: Bool
+    /// Diarized remote-speaker label (e.g. "对方 2"). nil for mic ("我"), legacy, or un-diarized
+    /// rows — display falls back to the channel source label.
+    var speakerLabel: String? = nil
     var session: MeetingSession?
 
     init(

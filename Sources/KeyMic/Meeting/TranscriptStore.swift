@@ -103,6 +103,29 @@ final class TranscriptStore {
         }
     }
 
+    /// Update a session's diarization lifecycle state.
+    func setDiarizationState(_ state: String, for sessionID: UUID) {
+        guard let s = session(id: sessionID) else { return }
+        s.diarizationState = state
+        save("setDiarizationState")
+    }
+
+    /// Remote (`source == 1`) segments of a session, offset-sorted — the diarization inputs.
+    func remoteSegments(for sessionID: UUID) -> [(id: UUID, offset: Double)] {
+        segments(for: sessionID)
+            .filter { $0.source == 1 }
+            .map { (id: $0.id, offset: $0.offset) }
+    }
+
+    /// Apply diarized speaker labels to the named segments of a session.
+    func setSpeakerLabels(_ labels: [UUID: String], for sessionID: UUID) {
+        let segs = segments(for: sessionID)
+        for seg in segs where labels[seg.id] != nil {
+            seg.speakerLabel = labels[seg.id]
+        }
+        save("setSpeakerLabels")
+    }
+
     var modelContainer: ModelContainer { container }
 
     static func defaultTitle(_ date: Date) -> String {

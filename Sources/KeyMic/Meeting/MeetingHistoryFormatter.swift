@@ -20,4 +20,9 @@ enum MeetingHistoryFormatter {
     }
 
     static func isInterrupted(endedAt: Date?) -> Bool { endedAt == nil }
+
+    /// Display label for a diarized remote speaker cluster (0-based index → 1-based label).
+    static func remoteSpeakerLabel(_ speakerIndex: Int) -> String {
+        String(format: String(localized: "对方 %lld"), speakerIndex + 1)
+    }
 }
