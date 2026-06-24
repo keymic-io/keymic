@@ -119,10 +119,9 @@ int sherpa_load(const char *onnx_dir, char *err, int err_cap) {
     g_diarSort           = (Fn_DiarSort)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationResultSortByStartTime");
     g_diarDestroySegment = (Fn_DiarDestroySegment)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationDestroySegment");
     g_diarDestroyResult  = (Fn_DiarDestroyResult)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationDestroyResult");
-    if (!g_diarCreate || !g_diarDestroy || !g_diarProcess || !g_diarNumSegments ||
-        !g_diarSort || !g_diarDestroySegment || !g_diarDestroyResult) {
-        snprintf(err, err_cap, "dlsym FAIL: one or more diarization symbols null"); return 5;
-    }
+    // Diarization symbols may be absent in a diarization-incapable dylib. Do NOT fail here —
+    // a missing diarization capability must never block ASR/streaming. sherpa_diarize() guards
+    // against null pointers before use.
     g_loaded = 1;
     return 0;
 }
@@ -265,6 +264,12 @@ int sherpa_diarize(const char *seg_model, const char *embedding_model, float thr
                    char *err, int err_cap) {
     if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return -1; }
     if (!samples || n <= 0) { snprintf(err, err_cap, "no samples"); return -2; }
+    // Guard: diarization symbols may be absent in a diarization-incapable dylib (sherpa_load
+    // no longer fails when they are null). Return a clear error so callers can degrade gracefully.
+    if (!g_diarCreate || !g_diarDestroy || !g_diarProcess || !g_diarNumSegments ||
+        !g_diarSort || !g_diarDestroySegment || !g_diarDestroyResult) {
+        snprintf(err, err_cap, "diarization symbols unavailable in loaded dylib"); return -5;
+    }
 
     SherpaOnnxOfflineSpeakerDiarizationConfig config;
     memset(&config, 0, sizeof(config));

@@ -335,6 +335,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Meeting transcription controller — must be built at launch so MeetingSettingsView
         // can bind to a live controller via MeetingRuntime.shared (Task 4).
+
+        // Diarization WAVs are only consumed within the same app run; any left over from a
+        // previous run are orphans (model absent / failed / never diarized). Sweep them so
+        // disk doesn't grow unboundedly. Nothing is mid-diarization at launch time.
+        let meetingAudioDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("KeyMic/meeting-audio", isDirectory: true)
+        if let orphans = try? FileManager.default.contentsOfDirectory(at: meetingAudioDir, includingPropertiesForKeys: nil) {
+            for f in orphans { try? FileManager.default.removeItem(at: f) }
+        }
+
         transcriptStore = TranscriptStore.makeDefault()
         let meetingPipeline = LiveMeetingPipeline(
             store: transcriptStore,
@@ -360,7 +370,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MeetingRuntime.shared.store = transcriptStore
 
         let meetingDiarizer = MeetingDiarizer(store: transcriptStore)
-        meetingController.onSessionFinished = { sid in meetingDiarizer.diarize(sessionID: sid) }
+        // Wire diarization to the pipeline's post-finalization callback so diarize() is only
+        // called after MeetingAudioRecorder.finish() has closed and patched the WAV header.
+        // (Previously wired to meetingController.onSessionFinished which fires before finish().)
+        meetingPipeline.onRecorderFinalized = { sid in meetingDiarizer.diarize(sessionID: sid) }
         self.meetingDiarizer = meetingDiarizer
 
         // Sleep / lock auto-stop (PRD §4.1)

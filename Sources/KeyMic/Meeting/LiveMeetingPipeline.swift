@@ -20,6 +20,12 @@ final class LiveMeetingPipeline: MeetingPipeline {
     private let modelDirProvider: () -> URL
     private let onRequestStop: () -> Void
 
+    /// Fired on the main actor after `MeetingAudioRecorder.finish()` completes — i.e. once the
+    /// system-audio WAV header is fully patched and the file is closed. Only fires for sessions
+    /// that actually recorded system audio (recorder != nil). Wired by AppDelegate to kick
+    /// MeetingDiarizer so diarization always reads a finalized WAV.
+    @ObservationIgnored var onRecorderFinalized: ((UUID) -> Void)?
+
     private var sessionID: UUID?
     private var panel: MeetingCaptionPanel?
 
@@ -65,8 +71,18 @@ final class LiveMeetingPipeline: MeetingPipeline {
         let cap = systemCapture
         let eng = systemEngine
         let rec = recorder
+        // Capture the session ID NOW before we nil it below — the async task needs it.
+        let sid = sessionID
         eng?.stop()
-        Task { await cap?.stop(); rec?.finish() }
+        Task { [weak self] in
+            await cap?.stop()
+            rec?.finish()
+            // Only fire the callback when a recorder existed (system-audio path). The WAV is fully
+            // written and closed at this point — safe for diarization to open.
+            if let rec, let sid {
+                await MainActor.run { self?.onRecorderFinalized?(sid) }
+            }
+        }
 
         panel?.hide()
 
