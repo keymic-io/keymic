@@ -44,7 +44,7 @@ extension MeetingPrerequisites {
 final class MeetingSetupModel: ObservableObject {
     @Published var mic: MicPermission
     @Published var screenRecording: ScreenRecordingPermission
-    var audioSource: MeetingAudioSource
+    @Published var audioSource: MeetingAudioSource
     let onnx: OnnxDownloadController
 
     init() {
