@@ -92,7 +92,7 @@ struct MeetingSettingsView: View {
             } header: {
                 Text("Speaker diarization")
             } footer: {
-                Text("下载后,会议结束会自动把远端说话人拆分为「对方 1 / 2 / 3」并写入历史;不下载则远端统一标为「对方」。仅作用于系统音频(对方)一路。")
+                Text("下载后,会议结束会自动按说话人把远端拆分为「对方 1 / 对方 2 …」并写入历史;不下载则远端统一标为「对方」。仅作用于系统音频(对方)一路。")
                     .font(.callout).foregroundStyle(.secondary)
             }
 
