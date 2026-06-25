@@ -530,25 +530,6 @@ private struct VoiceSettingsView: View {
         if #available(macOS 15, *) { return true } else { return false }
     }()
 
-    /// Unified status line for every downloadable model — identical wording across engines.
-    /// In the stable states (not-downloaded / ready) the size is shown inline, so there is no
-    /// separate "Size:" row.
-    private func modelStatusText(_ phase: DownloadPhase, sizeText: String?) -> String {
-        switch phase {
-        case .notDownloaded:
-            if let sizeText { return String(format: String(localized: "Not downloaded (%@)"), sizeText) }
-            return String(localized: "Not downloaded")
-        case .downloading(let fraction):
-            let percent = Int((fraction * 100).rounded())
-            // Explicit `%lld%%` key (vs. interpolation) so the catalog lookup is deterministic.
-            return String(format: String(localized: "Downloading… %lld%%"), percent)
-        case .ready:
-            if let sizeText { return String(format: String(localized: "Ready (%@)"), sizeText) }
-            return String(localized: "Ready")
-        case .failed(let msg):
-            return String(format: String(localized: "Failed: %@"), msg)
-        }
-    }
 
     /// The byte-progress fraction while downloading, else nil.
     private var senseVoiceDownloadFraction: Double? {
@@ -732,9 +713,29 @@ private struct VoiceSettingsView: View {
     }
 }
 
+/// Unified status line for every downloadable model — identical wording across engines.
+/// In the stable states (not-downloaded / ready) the size is shown inline, so there is no
+/// separate "Size:" row. Module-internal so both the Voice and Meeting settings tabs share it.
+func modelStatusText(_ phase: DownloadPhase, sizeText: String?) -> String {
+    switch phase {
+    case .notDownloaded:
+        if let sizeText { return String(format: String(localized: "Not downloaded (%@)"), sizeText) }
+        return String(localized: "Not downloaded")
+    case .downloading(let fraction):
+        let percent = Int((fraction * 100).rounded())
+        // Explicit `%lld%%` key (vs. interpolation) so the catalog lookup is deterministic.
+        return String(format: String(localized: "Downloading… %lld%%"), percent)
+    case .ready:
+        if let sizeText { return String(format: String(localized: "Ready (%@)"), sizeText) }
+        return String(localized: "Ready")
+    case .failed(let msg):
+        return String(format: String(localized: "Failed: %@"), msg)
+    }
+}
+
 /// Engine-agnostic download phase. `SenseVoiceModelStore.State` and `AssetStore.State` are
 /// structurally identical; normalizing into this lets one status formatter serve both.
-private enum DownloadPhase {
+enum DownloadPhase {
     case notDownloaded, downloading(Double), ready, failed(String)
 
     init(_ s: SenseVoiceModelStore.State) {
@@ -758,7 +759,7 @@ private enum DownloadPhase {
 
 /// 统一的「模型下载/状态」展示行,所有可下载语音模型共用:状态文案(已就绪时含体积)+ 进度条 +
 /// (未就绪)下载按钮 /(已就绪)在 Finder 显示。
-private struct ModelDownloadRow: View {
+struct ModelDownloadRow: View {
     let statusText: String
     let fraction: Double?
     let isReady: Bool
