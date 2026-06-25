@@ -66,6 +66,28 @@ static Fn_DiarSort           g_diarSort;
 static Fn_DiarDestroySegment g_diarDestroySegment;
 static Fn_DiarDestroyResult  g_diarDestroyResult;
 
+// ---- Online punctuation fn pointers ----
+typedef const SherpaOnnxOnlinePunctuation *(*Fn_PunctCreate)(const SherpaOnnxOnlinePunctuationConfig *);
+typedef const char *(*Fn_PunctAdd)(const SherpaOnnxOnlinePunctuation *, const char *);
+typedef void (*Fn_PunctFreeText)(const char *);
+typedef void (*Fn_PunctDestroy)(const SherpaOnnxOnlinePunctuation *);
+
+static Fn_PunctCreate   g_punctCreate;
+static Fn_PunctAdd      g_punctAdd;
+static Fn_PunctFreeText g_punctFreeText;
+static Fn_PunctDestroy  g_punctDestroy;
+
+// ---- Offline punctuation (CT-transformer) fn pointers ----
+typedef const SherpaOnnxOfflinePunctuation *(*Fn_OffPunctCreate)(const SherpaOnnxOfflinePunctuationConfig *);
+typedef const char *(*Fn_OffPunctAdd)(const SherpaOnnxOfflinePunctuation *, const char *);
+typedef void (*Fn_OffPunctFreeText)(const char *);
+typedef void (*Fn_OffPunctDestroy)(const SherpaOnnxOfflinePunctuation *);
+
+static Fn_OffPunctCreate   g_offPunctCreate;
+static Fn_OffPunctAdd      g_offPunctAdd;
+static Fn_OffPunctFreeText g_offPunctFreeText;
+static Fn_OffPunctDestroy  g_offPunctDestroy;
+
 // 内部句柄:绑定一个 recognizer 与它的一条 stream(单声道单流)。
 typedef struct {
     const SherpaOnnxOnlineRecognizer *rec;
@@ -122,6 +144,17 @@ int sherpa_load(const char *onnx_dir, char *err, int err_cap) {
     // Diarization symbols may be absent in a diarization-incapable dylib. Do NOT fail here —
     // a missing diarization capability must never block ASR/streaming. sherpa_diarize() guards
     // against null pointers before use.
+    g_punctCreate   = (Fn_PunctCreate)dlsym(hsherpa, "SherpaOnnxCreateOnlinePunctuation");
+    g_punctAdd      = (Fn_PunctAdd)dlsym(hsherpa, "SherpaOnnxOnlinePunctuationAddPunct");
+    g_punctFreeText = (Fn_PunctFreeText)dlsym(hsherpa, "SherpaOnnxOnlinePunctuationFreeText");
+    g_punctDestroy  = (Fn_PunctDestroy)dlsym(hsherpa, "SherpaOnnxDestroyOnlinePunctuation");
+    // Punctuation symbols may be absent in a punctuation-incapable dylib. Do NOT fail here —
+    // missing punctuation must never block ASR/streaming. sherpa_create_punct() guards on null.
+    g_offPunctCreate   = (Fn_OffPunctCreate)dlsym(hsherpa, "SherpaOnnxCreateOfflinePunctuation");
+    g_offPunctAdd      = (Fn_OffPunctAdd)dlsym(hsherpa, "SherpaOfflinePunctuationAddPunct");
+    g_offPunctFreeText = (Fn_OffPunctFreeText)dlsym(hsherpa, "SherpaOfflinePunctuationFreeText");
+    g_offPunctDestroy  = (Fn_OffPunctDestroy)dlsym(hsherpa, "SherpaOnnxDestroyOfflinePunctuation");
+    // Same graceful-degrade rule: sherpa_create_offline_punct() guards on null.
     g_loaded = 1;
     return 0;
 }
@@ -304,4 +337,71 @@ int sherpa_diarize(const char *seg_model, const char *embedding_model, float thr
     g_diarDestroyResult(res);
     g_diarDestroy(sd);
     return written;
+}
+
+void *sherpa_create_punct(const char *model, const char *bpe_vocab, char *err, int err_cap) {
+    if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return NULL; }
+    // Punctuation symbols may be absent in a punctuation-incapable dylib (sherpa_load no longer
+    // fails when they are null). Return NULL so callers can degrade to raw text gracefully.
+    if (!g_punctCreate || !g_punctAdd || !g_punctFreeText || !g_punctDestroy) {
+        snprintf(err, err_cap, "punctuation symbols unavailable in loaded dylib"); return NULL;
+    }
+    SherpaOnnxOnlinePunctuationConfig config;
+    memset(&config, 0, sizeof(config));
+    config.model.cnn_bilstm  = model;
+    config.model.bpe_vocab   = bpe_vocab;
+    config.model.num_threads = 1;
+    config.model.provider    = "cpu";
+    config.model.debug       = 0;
+
+    const SherpaOnnxOnlinePunctuation *p = g_punctCreate(&config);
+    if (!p) { snprintf(err, err_cap, "CreateOnlinePunctuation NULL"); return NULL; }
+    return (void *)p;
+}
+
+int sherpa_punct_add(void *handle, const char *text, char *out, int out_cap) {
+    if (!handle || !text || !out || out_cap <= 0) return -1;
+    const SherpaOnnxOnlinePunctuation *p = (const SherpaOnnxOnlinePunctuation *)handle;
+    const char *res = g_punctAdd(p, text);
+    int len = 0;
+    if (res) { snprintf(out, out_cap, "%s", res); len = (int)strlen(out); g_punctFreeText(res); }
+    else if (out_cap > 0) out[0] = '\0';
+    return len;
+}
+
+void sherpa_punct_destroy(void *handle) {
+    if (!handle) return;
+    g_punctDestroy((const SherpaOnnxOnlinePunctuation *)handle);
+}
+
+void *sherpa_create_offline_punct(const char *model, char *err, int err_cap) {
+    if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return NULL; }
+    if (!g_offPunctCreate || !g_offPunctAdd || !g_offPunctFreeText || !g_offPunctDestroy) {
+        snprintf(err, err_cap, "offline punctuation symbols unavailable in loaded dylib"); return NULL;
+    }
+    SherpaOnnxOfflinePunctuationConfig config;
+    memset(&config, 0, sizeof(config));
+    config.model.ct_transformer = model;
+    config.model.num_threads    = 1;
+    config.model.provider       = "cpu";
+    config.model.debug          = 0;
+
+    const SherpaOnnxOfflinePunctuation *p = g_offPunctCreate(&config);
+    if (!p) { snprintf(err, err_cap, "CreateOfflinePunctuation NULL"); return NULL; }
+    return (void *)p;
+}
+
+int sherpa_offline_punct_add(void *handle, const char *text, char *out, int out_cap) {
+    if (!handle || !text || !out || out_cap <= 0) return -1;
+    const SherpaOnnxOfflinePunctuation *p = (const SherpaOnnxOfflinePunctuation *)handle;
+    const char *res = g_offPunctAdd(p, text);
+    int len = 0;
+    if (res) { snprintf(out, out_cap, "%s", res); len = (int)strlen(out); g_offPunctFreeText(res); }
+    else if (out_cap > 0) out[0] = '\0';
+    return len;
+}
+
+void sherpa_offline_punct_destroy(void *handle) {
+    if (!handle) return;
+    g_offPunctDestroy((const SherpaOnnxOfflinePunctuation *)handle);
 }

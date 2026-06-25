@@ -351,6 +351,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             offsetProvider: { [weak self] in self?.meetingController.currentOffset() ?? 0 },
             modelDirProvider: { OnnxStores.streaming.destDir },
             onRequestStop: { [weak self] in self?.meetingController.stop() })
+        // The streaming meeting model being present implies this user transcribes meetings; fetch
+        // the tiny (~7 MB) English punctuation+truecasing model in the background so the pipeline
+        // can post-process captions. Idempotent. This covers users whose prerequisites are already
+        // satisfied — `MeetingController.start()` skips the setup window for them, so the window's
+        // own trigger (fresh-user download path) never fires.
+        if OnnxStores.streaming.state == .ready {
+            OnnxStores.punct.ensureDownloaded { _ in }     // English truecasing+punct (~7 MB)
+            OnnxStores.ctPunct.ensureDownloaded { _ in }   // Chinese CT-transformer punct (~72 MB)
+        }
         meetingController = MeetingController(
             store: transcriptStore,
             onPauseVoice: { [weak self] in self?.setMeetingVoiceSuspended(true) },

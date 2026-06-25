@@ -29,12 +29,14 @@ struct StreamingASREngineTests {
     /// runs inline and assertions are deterministic.
     private static func makeEngine(
         _ fake: FakeRecognizer,
+        textTransform: ((String) -> String)? = nil,
         now: @escaping () -> TimeInterval
     ) -> StreamingASREngine {
         StreamingASREngine(
             source: 0,
             recognizer: fake,
             partialThrottle: 0.2,
+            textTransform: textTransform,
             execute: { $0() },
             deliver: { $0() },
             now: now)
@@ -46,7 +48,50 @@ struct StreamingASREngineTests {
         testEndpointEmitsSingleFinalAndResets()
         testIgnoresEmptyPartialAndFinal()
         testStopSuppressesLateCallbacks()
+        testTextTransformAppliesToPartialAndFinal()
+        testTextTransformRunsOncePerEmittedText()
         print("StreamingASREngineTests passed")
+    }
+
+    // The transform rewrites both emitted partial and emitted final text.
+    static func testTextTransformAppliesToPartialAndFinal() {
+        let fake = FakeRecognizer([
+            .init(text: "hello world", endpoint: false),
+            .init(text: "hello world how are you", endpoint: true),
+        ])
+        let engine = makeEngine(fake, textTransform: { "[" + $0 + "]" }) { 100 }
+        var partials: [String] = []
+        var finals: [String] = []
+        engine.onPartial = { _, text in partials.append(text) }
+        engine.onFinal = { _, text in finals.append(text) }
+
+        engine.feed([1])   // partial
+        engine.feed([1])   // endpoint → final
+
+        assert(partials == ["[hello world]"], "partial transformed: \(partials)")
+        assert(finals == ["[hello world how are you]"], "final transformed: \(finals)")
+    }
+
+    // Dedup/throttle gate the RAW text, so the transform runs only for actually-emitted text:
+    // once for the throttled-but-distinct partial path here, not on every chunk.
+    static func testTextTransformRunsOncePerEmittedText() {
+        let fake = FakeRecognizer([
+            .init(text: "abc", endpoint: false),   // t=0   → emit (transform #1)
+            .init(text: "abc", endpoint: false),   // t=0.1 → duplicate raw → dropped, no transform
+            .init(text: "abcd", endpoint: false),  // t=0.1 → throttled (< 200ms) → no transform
+        ])
+        var clock: TimeInterval = 0
+        var transformCalls = 0
+        let engine = makeEngine(fake, textTransform: { transformCalls += 1; return $0.uppercased() }) { clock }
+        var partials: [String] = []
+        engine.onPartial = { _, text in partials.append(text) }
+
+        clock = 0;   engine.feed([1])
+        clock = 0.1; engine.feed([1])
+        clock = 0.1; engine.feed([1])
+
+        assert(partials == ["ABC"], "only the first distinct partial emits: \(partials)")
+        assert(transformCalls == 1, "transform runs once, not per chunk: \(transformCalls)")
     }
 
     // Audio chunks reach the recognizer on the engine path.

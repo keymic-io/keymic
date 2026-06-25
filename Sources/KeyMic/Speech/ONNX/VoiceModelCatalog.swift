@@ -67,6 +67,18 @@ enum VoiceModelCatalog {
     private static func hf3DSpeaker(_ file: String) -> URL {
         URL(string: "https://huggingface.co/csukuangfj/speaker-embedding-models/resolve/main/\(file)")!
     }
+    private static func hfOnlinePunct(_ file: String) -> URL {
+        URL(string: "https://huggingface.co/lorneluo/sherpa-onnx-online-punct-en-2024-08-06/resolve/main/\(file)")!
+    }
+    private static func msOnlinePunct(_ file: String) -> URL {
+        URL(string: "https://www.modelscope.cn/models/lorneluo2/sherpa-onnx-online-punct-en-2024-08-06/resolve/master/\(file)")!
+    }
+    private static func hfCtPunct(_ file: String) -> URL {
+        URL(string: "https://huggingface.co/lorneluo/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/resolve/main/\(file)")!
+    }
+    private static func msCtPunct(_ file: String) -> URL {
+        URL(string: "https://www.modelscope.cn/models/lorneluo2/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/resolve/master/\(file)")!
+    }
     private static func runtimeURL(_ file: String) -> URL {
         URL(string: "https://github.com/keymic-io/keymic/releases/download/onnx-runtime-v1.13.2/\(file)")!
     }
@@ -170,6 +182,38 @@ enum VoiceModelCatalog {
             AssetFile(url: hf3DSpeaker("3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx"),
                       sha256: "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11",
                       relPath: "embedding.onnx"),
+        ])
+
+    /// English online punctuation + truecasing (sherpa-onnx-online-punct-en-2024-08-06). Applied to
+    /// streaming meeting transcripts to turn the all-caps, punctuation-free zipformer English into
+    /// normal-cased, punctuated text. 2 files; relPaths normalized to fixed names so the bridge
+    /// config can hardcode them. SHA256 baked from the real upstream tarball download (2026-06-25).
+    static let onlinePunctEn = AssetBundle(
+        id: "online-punct-en-2024-08-06",
+        destDirName: "models/online-punct-en",
+        files: [
+            AssetFile(url: hfOnlinePunct("model.int8.onnx"),
+                      sha256: "9d611f445fe4a46186080fe161be6059d87d72eb88d3a8cb00c1a06e83a6067e",
+                      relPath: "model.int8.onnx",
+                      mirrors: [msOnlinePunct("model.int8.onnx")]),
+            AssetFile(url: hfOnlinePunct("bpe.vocab"),
+                      sha256: "e118b7ad88c54db562517df49e1cffd4836d166c34fb190fd311d7f34eb238f5",
+                      relPath: "bpe.vocab",
+                      mirrors: [msOnlinePunct("bpe.vocab")]),
+        ])
+
+    /// CT-transformer zh-en offline punctuation (sherpa-onnx-punct-ct-transformer-zh-en-vocab272727,
+    /// int8). Adds punctuation (。，？！…) to Chinese (and mixed zh-en) transcript segments; does NOT
+    /// change casing — Chinese has none. 1 file (~72 MB). SHA256 baked from the real upstream tarball
+    /// (2026-06-25). English segments still use `onlinePunctEn` (it truecases; CT-transformer doesn't).
+    static let ctPunctZhEn = AssetBundle(
+        id: "punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8",
+        destDirName: "models/punct-ct-zh-en",
+        files: [
+            AssetFile(url: hfCtPunct("model.int8.onnx"),
+                      sha256: "65a3fb9f5ad7bfb96bf69e0dc4481df97f6ee60513c1d94ce981ba6effd524b1",
+                      relPath: "model.int8.onnx",
+                      mirrors: [msCtPunct("model.int8.onnx")]),
         ])
 
     /// picker 选择项。Apple/SenseVoice 走各自既有引擎;funasrNano / funasrMltNano 均走 ONNX(sherpa funasr runtime)。

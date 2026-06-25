@@ -25,6 +25,10 @@ final class StreamingASREngine {
     private let execute: (@escaping () -> Void) -> Void
     private let deliver: (@escaping () -> Void) -> Void
     private let now: () -> TimeInterval
+    /// Optional text post-processing (e.g. English punctuation + truecasing), run on the engine's
+    /// serial queue right before delivery. nil → raw recognizer text. Applied to every final
+    /// segment, and to each partial only after the throttle/dedup gate (bounds model calls).
+    private let textTransform: ((String) -> String)?
 
     private var stopped = false
     private var lastPartialAt: TimeInterval = -.greatestFiniteMagnitude
@@ -34,6 +38,7 @@ final class StreamingASREngine {
         source: Int,
         recognizer: StreamingRecognizing,
         partialThrottle: TimeInterval = 0.2,
+        textTransform: ((String) -> String)? = nil,
         execute: ((@escaping () -> Void) -> Void)? = nil,
         deliver: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
         now: @escaping () -> TimeInterval = { Date().timeIntervalSinceReferenceDate }
@@ -41,6 +46,7 @@ final class StreamingASREngine {
         self.source = source
         self.recognizer = recognizer
         self.partialThrottle = partialThrottle
+        self.textTransform = textTransform
         self.deliver = deliver
         self.now = now
         if let execute {
@@ -58,11 +64,12 @@ final class StreamingASREngine {
             guard !self.stopped else { return }
 
             if self.recognizer.isEndpoint() {
-                let text = self.recognizer.currentText()
+                let raw = self.recognizer.currentText()
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 self.recognizer.reset()
                 self.lastPartialText = ""
-                guard !text.isEmpty else { return }
+                guard !raw.isEmpty else { return }
+                let text = self.textTransform.map { $0(raw) } ?? raw
                 self.deliver { [weak self] in
                     guard let self, !self.stopped else { return }
                     self.onFinal?(self.source, text)
@@ -70,13 +77,16 @@ final class StreamingASREngine {
                 return
             }
 
-            let text = self.recognizer.currentText()
+            // Dedup + throttle on the RAW hypothesis so the transform runs at most once per
+            // throttle window, not on every audio chunk.
+            let raw = self.recognizer.currentText()
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty, text != self.lastPartialText else { return }
+            guard !raw.isEmpty, raw != self.lastPartialText else { return }
             let t = self.now()
             guard t - self.lastPartialAt >= self.partialThrottle else { return }
             self.lastPartialAt = t
-            self.lastPartialText = text
+            self.lastPartialText = raw
+            let text = self.textTransform.map { $0(raw) } ?? raw
             self.deliver { [weak self] in
                 guard let self, !self.stopped else { return }
                 self.onPartial?(self.source, text)

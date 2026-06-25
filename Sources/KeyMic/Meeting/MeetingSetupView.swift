@@ -52,6 +52,12 @@ final class MeetingSetupModel: ObservableObject {
         self.audioSource = MeetingPreferences.audioSource()
         self.screenRecording = ScreenRecordingPermission(authorized: CGPreflightScreenCaptureAccess())
         self.onnx = OnnxDownloadController(modelStore: OnnxStores.streaming)
+        // Punctuation post-processing models, fire-and-forget + idempotent (no-op if already
+        // downloaded; back-fills users who already have the streaming model). Missing → pipeline
+        // degrades to raw text for that language. English truecasing+punct (~7 MB) + Chinese
+        // CT-transformer punct (~72 MB).
+        OnnxStores.punct.ensureDownloaded { _ in }
+        OnnxStores.ctPunct.ensureDownloaded { _ in }
     }
 
     /// Re-read mic + screen-recording permission and the selected audio source. Called when the

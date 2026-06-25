@@ -828,6 +828,44 @@ smoke-streaming-onnx:
 	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
 	.build/streaming-smoke
 
+# 手动真机冒烟(需 onnx-runtime + models/online-punct-en 已下载)。验证全大写英文 → truecasing+标点。
+smoke-punct-onnx:
+	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/online-punct-en} populated"
+	@mkdir -p .build
+	clang -c Sources/CSherpaOnnx/SherpaBridge.c \
+	    -I Sources/CSherpaOnnx/include \
+	    -o .build/SherpaBridge.o
+	swiftc -parse-as-library -o .build/punct-smoke \
+	    -I Sources/CSherpaOnnx/include \
+	    -Xcc -fmodule-map-file=Sources/CSherpaOnnx/include/module.modulemap \
+	    .build/SherpaBridge.o \
+	    Tests/PunctSmoke.swift \
+	    Sources/KeyMic/Speech/ONNX/PunctuationBridge.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
+	    Sources/KeyMic/Speech/ONNX/OnnxStores.swift \
+	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
+	.build/punct-smoke
+
+# 手动真机冒烟(需 onnx-runtime + models/punct-ct-zh-en 已下载)。验证中文/中英混排 → 加标点。
+smoke-ct-punct-onnx:
+	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/punct-ct-zh-en} populated"
+	@mkdir -p .build
+	clang -c Sources/CSherpaOnnx/SherpaBridge.c \
+	    -I Sources/CSherpaOnnx/include \
+	    -o .build/SherpaBridge.o
+	swiftc -parse-as-library -o .build/ct-punct-smoke \
+	    -I Sources/CSherpaOnnx/include \
+	    -Xcc -fmodule-map-file=Sources/CSherpaOnnx/include/module.modulemap \
+	    .build/SherpaBridge.o \
+	    Tests/CTPunctSmoke.swift \
+	    Sources/KeyMic/Speech/ONNX/CTPunctuationBridge.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
+	    Sources/KeyMic/Speech/ONNX/OnnxStores.swift \
+	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
+	.build/ct-punct-smoke
+
 # 手动真机冒烟(需预放/下载 runtime+模型;非 CI)。用真实 AR 模型转写 Tests/fixtures/zh.wav。
 smoke-onnx:
 	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/funasr-nano-ar} populated"
