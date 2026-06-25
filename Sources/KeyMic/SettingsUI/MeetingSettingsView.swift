@@ -11,6 +11,10 @@ struct MeetingSettingsView: View {
     @State private var audioSource: MeetingAudioSource = MeetingPreferences.audioSource()
     @State private var showClearAllHistory = false
 
+    // Diarization models (P2.2). Reuses the Voice tab's runtime+model download controller —
+    // downloading is the opt-in; MeetingDiarizer runs automatically once the model is ready.
+    @StateObject private var diarization = OnnxDownloadController(modelStore: OnnxStores.diarization)
+
     private var hotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .meetingTranscribe) }
 
     private var isTranscribing: Bool { controller?.isTranscribing ?? false }
@@ -62,6 +66,33 @@ struct MeetingSettingsView: View {
                 .disabled(isTranscribing)
             } header: { Text("Audio source") } footer: {
                 Text("「Both」分别识别本人(我)与系统音频(对方)。准确区分需佩戴耳机以避免外放串音。")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+
+            // Speaker diarization model (P2.2) — optional, reuses the ONNX download row.
+            Section {
+                let fraction: Double? = {
+                    if case .downloading(let f) = diarization.combined { return f }
+                    return nil
+                }()
+                let busy: Bool = {
+                    switch diarization.combined {
+                    case .ready, .downloading: return true
+                    case .notDownloaded, .failed: return false
+                    }
+                }()
+                ModelDownloadRow(
+                    statusText: modelStatusText(DownloadPhase(diarization.combined), sizeText: "≈ 33 MB"),
+                    fraction: fraction,
+                    isReady: diarization.combined == .ready,
+                    downloadTitle: "Download runtime + model",
+                    downloadDisabled: busy,
+                    folderURL: OnnxStores.diarization.destDir,
+                    onDownload: { diarization.download() })
+            } header: {
+                Text("Speaker diarization")
+            } footer: {
+                Text("下载后,会议结束会自动把远端说话人拆分为「对方 1 / 2 / 3」并写入历史;不下载则远端统一标为「对方」。仅作用于系统音频(对方)一路。")
                     .font(.callout).foregroundStyle(.secondary)
             }
 
