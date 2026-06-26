@@ -5,8 +5,9 @@ import os
 /// microphone (`source = 0`, "我") and/or system audio (`source = 1`, "对方"). Each engine has its
 /// own `StreamingASRBridge` (one online stream per recognizer). The system channel additionally
 /// feeds a `MeetingAudioRecorder` (16 kHz int16 WAV) that P2.2 diarizes offline. Captions are
-/// source-labeled; `TranscriptStore` keeps RAW text + the source int. Owned by `AppDelegate`,
-/// injected into `MeetingController`.
+/// source-labeled; `TranscriptStore` keeps post-processed (English punctuation + truecasing, when
+/// the model is available) text + the source int. Owned by `AppDelegate`, injected into
+/// `MeetingController`.
 @MainActor
 final class LiveMeetingPipeline: MeetingPipeline {
     private static let logger = Logger(subsystem: "io.keymic.app", category: "LiveMeetingPipeline")
@@ -101,7 +102,8 @@ final class LiveMeetingPipeline: MeetingPipeline {
     /// raw-text store. Returns nil if the recognizer (model/runtime) is unavailable.
     private func makeEngine(source: Int) -> StreamingASREngine? {
         guard let bridge = StreamingASRBridge.create(modelDir: modelDirProvider()) else { return nil }
-        let engine = StreamingASREngine(source: source, recognizer: bridge)
+        let engine = StreamingASREngine(source: source, recognizer: bridge,
+                                        textTransform: Self.makePunctuationTransform())
         engine.onPartial = { [weak self] src, text in
             guard let self else { return }
             self.panel?.updatePartial(self.labeled(src, text))
@@ -117,6 +119,42 @@ final class LiveMeetingPipeline: MeetingPipeline {
     private func labeled(_ source: Int, _ text: String) -> String {
         let label = (source == Self.systemSource) ? Self.systemLabel : Self.micLabel
         return "\(label)：\(text)"
+    }
+
+    /// Build a per-engine punctuation transform, or nil if neither model/runtime is ready (→ raw
+    /// text, the prior behavior). Routes by script: Latin/ASCII segments go through the English
+    /// `PunctuationBridge` (truecasing + punctuation); segments containing CJK go through the
+    /// `CTPunctuationBridge` (Chinese/English punctuation, no casing). Each engine gets its own
+    /// bridge pair — the handles are not thread-safe and each source runs on its own serial queue.
+    /// A missing model for one language degrades that language to raw text, not the other.
+    private static func makePunctuationTransform() -> ((String) -> String)? {
+        let en = PunctuationBridge.create()
+        let zh = CTPunctuationBridge.create()
+        guard en != nil || zh != nil else { return nil }
+        return { text in
+            if isLatinText(text) {
+                return en?.addPunct(text) ?? text
+            } else {
+                return zh?.addPunct(text) ?? text
+            }
+        }
+    }
+
+    /// True when the text contains no CJK characters — i.e. it's English-ish and safe for the
+    /// English-only punctuation model. Mixed/Chinese segments are left untouched.
+    private static func isLatinText(_ text: String) -> Bool {
+        for scalar in text.unicodeScalars {
+            switch scalar.value {
+            case 0x4E00...0x9FFF,   // CJK Unified Ideographs
+                 0x3400...0x4DBF,   // CJK Extension A
+                 0x3000...0x303F,   // CJK symbols & punctuation
+                 0xFF00...0xFFEF:   // halfwidth/fullwidth forms
+                return false
+            default:
+                continue
+            }
+        }
+        return true
     }
 
     /// Returns false (and surfaces a fatal error) if the mic engine or device cannot start.

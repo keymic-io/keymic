@@ -26,7 +26,11 @@ final class MeetingSetupWindow: NSPanel {
             onOpenMicSettings: { Self.openSettings("Privacy_Microphone") },
             onGrantScreen: { [weak self] in self?.model.requestScreenRecording() },
             onOpenScreenSettings: { Self.openSettings("Privacy_ScreenCapture") },
-            onDownloadModel: { [weak self] in self?.model.onnx.download() },
+            onDownloadModel: { [weak self] in
+                self?.model.onnx.download()
+                OnnxStores.punct.ensureDownloaded { _ in }     // English punct (~7 MB) alongside
+                OnnxStores.ctPunct.ensureDownloaded { _ in }   // Chinese CT-transformer punct (~72 MB)
+            },
             onStart: { [weak self] in self?.handleStart() },
             onCancel: { [weak self] in self?.close() })
         contentViewController = NSHostingController(rootView: view)
