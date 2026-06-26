@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx test-pcm-resampler smoke-system-audio test-transcript-store test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-streaming-catalog test-streaming-bridge-nil smoke-onnx smoke-streaming-onnx test-pcm-resampler smoke-system-audio test-transcript-store test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment test-transcript-exporter
 
 
 build:
@@ -896,6 +896,13 @@ test-speaker-assignment:
 	    Tests/SpeakerAssignmentTests.swift \
 	    Sources/KeyMic/Meeting/SpeakerAssignment.swift
 	.build/t-speaker-assignment
+
+test-transcript-exporter:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-transcript-exporter \
+	    Tests/TranscriptExporterTests.swift \
+	    Sources/KeyMic/Meeting/TranscriptExporter.swift
+	.build/t-transcript-exporter
 
 # StreamingASREngine unit test — uses a fake recognizer (no CSherpaOnnx, no model, no mic).
 test-streaming-asr-engine:
