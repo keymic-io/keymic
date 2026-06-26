@@ -187,9 +187,9 @@ private struct MeetingHistoryContent: View {
                 HStack {
                     Spacer()
                     Menu("Export") {
-                        Button("Markdown") { export(.markdown) }
-                        Button("Plain Text") { export(.plainText) }
-                        Button("SRT") { export(.srt) }
+                        ForEach(ExportFormat.allCases, id: \.self) { format in
+                            Button(format.displayName) { export(format) }
+                        }
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
