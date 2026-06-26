@@ -1,5 +1,7 @@
+import AppKit
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// History section for the Settings "Meeting" tab (embedded by MeetingSettingsView in M5).
 /// Lists meetings newest-first; selecting one shows its transcript (offset-sorted, source-labeled).
@@ -38,6 +40,54 @@ private struct MeetingHistoryContent: View {
     private var pendingDeleteTitle: String {
         guard let pendingDeleteID, let s = sessions.first(where: { $0.id == pendingDeleteID }) else { return "" }
         return s.title
+    }
+
+    /// Build the export payload for a session: pre-format date + duration here (locale-aware),
+    /// resolve each segment's display label, and hand the rest to the pure exporter.
+    private func exportData(for session: MeetingSession) -> MeetingExportData {
+        let df = DateFormatter()
+        df.dateStyle = .medium
+        df.timeStyle = .short
+        let segs = store.segments(for: session.id)
+            .sorted { $0.offset < $1.offset }
+            .map { seg in
+                ExportSegment(
+                    offset: seg.offset,
+                    text: seg.text,
+                    label: seg.speakerLabel ?? MeetingHistoryFormatter.sourceLabel(seg.source))
+            }
+        return MeetingExportData(
+            title: session.title,
+            dateText: df.string(from: session.startedAt),
+            durationText: MeetingHistoryFormatter.duration(start: session.startedAt, end: session.endedAt),
+            segments: segs)
+    }
+
+    /// Run the exporter for the selected session and write the result via NSSavePanel.
+    private func export(_ format: ExportFormat) {
+        guard let session = selectedSession else { return }
+        let text = TranscriptExporter.export(exportData(for: session), as: format)
+
+        let dateStamp = DateFormatter()
+        dateStamp.locale = Locale(identifier: "en_US_POSIX")
+        dateStamp.dateFormat = "yyyy-MM-dd"
+        let safeTitle = session.title.replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "\(safeTitle) \(dateStamp.string(from: session.startedAt)).\(format.fileExtension)"
+        if let type = UTType(filenameExtension: format.fileExtension) {
+            panel.allowedContentTypes = [type]
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Export failed")
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
     }
 
     var body: some View {
@@ -134,6 +184,18 @@ private struct MeetingHistoryContent: View {
     private var transcriptDetail: some View {
         if let session = selectedSession {
             VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Spacer()
+                    Menu("Export") {
+                        Button("Markdown") { export(.markdown) }
+                        Button("Plain Text") { export(.plainText) }
+                        Button("SRT") { export(.srt) }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+                }
                 switch session.diarizationState {
                 case "processing":
                     Label("正在区分说话人…", systemImage: "person.2.wave.2")
