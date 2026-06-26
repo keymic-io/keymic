@@ -59,6 +59,20 @@ struct TranscriptExporterTests {
 
         assert(ExportFormat.markdown.fileExtension == "md" && ExportFormat.plainText.fileExtension == "txt" && ExportFormat.srt.fileExtension == "srt", "file extensions")
 
+        // SRT minimum-cue floor: equal offsets must not produce a zero-duration cue.
+        let tie = MeetingExportData(
+            title: "t", dateText: "d", durationText: "x",
+            segments: [
+                ExportSegment(offset: 10, text: "a", label: "我"),
+                ExportSegment(offset: 10, text: "b", label: "对方"),
+            ])
+        let tieSrt = TranscriptExporter.export(tie, as: .srt)
+        let expectedTie = [
+            "1", "00:00:10,000 --> 00:00:10,500", "我: a", "",
+            "2", "00:00:10,000 --> 00:00:17,000", "对方: b",
+        ].joined(separator: "\n")
+        assert(tieSrt == expectedTie, "srt floor mismatch:\n\(tieSrt)")
+
         print("TranscriptExporterTests passed")
     }
 }

@@ -14,9 +14,9 @@ enum ExportFormat: CaseIterable {
 
     var displayName: String {
         switch self {
-        case .markdown: return "Markdown"
-        case .plainText: return "Plain Text"
-        case .srt: return "SRT"
+        case .markdown: return String(localized: "Markdown")
+        case .plainText: return String(localized: "Plain Text")
+        case .srt: return String(localized: "SRT")
         }
     }
 }
@@ -41,6 +41,8 @@ struct MeetingExportData {
 enum TranscriptExporter {
     /// SRT/last-segment cue length cap (seconds); also the max gap shown before the next cue.
     private static let maxCueSeconds: TimeInterval = 7
+    /// SRT minimum cue duration to avoid zero-length cues.
+    private static let minCueSeconds: TimeInterval = 0.5
 
     static func export(_ data: MeetingExportData, as format: ExportFormat) -> String {
         switch format {
@@ -79,12 +81,13 @@ enum TranscriptExporter {
         var blocks: [String] = []
         for (i, s) in d.segments.enumerated() {
             let start = s.offset
-            let end: TimeInterval
+            let rawEnd: TimeInterval
             if i + 1 < d.segments.count {
-                end = min(d.segments[i + 1].offset, start + maxCueSeconds)
+                rawEnd = min(d.segments[i + 1].offset, start + maxCueSeconds)
             } else {
-                end = start + maxCueSeconds
+                rawEnd = start + maxCueSeconds
             }
+            let end = max(start + minCueSeconds, rawEnd)
             blocks.append([
                 "\(i + 1)",
                 "\(srtTime(start)) --> \(srtTime(end))",
