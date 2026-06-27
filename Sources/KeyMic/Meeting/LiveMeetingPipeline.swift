@@ -24,10 +24,15 @@ final class LiveMeetingPipeline: MeetingPipeline {
     /// Fired on the main actor after `MeetingAudioRecorder.finish()` completes — i.e. once the
     /// system-audio WAV header is fully patched and the file is closed. Only fires for sessions
     /// that actually recorded system audio (recorder != nil). Wired by AppDelegate to kick
-    /// MeetingDiarizer so diarization always reads a finalized WAV.
-    @ObservationIgnored var onRecorderFinalized: ((UUID) -> Void)?
+    /// MeetingDiarizer so diarization always reads a finalized WAV. The second argument is the
+    /// session-relative time (seconds) at which the WAV's first sample was captured — diarization
+    /// intervals are WAV-relative (t=0 = first sample) but transcript offsets are session-relative,
+    /// so the diarizer shifts intervals by this to align the two clocks.
+    @ObservationIgnored var onRecorderFinalized: ((UUID, TimeInterval) -> Void)?
 
     private var sessionID: UUID?
+    /// Session-relative offset of the system WAV's first sample (≈ SCK capture-startup latency).
+    private var systemWavStartOffset: TimeInterval = 0
     private var panel: MeetingCaptionPanel?
 
     private var micCapture: ContinuousMicCapture16k?
@@ -51,6 +56,7 @@ final class LiveMeetingPipeline: MeetingPipeline {
 
     func start(session: UUID, source: MeetingAudioSource) {
         sessionID = session
+        systemWavStartOffset = 0
 
         let panel = MeetingCaptionPanel()
         panel.show()
@@ -72,8 +78,9 @@ final class LiveMeetingPipeline: MeetingPipeline {
         let cap = systemCapture
         let eng = systemEngine
         let rec = recorder
-        // Capture the session ID NOW before we nil it below — the async task needs it.
+        // Capture the session ID + WAV start offset NOW before we nil them below — the async task needs them.
         let sid = sessionID
+        let wavStartOffset = systemWavStartOffset
         eng?.stop()
         Task { [weak self] in
             await cap?.stop()
@@ -81,7 +88,7 @@ final class LiveMeetingPipeline: MeetingPipeline {
             // Only fire the callback when a recorder existed (system-audio path). The WAV is fully
             // written and closed at this point — safe for diarization to open.
             if let rec, let sid {
-                await MainActor.run { self?.onRecorderFinalized?(sid) }
+                await MainActor.run { self?.onRecorderFinalized?(sid, wavStartOffset) }
             }
         }
 
@@ -190,7 +197,7 @@ final class LiveMeetingPipeline: MeetingPipeline {
         }
         systemEngine = engine
 
-        let recorder = MeetingAudioRecorder(url: Self.audioURL(session))
+        let recorder = MeetingAudioRecorder(url: MeetingAudioRecorder.url(for: session))
         self.recorder = recorder
 
         let capture = SystemAudioCapture()
@@ -209,6 +216,9 @@ final class LiveMeetingPipeline: MeetingPipeline {
         Task { [weak self] in
             do {
                 try await capture.start()
+                // The WAV's first sample lands ~now; record its session-relative time so the
+                // diarizer can shift its (WAV-relative) intervals back onto transcript-offset time.
+                await MainActor.run { if let self { self.systemWavStartOffset = self.offsetProvider() } }
             } catch {
                 await MainActor.run {
                     Self.logger.error("system audio start failed: \(error.localizedDescription, privacy: .public)")
@@ -220,12 +230,6 @@ final class LiveMeetingPipeline: MeetingPipeline {
                 }
             }
         }
-    }
-
-    private static func audioURL(_ session: UUID) -> URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("KeyMic/meeting-audio", isDirectory: true)
-        return base.appendingPathComponent("\(session.uuidString).wav")
     }
 
     private func failFatal(_ message: String) {

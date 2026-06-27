@@ -5,6 +5,18 @@ import Foundation
 /// over it. Mic audio is single-speaker ("我") and is never recorded. The file is consumed and
 /// deleted by the diarization job (P2.2); this type only writes and finalizes it.
 final class MeetingAudioRecorder {
+    /// Single source of truth for the retained system-audio WAV location. The writer (this type),
+    /// the diarization reader (`MeetingDiarizer`), and the launch orphan-sweep (`AppDelegate`) all
+    /// resolve the path through here so the convention can never drift between producer and consumer.
+    static var directory: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("KeyMic/meeting-audio", isDirectory: true)
+    }
+
+    static func url(for session: UUID) -> URL {
+        directory.appendingPathComponent("\(session.uuidString).wav")
+    }
+
     let fileURL: URL
     private let handle: FileHandle
     private var dataBytes: UInt32 = 0

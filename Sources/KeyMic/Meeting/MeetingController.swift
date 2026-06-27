@@ -33,10 +33,6 @@ final class MeetingController {
     /// (e.g. the menu-bar item icon/title) refresh regardless of which path toggled the meeting.
     @ObservationIgnored var onTranscribingChanged: ((Bool) -> Void)?
 
-    /// Fired in `stop()` with the just-finished session id, after persistence. Lets the host kick
-    /// post-meeting work (offline speaker diarization) without the controller knowing about it.
-    @ObservationIgnored var onSessionFinished: ((UUID) -> Void)?
-
     /// Returns whether Start may proceed. `nil` (default) → always proceed, so existing call
     /// sites and the standalone test target are unaffected. Injected by `AppDelegate` to evaluate
     /// `MeetingPrerequisites.live().allReady`.
@@ -94,7 +90,6 @@ final class MeetingController {
         guard isTranscribing, let sid = activeSessionID else { return }
         stopPipeline()
         store.finishSession(sid)
-        onSessionFinished?(sid)
         isTranscribing = false
         activeSessionID = nil
         startedAt = nil

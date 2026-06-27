@@ -12,17 +12,15 @@ final class MeetingDiarizer {
 
     init(store: TranscriptStore) { self.store = store }
 
-    /// WAV written by P2.1's recorder for this session (same path convention).
-    static func audioURL(_ session: UUID) -> URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("KeyMic/meeting-audio", isDirectory: true)
-            .appendingPathComponent("\(session.uuidString).wav")
-    }
-
     /// Kick the background diarization job for a finished session. No-op (state stays "none")
     /// when there is no remote audio or the models/runtime aren't available.
-    func diarize(sessionID: UUID) {
-        let wav = Self.audioURL(sessionID)
+    ///
+    /// `wavStartOffset` is the session-relative time (seconds) of the WAV's first sample (≈ the
+    /// system-audio capture-startup latency). The sherpa diarizer reports intervals relative to the
+    /// WAV (t=0 = first sample), while transcript segment offsets are session-relative, so the two
+    /// clocks differ by exactly this much — we shift the intervals forward before assignment.
+    func diarize(sessionID: UUID, wavStartOffset: TimeInterval = 0) {
+        let wav = MeetingAudioRecorder.url(for: sessionID)
         guard FileManager.default.fileExists(atPath: wav.path) else {
             Self.logger.info("diarize: no remote WAV; skipping"); return
         }
@@ -48,7 +46,14 @@ final class MeetingDiarizer {
                     self.store.setDiarizationState("failed", for: sessionID)
                     return   // keep WAV for diagnosis
                 }
-                let assigned = SpeakerAssignment.assign(segmentOffsets: offsets, intervals: intervals)
+                // Shift WAV-relative intervals onto session-relative time so they line up with the
+                // transcript segment offsets the assignment matches against.
+                let aligned = intervals.map {
+                    DiarizationInterval(start: $0.start + wavStartOffset,
+                                        end: $0.end + wavStartOffset,
+                                        speaker: $0.speaker)
+                }
+                let assigned = SpeakerAssignment.assign(segmentOffsets: offsets, intervals: aligned)
                 let labels = assigned.mapValues { MeetingHistoryFormatter.remoteSpeakerLabel($0) }
                 self.store.setSpeakerLabels(labels, for: sessionID)
                 self.store.setDiarizationState("done", for: sessionID)

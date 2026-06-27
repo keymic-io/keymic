@@ -1,7 +1,9 @@
 import Foundation
 
-/// One diarization span: speaker `speaker` held the floor from `start` to `end` (seconds from
-/// the audio's beginning, which equals the meeting's start). Produced by the sherpa diarizer.
+/// One diarization span: speaker `speaker` held the floor from `start` to `end` (seconds).
+/// As produced by the sherpa diarizer these are relative to the diarized WAV's first sample;
+/// `MeetingDiarizer` shifts them onto session-relative time before calling `assign`, so by the
+/// time they reach `assign` they share the same origin as the segment offsets.
 struct DiarizationInterval {
     let start: Double
     let end: Double

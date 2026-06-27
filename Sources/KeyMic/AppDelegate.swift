@@ -339,8 +339,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Diarization WAVs are only consumed within the same app run; any left over from a
         // previous run are orphans (model absent / failed / never diarized). Sweep them so
         // disk doesn't grow unboundedly. Nothing is mid-diarization at launch time.
-        let meetingAudioDir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("KeyMic/meeting-audio", isDirectory: true)
+        let meetingAudioDir = MeetingAudioRecorder.directory
         if let orphans = try? FileManager.default.contentsOfDirectory(at: meetingAudioDir, includingPropertiesForKeys: nil) {
             for f in orphans { try? FileManager.default.removeItem(at: f) }
         }
@@ -381,8 +380,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let meetingDiarizer = MeetingDiarizer(store: transcriptStore)
         // Wire diarization to the pipeline's post-finalization callback so diarize() is only
         // called after MeetingAudioRecorder.finish() has closed and patched the WAV header.
-        // (Previously wired to meetingController.onSessionFinished which fires before finish().)
-        meetingPipeline.onRecorderFinalized = { sid in meetingDiarizer.diarize(sessionID: sid) }
+        // (A controller-level post-session hook was removed in favor of this: it fired before finish().)
+        meetingPipeline.onRecorderFinalized = { sid, wavStartOffset in
+            meetingDiarizer.diarize(sessionID: sid, wavStartOffset: wavStartOffset)
+        }
         self.meetingDiarizer = meetingDiarizer
 
         // Sleep / lock auto-stop (PRD §4.1)
