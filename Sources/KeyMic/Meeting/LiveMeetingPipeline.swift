@@ -87,7 +87,7 @@ final class LiveMeetingPipeline: MeetingPipeline {
             rec?.finish()
             // Only fire the callback when a recorder existed (system-audio path). The WAV is fully
             // written and closed at this point — safe for diarization to open.
-            if let rec, let sid {
+            if rec != nil, let sid {
                 await MainActor.run { self?.onRecorderFinalized?(sid, wavStartOffset) }
             }
         }
