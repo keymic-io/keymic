@@ -147,15 +147,15 @@ final class ClipboardController {
     }
 
     private func currentSelectedItems() -> [ClipboardItem] {
-        let visible = selectionBridge.visibleOrderedIDs
-        let selected = selectionBridge.selectedIDs
-
         let idsToTransform: [UUID]
-        if !selected.isEmpty {
-            idsToTransform = visible.filter { selected.contains($0) }
+        let ordered = selectionBridge.orderedSelection()
+        if !ordered.isEmpty {
+            idsToTransform = ordered
+        } else if let focused = selectionBridge.focusedID {
+            idsToTransform = [focused]
         } else if let cursor = selectionBridge.lastClickedID {
             idsToTransform = [cursor]
-        } else if let firstVisible = visible.first {
+        } else if let firstVisible = selectionBridge.visibleOrderedIDs.first {
             idsToTransform = [firstVisible]
         } else {
             idsToTransform = []
@@ -163,6 +163,52 @@ final class ClipboardController {
 
         return idsToTransform.compactMap { id in
             store.item(id: id)
+        }
+    }
+
+    func pasteSelectedItemsInOrder() {
+        let ids = selectionBridge.orderedSelection()
+        guard !ids.isEmpty else {
+            if let focused = selectionBridge.focusedID,
+               let item = store.item(id: focused) {
+                paste(item)
+            }
+            return
+        }
+
+        let items = ids.compactMap { store.item(id: $0) }
+        guard !items.isEmpty else { return }
+        paste(itemsInOrder: items)
+    }
+
+    private func paste(itemsInOrder items: [ClipboardItem]) {
+        monitor.capturePendingChange()
+        panel.dismiss()
+        OutputRouter.shared.activateOriginatingAppSync(pasteTargetApplication)
+
+        let initialDelay: TimeInterval = 0.10
+        let interval: TimeInterval = 0.16
+
+        for (index, item) in items.enumerated() {
+            let delay = initialDelay + (Double(index) * interval)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.writePasteboardContents(for: item) else { return }
+                Self.synthesizeCommandV()
+            }
+        }
+    }
+
+    @discardableResult
+    private func writePasteboardContents(for item: ClipboardItem) -> Bool {
+        switch item.kind {
+        case .image:
+            return writeImage(item)
+        case .file:
+            return writeFile(item)
+        case .richText:
+            return writeRichText(item)
+        default:
+            return writeText(item)
         }
     }
 
@@ -253,6 +299,7 @@ final class ClipboardController {
             onVaultPaste: { [weak self] item in self?.pasteVault(item) },
             onVaultDelete: { [weak self] item in self?.vaultStore.delete(item) },
             onDismiss: { [weak self] in self?.panel.dismiss() },
+            onPasteSelected: { [weak self] in self?.pasteSelectedItemsInOrder() },
             onTransformSelected: { [weak self] in self?.transformSelected() }
         )
     }
@@ -309,79 +356,68 @@ final class ClipboardController {
     }
 
     private func paste(_ item: ClipboardItem) {
-        switch item.kind {
-        case .image:
-            pasteImage(item)
-        case .file:
-            pasteFile(item)
-        case .richText:
-            pasteRichText(item)
-        default:
-            pasteText(item)
-        }
-    }
-
-    private func pasteText(_ item: ClipboardItem) {
         monitor.capturePendingChange()
-        store.bumpToTop(id: item.id)
-        let cc = pasteboard.write(item.text)
-        monitor.markIgnoredChangeCount(cc)
+        guard writePasteboardContents(for: item) else {
+            panel.dismiss()
+            return
+        }
         panel.dismiss()
         activateTargetAndSendCommandV()
     }
 
-    private func pasteImage(_ item: ClipboardItem) {
+    @discardableResult
+    private func writeText(_ item: ClipboardItem) -> Bool {
+        store.bumpToTop(id: item.id)
+        let cc = pasteboard.write(item.text)
+        monitor.markIgnoredChangeCount(cc)
+        return true
+    }
+
+    @discardableResult
+    private func writeImage(_ item: ClipboardItem) -> Bool {
         guard let rel = item.imageRelativePath else {
-            panel.dismiss()
-            return
+            return false
         }
         let url = store.clipboardCacheURL.appendingPathComponent(rel)
         guard let data = try? Data(contentsOf: url) else {
             Self.logger.error("paste image — cache file missing: \(url.path, privacy: .public)")
             overlayPanel?.showMessage("图片缓存已丢失")
-            panel.dismiss()
-            return
+            return false
         }
         let format: ImageFormat = url.pathExtension.lowercased() == "tiff" ? .tiff : .png
-        monitor.capturePendingChange()
         store.bumpToTop(id: item.id)
         let cc = pasteboard.write(payloads: [(type: format.pasteboardType, data: data)])
         monitor.markIgnoredChangeCount(cc)
-        panel.dismiss()
-        activateTargetAndSendCommandV()
+        return true
     }
 
-    private func pasteFile(_ item: ClipboardItem) {
+    @discardableResult
+    private func writeFile(_ item: ClipboardItem) -> Bool {
         guard let path = item.fileURLPath, FileManager.default.fileExists(atPath: path) else {
             overlayPanel?.showMessage("文件已不存在")
-            panel.dismiss()
-            return
+            return false
         }
         let url = URL(fileURLWithPath: path)
-        monitor.capturePendingChange()
         store.bumpToTop(id: item.id)
         let cc = pasteboard.write(fileURL: url)
         monitor.markIgnoredChangeCount(cc)
-        panel.dismiss()
-        activateTargetAndSendCommandV()
+        return true
     }
 
-    private func pasteRichText(_ item: ClipboardItem) {
+    @discardableResult
+    private func writeRichText(_ item: ClipboardItem) -> Bool {
         guard let blob = item.richBlob, let format = item.richBlobFormat else {
             // Fall back to plain text if the blob is somehow gone.
-            pasteText(item)
-            return
+            return writeText(item)
         }
         var payloads: [(type: String, data: Data)] = [
             (type: format.pasteboardType, data: blob)
         ]
         payloads.append((type: "public.utf8-plain-text", data: Data(item.text.utf8)))
-        monitor.capturePendingChange()
         store.bumpToTop(id: item.id)
         let cc = pasteboard.write(payloads: payloads)
         monitor.markIgnoredChangeCount(cc)
-        panel.dismiss()
-        activateTargetAndSendCommandV()
+        return true
     }
 
     private func activateTargetAndSendCommandV() {

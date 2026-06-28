@@ -28,10 +28,12 @@ struct ClipboardHistoryView: View {
     let onVaultPaste: (VaultItem) -> Void
     let onVaultDelete: (VaultItem) -> Void
     let onDismiss: () -> Void
+    let onPasteSelected: () -> Void
     let onTransformSelected: () -> Void
 
     private var selectedIDs: Set<UUID> { selectionBridge.selectedIDs }
-    private var primaryID: UUID? { selectionBridge.primarySelection }
+    private var focusedItemID: UUID? { selectionBridge.focusedID }
+    private var isSearchFocused: Bool { focusedField == .search }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -44,8 +46,8 @@ struct ClipboardHistoryView: View {
     }
 
     private enum SelectionRefreshMode {
-        case selectFirst
-        case selectFirstIfPrimaryChanged
+        case focusFirst
+        case focusFirstIfNeeded
         case pruneInvisible
     }
 
@@ -79,31 +81,15 @@ struct ClipboardHistoryView: View {
         focus.visibleHistoryCount = filtered.history.count
 
         switch mode {
-        case .selectFirst:
-            selectOnly(visibleIDs.first)
-        case .selectFirstIfPrimaryChanged:
-            let firstID = visibleIDs.first
-            if primaryID != firstID {
-                selectOnly(firstID)
+        case .focusFirst:
+            selectionBridge.focus(visibleIDs.first)
+        case .focusFirstIfNeeded:
+            if let focused = selectionBridge.focusedID, visibleIDs.contains(focused) {
+                break
             }
+            selectionBridge.focus(visibleIDs.first)
         case .pruneInvisible:
-            let visibleSet = Set(visibleIDs)
-            let pruned = selectionBridge.selectedIDs.intersection(visibleSet)
-            if pruned != selectionBridge.selectedIDs {
-                selectionBridge.selectedIDs = pruned
-            }
-            if selectionBridge.selectedIDs.isEmpty {
-                selectOnly(visibleIDs.first)
-            }
-        }
-    }
-
-    private func selectOnly(_ id: UUID?) {
-        if let id {
-            selectionBridge.selectedIDs = [id]
-            selectionBridge.lastClickedID = id
-        } else {
-            selectionBridge.selectedIDs.removeAll()
+            selectionBridge.pruneVisibleState()
         }
     }
 
@@ -143,7 +129,7 @@ struct ClipboardHistoryView: View {
         .onAppear {
             let trace = ClipboardOpenTrace.shared
             trace.mark("view.onAppear (first body + @Query fetch done)")
-            refreshFiltered(selection: .selectFirst)
+            refreshFiltered(selection: .focusFirst)
             trace.mark("computeFiltered (\(items.count) items)")
             focusedField = .search
             trace.end("view.onAppear done")
@@ -152,7 +138,8 @@ struct ClipboardHistoryView: View {
             let trace = ClipboardOpenTrace.shared
             trace.mark("view.refresh (requestID — reuse open)")
             query = ""
-            refreshFiltered(selection: .selectFirst)
+            selectionBridge.clearSelection()
+            refreshFiltered(selection: .focusFirst)
             trace.mark("computeFiltered (\(items.count) items)")
             focusedField = .search
             trace.end("view.refresh done")
@@ -174,7 +161,7 @@ struct ClipboardHistoryView: View {
             focus.currentTab = newTab
         }
         .onChange(of: query) { _, _ in
-            refreshFiltered(selection: .selectFirstIfPrimaryChanged)
+            refreshFiltered(selection: .focusFirstIfNeeded)
         }
         .onChange(of: items) { _, _ in
             refreshFiltered(selection: .pruneInvisible)
@@ -182,9 +169,14 @@ struct ClipboardHistoryView: View {
         .background(
             KeyEventMonitor(
                 isEnabled: tab == .clipboard,
+                shouldHandleArrowUp: { ClipboardHistoryKeyHandling.shouldHandleArrowKey(isSearchFocused: isSearchFocused, query: query) },
                 onArrowUp: moveSelection(by: -1),
+                shouldHandleArrowDown: { ClipboardHistoryKeyHandling.shouldHandleArrowKey(isSearchFocused: isSearchFocused, query: query) },
                 onArrowDown: moveSelection(by: 1),
+                shouldHandleReturn: { ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: isSearchFocused) },
                 onReturn: triggerPaste,
+                shouldHandleSpace: { ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: isSearchFocused) },
+                onSpace: triggerToggleFocusedSelection,
                 onCommandDelete: triggerDelete,
                 onTogglePin: triggerTogglePin,
                 onEscape: onDismiss,
@@ -262,8 +254,9 @@ struct ClipboardHistoryView: View {
 
     private var list: some View {
         let transformRow: (UUID) -> Void = { id in
-            selectionBridge.selectedIDs = [id]
-            selectionBridge.lastClickedID = id
+            selectionBridge.focus(id)
+            selectionBridge.setOnlySelection(id)
+            focusedField = nil
             onTransformSelected()
         }
         return ScrollViewReader { proxy in
@@ -275,30 +268,9 @@ struct ClipboardHistoryView: View {
                                 .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(rowBackground(for: item))
-                                .contentShape(Rectangle())
                                 .onHover { hovering in
-                                    if hovering, primaryID != item.id {
-                                        suppressScrollOnce = true
-                                        selectionBridge.selectedIDs = [item.id]
-                                        selectionBridge.lastClickedID = item.id
-                                    }
+                                    handleHover(hovering, item: item)
                                 }
-                                .onTapGesture { onPaste(item) }
-                                .simultaneousGesture(
-                                    TapGesture(count: 1).modifiers(.command).onEnded {
-                                        if selectionBridge.selectedIDs.contains(item.id) {
-                                            selectionBridge.selectedIDs.remove(item.id)
-                                        } else {
-                                            selectionBridge.selectedIDs.insert(item.id)
-                                        }
-                                        selectionBridge.lastClickedID = item.id
-                                    }
-                                )
-                                .simultaneousGesture(
-                                    TapGesture(count: 1).modifiers(.shift).onEnded {
-                                        extendRange(to: item.id)
-                                    }
-                                )
                                 .id(item.id)
                         }
                     }
@@ -310,26 +282,9 @@ struct ClipboardHistoryView: View {
                             .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                             .listRowSeparator(.hidden)
                             .listRowBackground(rowBackground(for: item))
-                            .contentShape(Rectangle())
                             .onHover { hovering in
                                 handleHover(hovering, item: item)
                             }
-                            .onTapGesture { onPaste(item) }
-                            .simultaneousGesture(
-                                TapGesture(count: 1).modifiers(.command).onEnded {
-                                    if selectionBridge.selectedIDs.contains(item.id) {
-                                        selectionBridge.selectedIDs.remove(item.id)
-                                    } else {
-                                        selectionBridge.selectedIDs.insert(item.id)
-                                    }
-                                    selectionBridge.lastClickedID = item.id
-                                }
-                            )
-                            .simultaneousGesture(
-                                TapGesture(count: 1).modifiers(.shift).onEnded {
-                                    extendRange(to: item.id)
-                                }
-                            )
                             .id(item.id)
                     }
                 }
@@ -337,16 +292,12 @@ struct ClipboardHistoryView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.clear)
-            .onChange(of: selectionBridge.selectedIDs) { _, newSet in
+            .onChange(of: selectionBridge.focusedID) { _, focusedID in
                 if suppressScrollOnce {
                     suppressScrollOnce = false
                     return
                 }
-                // Scroll to primary (single selection) or the most recently clicked anchor.
-                let target: UUID? = newSet.count == 1
-                    ? newSet.first
-                    : (selectionBridge.lastClickedID.flatMap { newSet.contains($0) ? $0 : nil })
-                guard let id = target else { return }
+                guard let id = focusedID else { return }
                 withAnimation(.linear(duration: 0.05)) { proxy.scrollTo(id, anchor: .center) }
             }
         }
@@ -368,27 +319,51 @@ struct ClipboardHistoryView: View {
         switch item.kind {
         case .file:
             FileRow(
-                item: item, quickKeyLabel: label, isSelected: selectedIDs.contains(item.id),
+                item: item,
+                quickKeyLabel: label,
+                isSelected: selectedIDs.contains(item.id),
+                isFocused: focusedItemID == item.id,
                 relativeTime: relativeTime,
+                onToggleSelection: { toggleMouseSelection(for: item.id) },
+                onPaste: { paste(item) },
                 onTransformRow: onTransformRow)
         case .image:
             ImageRow(
-                item: item, quickKeyLabel: label,
+                item: item,
+                quickKeyLabel: label,
+                isSelected: selectedIDs.contains(item.id),
+                isFocused: focusedItemID == item.id,
                 cacheURL: clipboardCacheURL,
                 relativeTime: relativeTime,
+                onToggleSelection: { toggleMouseSelection(for: item.id) },
+                onPaste: { paste(item) },
                 onTransformRow: onTransformRow)
         default:
             TextRow(
                 item: item,
                 quickKeyLabel: label,
+                isSelected: selectedIDs.contains(item.id),
+                isFocused: focusedItemID == item.id,
                 query: query,
+                onToggleSelection: { toggleMouseSelection(for: item.id) },
+                onPaste: { paste(item) },
                 onTransformRow: onTransformRow)
         }
     }
 
     private func rowBackground(for item: ClipboardItem) -> some View {
         RoundedRectangle(cornerRadius: 8)
-            .fill(selectedIDs.contains(item.id) ? Color.accentColor.opacity(0.35) : Color.clear)
+            .fill(rowFill(for: item))
+    }
+
+    private func rowFill(for item: ClipboardItem) -> Color {
+        if focusedItemID == item.id {
+            return Color.accentColor.opacity(selectedIDs.contains(item.id) ? 0.35 : 0.22)
+        }
+        if selectedIDs.contains(item.id) {
+            return Color.accentColor.opacity(0.12)
+        }
+        return .clear
     }
 
     private func historyQuickKeyLabel(for index: Int) -> String {
@@ -410,11 +385,11 @@ struct ClipboardHistoryView: View {
         return {
             let list = filtered.all
             guard !list.isEmpty else { return }
-            let currentIndex = list.firstIndex(where: { selectedIDs.contains($0.id) }) ?? 0
+            let currentIndex = list.firstIndex(where: { $0.id == focusedItemID }) ?? 0
             let newIndex = (currentIndex + delta + list.count) % list.count
             let newID = list[newIndex].id
-            selectionBridge.selectedIDs = [newID]
-            selectionBridge.lastClickedID = newID
+            focusedField = nil
+            selectionBridge.focus(newID)
             keyboardNavMouseLock = NSEvent.mouseLocation
         }
     }
@@ -425,26 +400,31 @@ struct ClipboardHistoryView: View {
             return
         }
         keyboardNavMouseLock = nil
-        if primaryID != item.id {
+        if focusedItemID != item.id {
             suppressScrollOnce = true
-            selectionBridge.selectedIDs = [item.id]
-            selectionBridge.lastClickedID = item.id
+            selectionBridge.focus(item.id)
         }
     }
 
     private func triggerPaste() {
-        guard let id = primaryID, let item = filtered.all.first(where: { $0.id == id }) else { return }
-        onPaste(item)
+        let orderedIDs = selectionBridge.orderedSelection()
+        if !orderedIDs.isEmpty {
+            focusedField = nil
+            onPasteSelected()
+            return
+        }
+        guard let id = focusedItemID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        paste(item)
     }
 
     private func triggerDelete() {
-        guard let id = primaryID, let item = filtered.all.first(where: { $0.id == id }) else { return }
+        guard let id = focusedItemID, let item = filtered.all.first(where: { $0.id == id }) else { return }
         onDelete(item.id)
     }
 
     @discardableResult
     private func triggerTogglePin() -> Bool {
-        guard let id = primaryID else { return false }
+        guard let id = focusedItemID else { return false }
         onTogglePin(id)
         // togglePin mutates isPinned/pinnedAt in place; the @Query array's membership,
         // order, and object identities are all unchanged, so `.onChange(of: items)`
@@ -457,27 +437,46 @@ struct ClipboardHistoryView: View {
         guard let anchor = selectionBridge.lastClickedID,
               let aIdx = filtered.all.firstIndex(where: { $0.id == anchor }),
               let tIdx = filtered.all.firstIndex(where: { $0.id == targetID }) else {
-            selectionBridge.selectedIDs = [targetID]
-            selectionBridge.lastClickedID = targetID
+            selectionBridge.setOnlySelection(targetID)
             return
         }
         let range = aIdx <= tIdx ? aIdx...tIdx : tIdx...aIdx
         let ids = filtered.all[range].map(\.id)
-        selectionBridge.selectedIDs.formUnion(ids)
+        for id in ids {
+            selectionBridge.appendSelection(id)
+        }
+        selectionBridge.focus(targetID)
     }
 
     @discardableResult
     private func triggerQuickPaste(_ index: Int) -> Bool {
         guard filtered.history.indices.contains(index) else { return false }
-        onPaste(filtered.history[index])
+        paste(filtered.history[index])
         return true
     }
 
     @discardableResult
     private func triggerPinnedQuickPaste(_ index: Int) -> Bool {
         guard filtered.pinned.indices.contains(index) else { return false }
-        onPaste(filtered.pinned[index])
+        paste(filtered.pinned[index])
         return true
+    }
+
+    private func toggleMouseSelection(for id: UUID) {
+        focusedField = nil
+        selectionBridge.focus(id)
+        selectionBridge.toggleSelection(id)
+    }
+
+    private func triggerToggleFocusedSelection() {
+        guard let id = focusedItemID else { return }
+        selectionBridge.toggleSelection(id)
+    }
+
+    private func paste(_ item: ClipboardItem) {
+        focusedField = nil
+        selectionBridge.focus(item.id)
+        onPaste(item)
     }
 }
 
@@ -512,32 +511,59 @@ private struct TransformRowButton: View {
     }
 }
 
+private struct SelectionTickButton: View {
+    let isSelected: Bool
+    let isFocused: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isSelected ? Color.accentColor : Color.white.opacity(isFocused ? 0.9 : 0.45))
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.plain)
+        .help(String(localized: "Select this item"))
+    }
+}
+
 private struct TextRow: View {
     let item: ClipboardItem
     let quickKeyLabel: String
+    let isSelected: Bool
+    let isFocused: Bool
     let query: String
+    let onToggleSelection: () -> Void
+    let onPaste: () -> Void
     let onTransformRow: (UUID) -> Void
 
     @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
+            SelectionTickButton(isSelected: isSelected, isFocused: isFocused, action: onToggleSelection)
+
             Text(quickKeyLabel)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 22, alignment: .leading)
 
-            if let symbol = item.kind.iconSymbolName {
-                Image(systemName: symbol)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 14)
-            }
+            HStack(spacing: 10) {
+                if let symbol = item.kind.iconSymbolName {
+                    Image(systemName: symbol)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 14)
+                }
 
-            HighlightedText(source: item.displayPreview, query: query)
-                .foregroundStyle(.primary)
-                .font(.system(size: 14))
-                .lineLimit(1)
+                HighlightedText(source: item.displayPreview, query: query)
+                    .foregroundStyle(.primary)
+                    .font(.system(size: 14))
+                    .lineLimit(1)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onPaste)
 
             Spacer(minLength: 8)
 
@@ -556,31 +582,40 @@ private struct FileRow: View {
     let item: ClipboardItem
     let quickKeyLabel: String
     let isSelected: Bool
+    let isFocused: Bool
     let relativeTime: (Date) -> String
+    let onToggleSelection: () -> Void
+    let onPaste: () -> Void
     let onTransformRow: (UUID) -> Void
 
     @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(spacing: 10) {
+            SelectionTickButton(isSelected: isSelected, isFocused: isFocused, action: onToggleSelection)
+
             Text(quickKeyLabel)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 22, alignment: .leading)
 
-            fileIcon
-                .frame(width: 28, height: 28)
+            HStack(spacing: 10) {
+                fileIcon
+                    .frame(width: 28, height: 28)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text((item.fileURLPath as NSString?)?.lastPathComponent ?? item.text)
-                    .font(.system(size: 14, weight: .medium))
-                    .lineLimit(1)
-                Text(item.fileURLPath ?? "")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text((item.fileURLPath as NSString?)?.lastPathComponent ?? item.text)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(1)
+                    Text(item.fileURLPath ?? "")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onPaste)
 
             Spacer(minLength: 8)
 
@@ -609,8 +644,12 @@ private struct FileRow: View {
 private struct ImageRow: View {
     let item: ClipboardItem
     let quickKeyLabel: String
+    let isSelected: Bool
+    let isFocused: Bool
     let cacheURL: URL
     let relativeTime: (Date) -> String
+    let onToggleSelection: () -> Void
+    let onPaste: () -> Void
     let onTransformRow: (UUID) -> Void
 
     @State private var thumbnail: NSImage?
@@ -618,28 +657,35 @@ private struct ImageRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
+            SelectionTickButton(isSelected: isSelected, isFocused: isFocused, action: onToggleSelection)
+                .padding(.top, 4)
+
             Text(quickKeyLabel)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
                 .foregroundStyle(.secondary)
                 .frame(minWidth: 22, alignment: .leading)
                 .padding(.top, 4)
 
-            thumbView
-                .frame(width: 100, height: 72)
-                .background(Color.white.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            HStack(alignment: .top, spacing: 10) {
+                thumbView
+                    .frame(width: 100, height: 72)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.text)
-                    .font(.system(size: 14, weight: .medium))
-                    .lineLimit(1)
-                Text("\(item.imageWidth)×\(item.imageHeight) · \(formattedSize(item.byteSize))")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Text(relativeTime(item.createdAt))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(item.text)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(1)
+                    Text("\(item.imageWidth)×\(item.imageHeight) · \(formattedSize(item.byteSize))")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text(relativeTime(item.createdAt))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture(perform: onPaste)
 
             Spacer(minLength: 8)
 
@@ -694,9 +740,14 @@ private struct VisualEffectBackground: NSViewRepresentable {
 
 private struct KeyEventMonitor: NSViewRepresentable {
     let isEnabled: Bool
+    let shouldHandleArrowUp: () -> Bool
     let onArrowUp: () -> Void
+    let shouldHandleArrowDown: () -> Bool
     let onArrowDown: () -> Void
+    let shouldHandleReturn: () -> Bool
     let onReturn: () -> Void
+    let shouldHandleSpace: () -> Bool
+    let onSpace: () -> Void
     let onCommandDelete: () -> Void
     /// ⌥-shortcut handlers return whether they actually executed, so the monitor can
     /// pass the keystroke through to a focused text field when there was no target
@@ -719,9 +770,14 @@ private struct KeyEventMonitor: NSViewRepresentable {
 
     private func apply(to view: MonitorView) {
         view.isEnabled = isEnabled
+        view.shouldHandleArrowUp = shouldHandleArrowUp
         view.onArrowUp = onArrowUp
+        view.shouldHandleArrowDown = shouldHandleArrowDown
         view.onArrowDown = onArrowDown
+        view.shouldHandleReturn = shouldHandleReturn
         view.onReturn = onReturn
+        view.shouldHandleSpace = shouldHandleSpace
+        view.onSpace = onSpace
         view.onCommandDelete = onCommandDelete
         view.onTogglePin = onTogglePin
         view.onEscape = onEscape
@@ -731,9 +787,14 @@ private struct KeyEventMonitor: NSViewRepresentable {
 
     private final class MonitorView: NSView {
         var isEnabled = true
+        var shouldHandleArrowUp: (() -> Bool)?
         var onArrowUp: (() -> Void)?
+        var shouldHandleArrowDown: (() -> Bool)?
         var onArrowDown: (() -> Void)?
+        var shouldHandleReturn: (() -> Bool)?
         var onReturn: (() -> Void)?
+        var shouldHandleSpace: (() -> Bool)?
+        var onSpace: (() -> Void)?
         var onCommandDelete: (() -> Void)?
         var onTogglePin: (() -> Bool)?
         var onEscape: (() -> Void)?
@@ -787,13 +848,20 @@ private struct KeyEventMonitor: NSViewRepresentable {
 
             switch (event.keyCode, isCmd) {
             case (126, _):
+                guard shouldHandleArrowUp?() ?? !typingInText else { return event }
                 onArrowUp?()
                 return nil
             case (125, _):
+                guard shouldHandleArrowDown?() ?? !typingInText else { return event }
                 onArrowDown?()
                 return nil
             case (36, _), (76, _):
+                guard shouldHandleReturn?() ?? !typingInText else { return event }
                 onReturn?()
+                return nil
+            case (49, _):
+                guard shouldHandleSpace?() ?? !typingInText else { return event }
+                onSpace?()
                 return nil
             case (51, true):
                 onCommandDelete?()
