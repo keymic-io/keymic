@@ -112,7 +112,7 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         guard focus.currentTab == .clipboard, isAltOnlyKeyDown(event) else { return nil }
         if event.keyCode == 0x23 {
             // While typing, only hijack ⌥P when there is a pin target.
-            guard !typingInText || !selectionBridge.selectedIDs.isEmpty else { return nil }
+            guard !typingInText || selectionBridge.hasCurrentTarget else { return nil }
             return { [focus] in focus.togglePinRequestID += 1 }
         }
         if let index = pinnedQuickPasteIndex(for: event.keyCode) {

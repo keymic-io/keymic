@@ -31,7 +31,11 @@ final class ClipboardPanelSelectionBridge {
 
     /// Returns the selection in visual order; falls back to empty when nothing selected.
     func orderedSelection() -> [UUID] {
-        selectedOrder.filter { selectedIDs.contains($0) && visibleOrderedIDs.contains($0) }
+        visibleOrderedIDs.filter { selectedIDs.contains($0) }
+    }
+
+    var hasCurrentTarget: Bool {
+        focusedID != nil || !selectedIDs.isEmpty
     }
 
     func focus(_ id: UUID?) {

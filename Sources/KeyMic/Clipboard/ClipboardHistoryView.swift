@@ -34,6 +34,7 @@ struct ClipboardHistoryView: View {
     private var selectedIDs: Set<UUID> { selectionBridge.selectedIDs }
     private var focusedItemID: UUID? { selectionBridge.focusedID }
     private var isSearchFocused: Bool { focusedField == .search }
+    private var hasTransformTarget: Bool { !selectedIDs.isEmpty || focusedItemID != nil }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -244,7 +245,7 @@ struct ClipboardHistoryView: View {
                     Label("Transform", systemImage: "wand.and.stars")
                 }
                 .keyboardShortcut("l", modifiers: .option)
-                .disabled(selectedIDs.isEmpty)
+                .disabled(!hasTransformTarget)
                 .help(String(localized: "Transform selected items via LLM (⌥L)"))
             }
         }
@@ -268,9 +269,21 @@ struct ClipboardHistoryView: View {
                                 .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(rowBackground(for: item))
+                                .contentShape(Rectangle())
                                 .onHover { hovering in
                                     handleHover(hovering, item: item)
                                 }
+                                .simultaneousGesture(
+                                    TapGesture(count: 1).modifiers(.command).onEnded {
+                                        toggleMouseSelection(for: item.id)
+                                    }
+                                )
+                                .simultaneousGesture(
+                                    TapGesture(count: 1).modifiers(.shift).onEnded {
+                                        extendRange(to: item.id)
+                                        focusedField = nil
+                                    }
+                                )
                                 .id(item.id)
                         }
                     }
@@ -282,9 +295,21 @@ struct ClipboardHistoryView: View {
                             .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                             .listRowSeparator(.hidden)
                             .listRowBackground(rowBackground(for: item))
+                            .contentShape(Rectangle())
                             .onHover { hovering in
                                 handleHover(hovering, item: item)
                             }
+                            .simultaneousGesture(
+                                TapGesture(count: 1).modifiers(.command).onEnded {
+                                    toggleMouseSelection(for: item.id)
+                                }
+                            )
+                            .simultaneousGesture(
+                                TapGesture(count: 1).modifiers(.shift).onEnded {
+                                    extendRange(to: item.id)
+                                    focusedField = nil
+                                }
+                            )
                             .id(item.id)
                     }
                 }
@@ -325,7 +350,7 @@ struct ClipboardHistoryView: View {
                 isFocused: focusedItemID == item.id,
                 relativeTime: relativeTime,
                 onToggleSelection: { toggleMouseSelection(for: item.id) },
-                onPaste: { paste(item) },
+                onPaste: { handlePrimaryClick(on: item) },
                 onTransformRow: onTransformRow)
         case .image:
             ImageRow(
@@ -336,7 +361,7 @@ struct ClipboardHistoryView: View {
                 cacheURL: clipboardCacheURL,
                 relativeTime: relativeTime,
                 onToggleSelection: { toggleMouseSelection(for: item.id) },
-                onPaste: { paste(item) },
+                onPaste: { handlePrimaryClick(on: item) },
                 onTransformRow: onTransformRow)
         default:
             TextRow(
@@ -346,7 +371,7 @@ struct ClipboardHistoryView: View {
                 isFocused: focusedItemID == item.id,
                 query: query,
                 onToggleSelection: { toggleMouseSelection(for: item.id) },
-                onPaste: { paste(item) },
+                onPaste: { handlePrimaryClick(on: item) },
                 onTransformRow: onTransformRow)
         }
     }
@@ -477,6 +502,12 @@ struct ClipboardHistoryView: View {
         focusedField = nil
         selectionBridge.focus(item.id)
         onPaste(item)
+    }
+
+    private func handlePrimaryClick(on item: ClipboardItem) {
+        let flags = NSApp.currentEvent?.modifierFlags ?? []
+        guard !flags.contains(.command), !flags.contains(.shift) else { return }
+        paste(item)
     }
 }
 
