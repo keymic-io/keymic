@@ -29,12 +29,10 @@ struct ClipboardHistoryView: View {
     let onVaultDelete: (VaultItem) -> Void
     let onDismiss: () -> Void
     let onPasteSelected: () -> Void
-    let onTransformSelected: () -> Void
 
     private var selectedIDs: Set<UUID> { selectionBridge.selectedIDs }
     private var focusedItemID: UUID? { selectionBridge.focusedID }
     private var isSearchFocused: Bool { focusedField == .search }
-    private var hasTransformTarget: Bool { !selectedIDs.isEmpty || focusedItemID != nil }
 
     private static let relativeFormatter: RelativeDateTimeFormatter = {
         let f = RelativeDateTimeFormatter()
@@ -237,35 +235,18 @@ struct ClipboardHistoryView: View {
                 Text("🔒 Vault").tag(PanelTab.vault)
             }
             .pickerStyle(.segmented)
-
-            if tab == .clipboard {
-                Button {
-                    onTransformSelected()
-                } label: {
-                    Label("Transform", systemImage: "wand.and.stars")
-                }
-                .keyboardShortcut("l", modifiers: .option)
-                .disabled(!hasTransformTarget)
-                .help(String(localized: "Transform selected items via LLM (⌥L)"))
-            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
     }
 
     private var list: some View {
-        let transformRow: (UUID) -> Void = { id in
-            selectionBridge.focus(id)
-            selectionBridge.setOnlySelection(id)
-            focusedField = nil
-            onTransformSelected()
-        }
-        return ScrollViewReader { proxy in
+        ScrollViewReader { proxy in
             List {
                 if !filtered.pinned.isEmpty {
                     Section(header: sectionHeader("Pinned")) {
                         ForEach(Array(filtered.pinned.enumerated()), id: \.element.id) { index, item in
-                            row(item, quickKeyLabel: pinnedQuickKeyLabel(for: index), onTransformRow: transformRow)
+                            row(item, quickKeyLabel: pinnedQuickKeyLabel(for: index))
                                 .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                                 .listRowSeparator(.hidden)
                                 .listRowBackground(rowBackground(for: item))
@@ -291,7 +272,7 @@ struct ClipboardHistoryView: View {
 
                 Section(header: sectionHeader("History")) {
                     ForEach(Array(filtered.history.enumerated()), id: \.element.id) { index, item in
-                        row(item, quickKeyLabel: historyQuickKeyLabel(for: index), onTransformRow: transformRow)
+                        row(item, quickKeyLabel: historyQuickKeyLabel(for: index))
                             .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
                             .listRowSeparator(.hidden)
                             .listRowBackground(rowBackground(for: item))
@@ -338,8 +319,7 @@ struct ClipboardHistoryView: View {
     @ViewBuilder
     private func row(
         _ item: ClipboardItem,
-        quickKeyLabel label: String,
-        onTransformRow: @escaping (UUID) -> Void
+        quickKeyLabel label: String
     ) -> some View {
         switch item.kind {
         case .file:
@@ -350,8 +330,7 @@ struct ClipboardHistoryView: View {
                 isFocused: focusedItemID == item.id,
                 relativeTime: relativeTime,
                 onToggleSelection: { toggleMouseSelection(for: item.id) },
-                onPaste: { handlePrimaryClick(on: item) },
-                onTransformRow: onTransformRow)
+                onPaste: { handlePrimaryClick(on: item) })
         case .image:
             ImageRow(
                 item: item,
@@ -361,8 +340,7 @@ struct ClipboardHistoryView: View {
                 cacheURL: clipboardCacheURL,
                 relativeTime: relativeTime,
                 onToggleSelection: { toggleMouseSelection(for: item.id) },
-                onPaste: { handlePrimaryClick(on: item) },
-                onTransformRow: onTransformRow)
+                onPaste: { handlePrimaryClick(on: item) })
         default:
             TextRow(
                 item: item,
@@ -371,8 +349,7 @@ struct ClipboardHistoryView: View {
                 isFocused: focusedItemID == item.id,
                 query: query,
                 onToggleSelection: { toggleMouseSelection(for: item.id) },
-                onPaste: { handlePrimaryClick(on: item) },
-                onTransformRow: onTransformRow)
+                onPaste: { handlePrimaryClick(on: item) })
         }
     }
 
@@ -522,26 +499,6 @@ private struct AppIconView: View {
     }
 }
 
-private struct TransformRowButton: View {
-    let itemID: UUID
-    let isHovered: Bool
-    let onTransformRow: (UUID) -> Void
-
-    var body: some View {
-        Button {
-            onTransformRow(itemID)
-        } label: {
-            Image(systemName: "wand.and.stars")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .help(String(localized: "Transform this item"))
-        .opacity(isHovered ? 1.0 : 0.0)
-        .allowsHitTesting(isHovered)
-    }
-}
-
 private struct SelectionTickButton: View {
     let isSelected: Bool
     let isFocused: Bool
@@ -567,7 +524,6 @@ private struct TextRow: View {
     let query: String
     let onToggleSelection: () -> Void
     let onPaste: () -> Void
-    let onTransformRow: (UUID) -> Void
 
     @State private var isHovered: Bool = false
 
@@ -598,8 +554,6 @@ private struct TextRow: View {
 
             Spacer(minLength: 8)
 
-            TransformRowButton(itemID: item.id, isHovered: isHovered, onTransformRow: onTransformRow)
-
             AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 8)
@@ -617,7 +571,6 @@ private struct FileRow: View {
     let relativeTime: (Date) -> String
     let onToggleSelection: () -> Void
     let onPaste: () -> Void
-    let onTransformRow: (UUID) -> Void
 
     @State private var isHovered: Bool = false
 
@@ -650,8 +603,6 @@ private struct FileRow: View {
 
             Spacer(minLength: 8)
 
-            TransformRowButton(itemID: item.id, isHovered: isHovered, onTransformRow: onTransformRow)
-
             AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 8)
@@ -681,7 +632,6 @@ private struct ImageRow: View {
     let relativeTime: (Date) -> String
     let onToggleSelection: () -> Void
     let onPaste: () -> Void
-    let onTransformRow: (UUID) -> Void
 
     @State private var thumbnail: NSImage?
     @State private var isHovered: Bool = false
@@ -719,8 +669,6 @@ private struct ImageRow: View {
             .onTapGesture(perform: onPaste)
 
             Spacer(minLength: 8)
-
-            TransformRowButton(itemID: item.id, isHovered: isHovered, onTransformRow: onTransformRow)
 
             AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }

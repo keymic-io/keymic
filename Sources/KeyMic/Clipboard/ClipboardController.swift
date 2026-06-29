@@ -17,10 +17,6 @@ final class ClipboardController {
     /// Multi-selection bridge between ClipboardPanel and external triggers (hotkey, magic-wand).
     let selectionBridge = ClipboardPanelSelectionBridge()
 
-    /// Injected by AppDelegate after construction. Optional so the controller is testable
-    /// without an LLM dependency.
-    var transformController: ClipboardTransformController?
-
     private static let pasteSourceID: CGEventSourceStateID = .combinedSessionState
 
     private var observedPreferences = ObservedPreferences.current()
@@ -126,44 +122,6 @@ final class ClipboardController {
     func quickPaste(index: Int) {
         guard ClipboardPreferences.enabled, panel.isVisible else { return }
         panel.quickPaste(index: index)
-    }
-
-    /// Triggered by ⌥L hotkey, the Transform button, and the per-row magic-wand button.
-    func transformSelected() {
-        guard let transformer = transformController else { return }
-
-        // panel closed → open it + toast; do not invoke LLM
-        if !isPanelVisible {
-            toggle(initialTab: .clipboard)
-            overlayPanel?.showTransientToast(
-                String(localized: "Select items to transform"),
-                durationSeconds: 2.0
-            )
-            return
-        }
-
-        let items = currentSelectedItems()
-        transformer.transform(items: items)
-    }
-
-    private func currentSelectedItems() -> [ClipboardItem] {
-        let idsToTransform: [UUID]
-        let ordered = selectionBridge.orderedSelection()
-        if !ordered.isEmpty {
-            idsToTransform = ordered
-        } else if let focused = selectionBridge.focusedID {
-            idsToTransform = [focused]
-        } else if let cursor = selectionBridge.lastClickedID {
-            idsToTransform = [cursor]
-        } else if let firstVisible = selectionBridge.visibleOrderedIDs.first {
-            idsToTransform = [firstVisible]
-        } else {
-            idsToTransform = []
-        }
-
-        return idsToTransform.compactMap { id in
-            store.item(id: id)
-        }
     }
 
     func pasteSelectedItemsInOrder() {
@@ -299,8 +257,7 @@ final class ClipboardController {
             onVaultPaste: { [weak self] item in self?.pasteVault(item) },
             onVaultDelete: { [weak self] item in self?.vaultStore.delete(item) },
             onDismiss: { [weak self] in self?.panel.dismiss() },
-            onPasteSelected: { [weak self] in self?.pasteSelectedItemsInOrder() },
-            onTransformSelected: { [weak self] in self?.transformSelected() }
+            onPasteSelected: { [weak self] in self?.pasteSelectedItemsInOrder() }
         )
     }
 
