@@ -151,6 +151,10 @@ final class ClipboardController {
             let delay = initialDelay + (Double(index) * interval)
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.writePasteboardContents(for: item) else { return }
+                // Separate consecutive items with a space so they don't run together.
+                // The space is a plain keystroke (no pasteboard churn) posted before the
+                // paste, so the target receives "<prev> <item>".
+                if index > 0 { Self.synthesizeSpace() }
                 Self.synthesizeCommandV()
             }
         }
@@ -418,6 +422,16 @@ final class ClipboardController {
         else { return }
         down.flags = .maskCommand
         up.flags = .maskCommand
+        down.post(tap: .cgAnnotatedSessionEventTap)
+        up.post(tap: .cgAnnotatedSessionEventTap)
+    }
+
+    private static func synthesizeSpace() {
+        let source = CGEventSource(stateID: pasteSourceID)
+        let vKeyCode: CGKeyCode = 0x31  // Space
+        guard let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+            let up = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false)
+        else { return }
         down.post(tap: .cgAnnotatedSessionEventTap)
         up.post(tap: .cgAnnotatedSessionEventTap)
     }

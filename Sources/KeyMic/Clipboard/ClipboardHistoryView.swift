@@ -525,41 +525,40 @@ private struct TextRow: View {
     let onToggleSelection: () -> Void
     let onPaste: () -> Void
 
-    @State private var isHovered: Bool = false
-
     var body: some View {
         HStack(spacing: 10) {
             SelectionTickButton(isSelected: isSelected, isFocused: isFocused, action: onToggleSelection)
 
-            Text(quickKeyLabel)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 22, alignment: .leading)
-
             HStack(spacing: 10) {
-                if let symbol = item.kind.iconSymbolName {
-                    Image(systemName: symbol)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 14)
+                Text(quickKeyLabel)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 22, alignment: .leading)
+
+                HStack(spacing: 10) {
+                    if let symbol = item.kind.iconSymbolName {
+                        Image(systemName: symbol)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 14)
+                    }
+
+                    HighlightedText(source: item.displayPreview, query: query)
+                        .foregroundStyle(.primary)
+                        .font(.system(size: 14))
+                        .lineLimit(1)
                 }
 
-                HighlightedText(source: item.displayPreview, query: query)
-                    .foregroundStyle(.primary)
-                    .font(.system(size: 14))
-                    .lineLimit(1)
+                Spacer(minLength: 8)
+
+                AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onPaste)
-
-            Spacer(minLength: 8)
-
-            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .onHover { isHovered = $0 }
     }
 }
 
@@ -572,42 +571,41 @@ private struct FileRow: View {
     let onToggleSelection: () -> Void
     let onPaste: () -> Void
 
-    @State private var isHovered: Bool = false
-
     var body: some View {
         HStack(spacing: 10) {
             SelectionTickButton(isSelected: isSelected, isFocused: isFocused, action: onToggleSelection)
 
-            Text(quickKeyLabel)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 22, alignment: .leading)
-
             HStack(spacing: 10) {
-                fileIcon
-                    .frame(width: 28, height: 28)
+                Text(quickKeyLabel)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 22, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text((item.fileURLPath as NSString?)?.lastPathComponent ?? item.text)
-                        .font(.system(size: 14, weight: .medium))
-                        .lineLimit(1)
-                    Text(item.fileURLPath ?? "")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                HStack(spacing: 10) {
+                    fileIcon
+                        .frame(width: 28, height: 28)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text((item.fileURLPath as NSString?)?.lastPathComponent ?? item.text)
+                            .font(.system(size: 14, weight: .medium))
+                            .lineLimit(1)
+                        Text(item.fileURLPath ?? "")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 }
+
+                Spacer(minLength: 8)
+
+                AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onPaste)
-
-            Spacer(minLength: 8)
-
-            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-        .onHover { isHovered = $0 }
     }
 
     private var fileIcon: some View {
@@ -634,47 +632,47 @@ private struct ImageRow: View {
     let onPaste: () -> Void
 
     @State private var thumbnail: NSImage?
-    @State private var isHovered: Bool = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             SelectionTickButton(isSelected: isSelected, isFocused: isFocused, action: onToggleSelection)
                 .padding(.top, 4)
 
-            Text(quickKeyLabel)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundStyle(.secondary)
-                .frame(minWidth: 22, alignment: .leading)
-                .padding(.top, 4)
-
             HStack(alignment: .top, spacing: 10) {
-                thumbView
-                    .frame(width: 100, height: 72)
-                    .background(Color.white.opacity(0.05))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                Text(quickKeyLabel)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 22, alignment: .leading)
+                    .padding(.top, 4)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.text)
-                        .font(.system(size: 14, weight: .medium))
-                        .lineLimit(1)
-                    Text("\(item.imageWidth)×\(item.imageHeight) · \(formattedSize(item.byteSize))")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                    Text(relativeTime(item.createdAt))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 10) {
+                    thumbView
+                        .frame(width: 100, height: 72)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.text)
+                            .font(.system(size: 14, weight: .medium))
+                            .lineLimit(1)
+                        Text("\(item.imageWidth)×\(item.imageHeight) · \(formattedSize(item.byteSize))")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        Text(relativeTime(item.createdAt))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                    }
                 }
+
+                Spacer(minLength: 8)
+
+                AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
             }
             .contentShape(Rectangle())
             .onTapGesture(perform: onPaste)
-
-            Spacer(minLength: 8)
-
-            AppIconView(bundleID: item.sourceBundleID).frame(width: 18, height: 18)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 8)
-        .onHover { isHovered = $0 }
         .task { loadThumbnailIfNeeded() }
     }
 
