@@ -21,10 +21,16 @@ struct ClipboardHistoryKeyHandlingTestRunner {
         expect(ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: false, hasPasteTarget: false),
                "return is handled outside the search field even without an explicit target")
 
-        expect(ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: false),
+        expect(ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: false, query: ""),
                "space should toggle selection when search is not focused")
-        expect(!ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: true),
-               "space should type into search instead of toggling selection")
+        expect(ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: false, query: "abc"),
+               "space toggles selection outside the search field regardless of query")
+        expect(ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: true, query: ""),
+               "space toggles selection while the focused search field is still empty")
+        expect(ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: true, query: "   "),
+               "whitespace-only query still counts as empty, so space toggles selection")
+        expect(!ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: true, query: "abc"),
+               "once the query has text, space is typed into the search field")
 
         print("ClipboardHistoryKeyHandlingTests passed")
     }

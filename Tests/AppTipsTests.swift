@@ -10,8 +10,10 @@ struct AppTipsTestRunner {
                "clipboard history group should have enabled tips")
         expect(TipsCatalog.tips(for: .clipboardHistory).allSatisfy(\.isEnabled),
                "tips(for:) must exclude disabled tips")
-        expect(TipsCatalog.all.contains { $0.id == "clipboard.hotkeyFocusesNext" && !$0.isEnabled },
-               "pending hotkey-focus tip should exist but stay disabled until the feature ships")
+        expect(TipsCatalog.all.contains { $0.id == "clipboard.hotkeyFocusesNext" && $0.isEnabled },
+               "the hold-modifier switcher tip should be enabled now that the gesture ships")
+        expect(TipsCatalog.all.contains { $0.id == "clipboard.switcherCommit" },
+               "the release-to-paste tip should exist")
 
         // Rotation position wrap-around
         expect(TipsCatalog.rotationPosition(counter: 0, count: 3) == 0, "counter 0 maps to first tip")

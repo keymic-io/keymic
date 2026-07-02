@@ -103,6 +103,11 @@ struct ClipboardHistoryView: View {
 
                 Divider().overlay(Color.white.opacity(0.08))
 
+                if let tip = currentTip {
+                    tipBar(tip)
+                    Divider().overlay(Color.white.opacity(0.08))
+                }
+
                 if filtered.all.isEmpty {
                     emptyState
                 } else {
@@ -115,11 +120,6 @@ struct ClipboardHistoryView: View {
                     onDelete: onVaultDelete,
                     onDismiss: onDismiss
                 )
-            }
-
-            if tab == .clipboard, let tip = currentTip {
-                Divider().overlay(Color.white.opacity(0.08))
-                tipFooter(tip)
             }
 
             Divider().overlay(Color.white.opacity(0.08))
@@ -189,7 +189,7 @@ struct ClipboardHistoryView: View {
                         hasPasteTarget: focusedItemID != nil || !selectedIDs.isEmpty)
                 },
                 onReturn: triggerPaste,
-                shouldHandleSpace: { ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: isSearchFocused) },
+                shouldHandleSpace: { ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: isSearchFocused, query: query) },
                 onSpace: triggerToggleFocusedSelection,
                 onCommandDelete: triggerDelete,
                 onTogglePin: triggerTogglePin,
@@ -199,7 +199,9 @@ struct ClipboardHistoryView: View {
             ))
     }
 
-    private func tipFooter(_ tip: AppTip) -> some View {
+    /// Tip surface pinned directly under the search field, replacing the
+    /// "History" section title.
+    private func tipBar(_ tip: AppTip) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "lightbulb")
                 .font(.system(size: 10))
@@ -212,6 +214,32 @@ struct ClipboardHistoryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
+    }
+
+    @ViewBuilder
+    private var historyRows: some View {
+        ForEach(Array(filtered.history.enumerated()), id: \.element.id) { index, item in
+            row(item, quickKeyLabel: historyQuickKeyLabel(for: index))
+                .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
+                .listRowSeparator(.hidden)
+                .listRowBackground(rowBackground(for: item))
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    handleHover(hovering, item: item)
+                }
+                .simultaneousGesture(
+                    TapGesture(count: 1).modifiers(.command).onEnded {
+                        toggleMouseSelection(for: item.id)
+                    }
+                )
+                .simultaneousGesture(
+                    TapGesture(count: 1).modifiers(.shift).onEnded {
+                        extendRange(to: item.id)
+                        focusedField = nil
+                    }
+                )
+                .id(item.id)
+        }
     }
 
     private var searchField: some View {
@@ -300,29 +328,12 @@ struct ClipboardHistoryView: View {
                     }
                 }
 
-                Section(header: sectionHeader("History")) {
-                    ForEach(Array(filtered.history.enumerated()), id: \.element.id) { index, item in
-                        row(item, quickKeyLabel: historyQuickKeyLabel(for: index))
-                            .listRowInsets(EdgeInsets(top: 3, leading: 8, bottom: 3, trailing: 8))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(rowBackground(for: item))
-                            .contentShape(Rectangle())
-                            .onHover { hovering in
-                                handleHover(hovering, item: item)
-                            }
-                            .simultaneousGesture(
-                                TapGesture(count: 1).modifiers(.command).onEnded {
-                                    toggleMouseSelection(for: item.id)
-                                }
-                            )
-                            .simultaneousGesture(
-                                TapGesture(count: 1).modifiers(.shift).onEnded {
-                                    extendRange(to: item.id)
-                                    focusedField = nil
-                                }
-                            )
-                            .id(item.id)
-                    }
+                // The tip bar above the list already replaces the "History"
+                // title, so drop the header while a tip is shown.
+                if currentTip == nil {
+                    Section(header: sectionHeader("History")) { historyRows }
+                } else {
+                    Section { historyRows }
                 }
             }
             .listStyle(.plain)

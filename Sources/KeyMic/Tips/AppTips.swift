@@ -35,17 +35,20 @@ enum TipsCatalog {
 
     static let all: [AppTip] = [
         AppTip(id: "clipboard.returnPastesFirst", feature: .clipboardHistory) {
-            String(localized: "Press Return to paste the first item right away.")
+            String(localized: "Press ↩ to paste the first item right away.")
         },
         AppTip(id: "clipboard.quickPaste", feature: .clipboardHistory) {
             String(localized: "Press ⌥1–⌥0 to paste one of the first ten items.")
         },
         AppTip(id: "clipboard.spaceMultiPaste", feature: .clipboardHistory) {
-            String(localized: "Press Space to select several items, then Return pastes them separated by spaces.")
+            String(localized: "Use ↑↓ + Space to select multiple items to paste.")
         },
-        // Pending feature — enable once pressing the panel hotkey again moves focus to the next item.
-        AppTip(id: "clipboard.hotkeyFocusesNext", feature: .clipboardHistory, isEnabled: false) {
+        // Hold-modifier switcher gesture (Cmd+Tab style).
+        AppTip(id: "clipboard.hotkeyFocusesNext", feature: .clipboardHistory) {
             String(localized: "Press \(clipboardPanelHotkeyDisplay()) again to move focus to the next item.")
+        },
+        AppTip(id: "clipboard.switcherCommit", feature: .clipboardHistory) {
+            String(localized: "Release the modifier to paste the highlighted item and close.")
         },
     ]
 
