@@ -12561,6 +12561,59 @@
           }
         }
       }
+    },
+    "Press ⌥P to pin or unpin the highlighted item.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie ⌥P, um das markierte Element anzuheften oder zu lösen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press ⌥P to pin or unpin the highlighted item."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa ⌥P para fijar o desfijar el elemento resaltado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez sur ⌥P pour épingler ou désépingler l'élément en surbrillance."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥P を押すとハイライト中の項目をピン留め／解除します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥P 을 누르면 강조된 항목을 고정하거나 고정 해제합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 ⌥P 置顶或取消置顶当前高亮项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "按 ⌥P 置頂或取消置頂目前反白的項目。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

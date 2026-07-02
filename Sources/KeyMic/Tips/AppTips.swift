@@ -43,6 +43,9 @@ enum TipsCatalog {
         AppTip(id: "clipboard.spaceMultiPaste", feature: .clipboardHistory) {
             String(localized: "Use ↑↓ + Space to select multiple items to paste.")
         },
+        AppTip(id: "clipboard.togglePin", feature: .clipboardHistory) {
+            String(localized: "Press ⌥P to pin or unpin the highlighted item.")
+        },
         // Hold-modifier switcher gesture (Cmd+Tab style).
         AppTip(id: "clipboard.hotkeyFocusesNext", feature: .clipboardHistory) {
             String(localized: "Press \(clipboardPanelHotkeyDisplay()) again to move focus to the next item.")
