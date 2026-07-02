@@ -198,7 +198,10 @@ final class HotkeyRecorder: NSButton {
 
     static let clipboardValidator: Validator = { cfg in
         if cfg.isPureModifier { return String(localized: "Need at least one regular key, not just modifiers") }
-        if cfg.modifiers.isEmpty, !HotkeyConfig.functionRowKeyCodes.contains(cfg.keyCode) {
+        // The clipboard panel hotkey drives the hold-modifier switcher gesture,
+        // which detects commit via modifier release — so a modifier is required
+        // even for function-row keys.
+        if cfg.modifiers.isEmpty {
             return String(localized: "Need at least one modifier")
         }
         if cfg.isSystemReserved { return String(localized: "\(cfg.displayString()) is reserved by macOS") }

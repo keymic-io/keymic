@@ -269,6 +269,11 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         focus.quickPasteRequestID += 1
     }
 
+    func moveSelection(by delta: Int) {
+        focus.moveSelectionDelta = delta
+        focus.moveSelectionRequestID += 1
+    }
+
     private static func initialContentRect() -> NSRect {
         let widthRatio: CGFloat = 0.352
         let heightRatio: CGFloat = 0.56

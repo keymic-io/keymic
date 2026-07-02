@@ -12,10 +12,14 @@ struct ClipboardHistoryKeyHandlingTestRunner {
         expect(!ClipboardHistoryKeyHandling.shouldHandleArrowKey(isSearchFocused: true, query: "abc"),
                "arrow should stay in populated search field")
 
-        expect(ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: false),
-               "return should paste when search is not focused")
-        expect(!ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: true),
-               "return should not conflict with search editing")
+        expect(ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: true, hasPasteTarget: true),
+               "return should paste when search is focused but an item is highlighted/selected (paste on open)")
+        expect(!ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: true, hasPasteTarget: false),
+               "return should defer to search editing when there is no paste target")
+        expect(ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: false, hasPasteTarget: true),
+               "return should paste when search is not focused and an item is highlighted")
+        expect(ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: false, hasPasteTarget: false),
+               "return is handled outside the search field even without an explicit target")
 
         expect(ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: false),
                "space should toggle selection when search is not focused")

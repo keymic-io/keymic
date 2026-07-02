@@ -12296,6 +12296,218 @@
           }
         }
       }
+    },
+    "Press Return to paste the first item right away.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie die Eingabetaste, um das erste Element sofort einzufügen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press Return to paste the first item right away."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa Retorno para pegar el primer elemento al instante."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez sur Retour pour coller immédiatement le premier élément."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Return キーを押すと最初の項目をすぐに貼り付けます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Return 키를 누르면 첫 번째 항목을 바로 붙여넣습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下回车键立即粘贴第一项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "按下 Return 鍵立即貼上第一項。"
+          }
+        }
+      }
+    },
+    "Press ⌥1–⌥0 to paste one of the first ten items.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie ⌥1–⌥0, um eines der ersten zehn Elemente einzufügen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press ⌥1–⌥0 to paste one of the first ten items."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa ⌥1–⌥0 para pegar uno de los diez primeros elementos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez sur ⌥1–⌥0 pour coller l'un des dix premiers éléments."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥1–⌥0 を押すと最初の10項目のいずれかを貼り付けます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥1–⌥0 을 누르면 처음 10개 항목 중 하나를 붙여넣습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 ⌥1–⌥0 快速粘贴前十项中的任意一项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "按 ⌥1–⌥0 快速貼上前十項中的任意一項。"
+          }
+        }
+      }
+    },
+    "Press Space to select several items, then Return pastes them separated by spaces.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mit der Leertaste mehrere Elemente auswählen; die Eingabetaste fügt sie durch Leerzeichen getrennt ein."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press Space to select several items, then Return pastes them separated by spaces."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa Espacio para seleccionar varios elementos; Retorno los pega separados por espacios."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez sur Espace pour sélectionner plusieurs éléments ; Retour les colle séparés par des espaces."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "スペースキーで複数選択し、Return で空白区切りでまとめて貼り付けます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "스페이스로 여러 항목을 선택한 뒤 Return 을 누르면 공백으로 구분되어 붙여넣어집니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按空格键多选，再按回车即可以空格分隔粘贴多项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "按空白鍵多選，再按 Return 即可以空格分隔貼上多項。"
+          }
+        }
+      }
+    },
+    "Press %@ again to move focus to the next item.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie erneut %@, um den Fokus auf das nächste Element zu bewegen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press %@ again to move focus to the next item."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa %@ de nuevo para mover el foco al siguiente elemento."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez de nouveau sur %@ pour déplacer le focus vers l'élément suivant."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "もう一度 %@ を押すとフォーカスが次の項目に移動します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@ 을(를) 다시 누르면 포커스가 다음 항목으로 이동합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再次按 %@ 将焦点移到下一项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "再次按 %@ 將焦點移到下一項。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

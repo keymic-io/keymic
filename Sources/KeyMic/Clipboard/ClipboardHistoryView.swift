@@ -18,6 +18,7 @@ struct ClipboardHistoryView: View {
     @State private var filtered: FilteredItems = FilteredItems(pinned: [], history: [])
     @State private var suppressScrollOnce: Bool = false
     @State private var keyboardNavMouseLock: NSPoint?
+    @State private var currentTip: AppTip?
     @FocusState private var focusedField: FocusedField?
 
     let focus: ClipboardPanelFocus
@@ -116,6 +117,11 @@ struct ClipboardHistoryView: View {
                 )
             }
 
+            if tab == .clipboard, let tip = currentTip {
+                Divider().overlay(Color.white.opacity(0.08))
+                tipFooter(tip)
+            }
+
             Divider().overlay(Color.white.opacity(0.08))
             tabSwitcher
         }
@@ -131,6 +137,7 @@ struct ClipboardHistoryView: View {
             refreshFiltered(selection: .focusFirst)
             trace.mark("computeFiltered (\(items.count) items)")
             focusedField = .search
+            currentTip = TipsCatalog.nextTip(for: .clipboardHistory)
             trace.end("view.onAppear done")
         }
         .onChange(of: focus.requestID) { _, _ in
@@ -141,6 +148,7 @@ struct ClipboardHistoryView: View {
             refreshFiltered(selection: .focusFirst)
             trace.mark("computeFiltered (\(items.count) items)")
             focusedField = .search
+            currentTip = TipsCatalog.nextTip(for: .clipboardHistory)
             trace.end("view.refresh done")
         }
         .onChange(of: focus.quickPasteRequestID) { _, _ in
@@ -151,6 +159,9 @@ struct ClipboardHistoryView: View {
         }
         .onChange(of: focus.togglePinRequestID) { _, _ in
             triggerTogglePin()
+        }
+        .onChange(of: focus.moveSelectionRequestID) { _, _ in
+            moveSelection(by: focus.moveSelectionDelta)()
         }
         .onChange(of: focus.tabRequestID) { _, _ in
             tab = focus.initialTab
@@ -172,7 +183,11 @@ struct ClipboardHistoryView: View {
                 onArrowUp: moveSelection(by: -1),
                 shouldHandleArrowDown: { ClipboardHistoryKeyHandling.shouldHandleArrowKey(isSearchFocused: isSearchFocused, query: query) },
                 onArrowDown: moveSelection(by: 1),
-                shouldHandleReturn: { ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: isSearchFocused) },
+                shouldHandleReturn: {
+                    ClipboardHistoryKeyHandling.shouldHandleReturn(
+                        isSearchFocused: isSearchFocused,
+                        hasPasteTarget: focusedItemID != nil || !selectedIDs.isEmpty)
+                },
                 onReturn: triggerPaste,
                 shouldHandleSpace: { ClipboardHistoryKeyHandling.shouldHandleSpace(isSearchFocused: isSearchFocused) },
                 onSpace: triggerToggleFocusedSelection,
@@ -182,6 +197,21 @@ struct ClipboardHistoryView: View {
                 onQuickPaste: triggerQuickPaste,
                 onPinnedQuickPaste: triggerPinnedQuickPaste
             ))
+    }
+
+    private func tipFooter(_ tip: AppTip) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "lightbulb")
+                .font(.system(size: 10))
+            Text(tip.text())
+                .font(.system(size: 11))
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
     }
 
     private var searchField: some View {

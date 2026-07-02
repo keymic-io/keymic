@@ -269,6 +269,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isActive ?? false }
         keyMonitor.isVoiceEnabled = { [weak self] in self?.isVoiceEnabled ?? false }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
+        keyMonitor.onClipboardSwitcherStep = { [weak self] in self?.clipboardController.stepSwitcher() }
+        keyMonitor.onClipboardSwitcherCommit = { [weak self] in self?.clipboardController.pasteSelectedItemsInOrder() }
         keyMonitor.onVaultHotkey = { [weak self] in
             self?.clipboardController.toggle(initialTab: .vault)
         }
@@ -316,6 +318,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         HotkeySettingsStore.shared.ensureInitialized()
         lastInputConfigSnapshot = InputConfigSnapshot.current()
+
+        TipsCatalog.clipboardPanelHotkeyDisplay = {
+            HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString() ?? "⌥V"
+        }
 
         // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
         let registry = HotkeyRegistry.shared

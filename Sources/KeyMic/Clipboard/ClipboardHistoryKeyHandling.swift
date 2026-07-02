@@ -6,8 +6,8 @@ enum ClipboardHistoryKeyHandling {
         return query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    static func shouldHandleReturn(isSearchFocused: Bool) -> Bool {
-        !isSearchFocused
+    static func shouldHandleReturn(isSearchFocused: Bool, hasPasteTarget: Bool) -> Bool {
+        hasPasteTarget || !isSearchFocused
     }
 
     static func shouldHandleSpace(isSearchFocused: Bool) -> Bool {

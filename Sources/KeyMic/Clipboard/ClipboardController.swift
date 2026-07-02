@@ -109,14 +109,27 @@ final class ClipboardController {
             trace.end("toggle no-op (already visible)")
             return
         }
-        guard ClipboardPreferences.enabled else {
-            trace.end("disabled")
-            return
-        }
+        open(initialTab: initialTab)
+    }
+
+    /// Open the panel without the toggle-close behavior. Used by the hold-modifier
+    /// switcher gesture, where a hotkey tap must never close an already-open panel.
+    func open(initialTab: PanelTab = .clipboard) {
+        let panel = self.panel
+        guard !panel.isVisible else { return }
+        guard ClipboardPreferences.enabled else { return }
         pasteTargetApplication = NSWorkspace.shared.frontmostApplication
-        trace.mark("frontmostApplication")
         panel.showAtCursor(initialTab: initialTab)
-        trace.mark("showAtCursor returned")
+    }
+
+    /// One step of the hold-modifier switcher: open + highlight the first item if
+    /// the panel is closed, otherwise move the highlight down one row.
+    func stepSwitcher() {
+        if isPanelVisible {
+            panel.moveSelection(by: 1)
+        } else {
+            open()
+        }
     }
 
     func quickPaste(index: Int) {
