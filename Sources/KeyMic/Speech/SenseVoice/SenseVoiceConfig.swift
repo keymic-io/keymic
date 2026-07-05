@@ -53,7 +53,7 @@ enum SenseVoiceConfig {
         "auto": 0, "zh": 3, "en": 4, "yue": 7, "ja": 11, "ko": 12, "nospeech": 13,
     ]
 
-    // 模型分发:FluidInference int8 量化版(225MB,精度与 fp16 持平:
+    // 模型分发:FluidInference int8 量化版(zip 198MB / 落盘 226MB,精度与 fp16 持平:
     // LibriSpeech WER 3.22→3.25%,AISHELL CER 3.09→3.09%),重打包为顶层
     // SenseVoiceSmall.mlmodelc 的 zip,托管在用户 Hugging Face repo。
     // 注意:模型最低部署目标为 macOS 15;KeyMic 工程目标 macOS 14。macOS 14 上 MLModel 加载会失败,
