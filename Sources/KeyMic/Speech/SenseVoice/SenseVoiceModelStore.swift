@@ -77,11 +77,29 @@ final class SenseVoiceModelStore {
         // only ever be in the staging dir, never at `modelURL`.
         let staging = self.baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".staging")
         try? FileManager.default.removeItem(at: staging)
-        _state = FileManager.default.fileExists(atPath: modelURL.path) ? .ready : .notDownloaded
+
+        // Version marker: the model dir is only trusted when the sidecar `.version` file
+        // matches the SHA256 of the zip the current build expects. A dir without a marker
+        // (pre-int8 install) or with a stale marker (old model) is evicted so the next
+        // download fetches the current model.
+        let markerURL = self.baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".version")
+        let modelExists = FileManager.default.fileExists(atPath: modelURL.path)
+        let marker = (try? String(contentsOf: markerURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if modelExists, marker?.caseInsensitiveCompare(SenseVoiceConfig.modelSHA256) != .orderedSame {
+            try? FileManager.default.removeItem(at: modelURL)
+            try? FileManager.default.removeItem(at: markerURL)
+            _state = .notDownloaded
+        } else {
+            _state = modelExists ? .ready : .notDownloaded
+        }
     }
 
     var modelURL: URL { baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName) }
     private var stagingURL: URL { baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".staging") }
+    private var versionMarkerURL: URL {
+        baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".version")
+    }
 
     func verifySHA256(fileURL: URL, expected: String) -> Bool {
         guard let data = try? Data(contentsOf: fileURL) else { return false }
@@ -173,6 +191,7 @@ final class SenseVoiceModelStore {
             }
             try? FileManager.default.removeItem(at: modelURL)
             try FileManager.default.moveItem(at: extracted, to: modelURL)  // atomic rename (same volume)
+            try? SenseVoiceConfig.modelSHA256.write(to: versionMarkerURL, atomically: true, encoding: .utf8)
             // 清理中间产物 zip + staging。
             try? FileManager.default.removeItem(at: stagingURL)
             try? FileManager.default.removeItem(at: zip)
