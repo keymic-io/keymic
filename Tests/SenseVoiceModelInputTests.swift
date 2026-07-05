@@ -1,7 +1,7 @@
 import CoreML
 import Foundation
 
-/// Model-free unit test for `SenseVoiceModel.makeFeatureProvider`. We can't load the 432 MB
+/// Model-free unit test for `SenseVoiceModel.makeFeatureProvider`. We can't load the 226 MB
 /// CoreML model in CI, so the input builder is a `static func` callable without an `MLModel`.
 /// This verifies the 4 inputs are constructed with the right names / shapes / dtypes / values.
 @main

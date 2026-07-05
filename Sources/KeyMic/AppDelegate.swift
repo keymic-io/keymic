@@ -423,7 +423,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return AppleSpeechEngine(locale: Locale(identifier: code))
     }
 
-    /// Build a `SenseVoiceSpeechEngine` from an ALREADY-LOADED `MLModel`. The heavy 432 MB disk
+    /// Build a `SenseVoiceSpeechEngine` from an ALREADY-LOADED `MLModel`. The heavy 226 MB disk
     /// load happens in the caller (off main); this only wires up the bundled am.mvn / vocab and
     /// is cheap enough for the main thread. Returns nil if the bundled resources are missing, in
     /// which case the caller stays on Apple.

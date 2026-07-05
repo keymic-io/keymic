@@ -11,14 +11,14 @@ private let logger = Logger(subsystem: "io.keymic.app", category: "SenseVoiceMod
 /// on the macOS 14 SDK. The model only fails to *load* on macOS <15 — that is handled upstream
 /// by `SenseVoiceModelStore.loadModel()` (returns nil) and the engine factory's fallback to
 /// Apple's recognizer. Keeping this type un-annotated lets the input-builder unit test run on
-/// any host without the 432 MB model.
+/// any host without the 226 MB model.
 final class SenseVoiceModel {
     private let model: MLModel
 
     init(model: MLModel) { self.model = model }
 
     /// Build the model's 4-input dictionary. Model-free + `static` so it is unit-testable
-    /// without loading the (432 MB) `MLModel`.
+    /// without loading the (226 MB) `MLModel`.
     ///
     /// - `speech`         Float32 `[1, T, D]` — LFR-fbank features (row-major fill).
     /// - `speech_lengths` Int32   `[1]` = T.
