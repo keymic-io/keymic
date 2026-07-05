@@ -27,7 +27,7 @@ final class SenseVoiceModel {
     static func makeFeatureProvider(
         features: [[Float]], languageId: Int, textnormId: Int
     ) throws -> MLDictionaryFeatureProvider {
-        // The exported `speech` input only accepts T in 1...modelMaxFrames (~3 min). A longer
+        // The exported `speech` input only accepts T in 1...modelMaxFrames. A longer
         // hold would make `model.prediction` throw on a shape/range mismatch and lose the whole
         // transcript; truncate to the cap (drop the tail) so we still return a partial result.
         let features: [[Float]] = {
@@ -37,11 +37,17 @@ final class SenseVoiceModel {
         }()
         let t = features.count
         let d = features.first?.count ?? SenseVoiceConfig.modelFeatureDim
+        // EnumeratedShapes: pad up to the smallest allowed bucket ≥ t (t ≤ modelMaxFrames here).
+        let paddedT = SenseVoiceConfig.modelFrameBuckets.first(where: { $0 >= t })
+            ?? SenseVoiceConfig.modelMaxFrames
 
         let speech = try MLMultiArray(
-            shape: [1, NSNumber(value: t), NSNumber(value: d)], dataType: .float32)
+            shape: [1, NSNumber(value: paddedT), NSNumber(value: d)], dataType: .float32)
+        // MLMultiArray memory is NOT zero-initialized — zero the whole buffer first so the
+        // pad region can't leak garbage into the encoder.
+        memset(speech.dataPointer, 0, paddedT * d * MemoryLayout<Float32>.size)
         // Fast contiguous fill via typed pointer (row-major: idx = ti*d + di).
-        let ptr = speech.dataPointer.bindMemory(to: Float32.self, capacity: t * d)
+        let ptr = speech.dataPointer.bindMemory(to: Float32.self, capacity: paddedT * d)
         var idx = 0
         for row in features {
             for v in row {
@@ -65,10 +71,14 @@ final class SenseVoiceModel {
         ])
     }
 
-    /// Run inference → raw CTC logits `[T'][V]` trimmed to `encoder_out_lens`.
-    /// `T' = T + 4` (the model prepends 4 control-embedding frames); the CTCDecoder strips
-    /// their argmax tags. Logit width V == `SenseVoiceConfig.vocabSize` (25055).
+    /// Run inference → raw CTC logits `[T'][V]` trimmed to `encoder_out_lens` when the model
+    /// provides it, else to `trueT + controlFrames` (the int8 export has no `encoder_out_lens`
+    /// output, so everything past that point is zero-pad output, not speech).
+    /// `T' = T_padded + controlFrames` (the model prepends `controlFrames` control-embedding
+    /// frames); the CTCDecoder strips their argmax tags. Logit width V ==
+    /// `SenseVoiceConfig.vocabSize` (25055).
     func infer(features: [[Float]], languageId: Int, textnormId: Int) throws -> [[Float]] {
+        let trueT = min(features.count, SenseVoiceConfig.modelMaxFrames)
         let provider = try Self.makeFeatureProvider(
             features: features, languageId: languageId, textnormId: textnormId)
         let out = try model.prediction(from: provider)
@@ -86,8 +96,9 @@ final class SenseVoiceModel {
         let framesTotal = shape[shape.count - 2]
         let vocab = shape[shape.count - 1]
 
-        // Valid frame count from encoder_out_lens (clamp to framesTotal; fall back to all frames).
-        var validFrames = framesTotal
+        // Valid frame count: prefer encoder_out_lens; the int8 export omits it, so fall back
+        // to trueT + controlFrames — everything past that is zero-pad output, not speech.
+        var validFrames = min(framesTotal, trueT + SenseVoiceConfig.controlFrames)
         if let lens = out.featureValue(for: SenseVoiceConfig.outputLengthName)?.multiArrayValue,
            lens.count > 0 {
             validFrames = min(framesTotal, lens[0].intValue)

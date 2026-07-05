@@ -570,6 +570,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // SenseVoice desired: load model OFF main, then build + swap ON main.
         guard #available(macOS 15, *) else { return }
+        // Model missing (fresh install or evicted by a stale version marker): kick off the
+        // download instead of silently staying on Apple. The store's state observer
+        // (registered in applicationDidFinishLaunching) re-applies the engine preference
+        // when the download flips to .ready, upgrading to SenseVoice automatically.
+        // `.failed` is NOT retried here — recovery stays manual via the Settings button,
+        // so a persistent network error can't loop downloads.
+        if case .notDownloaded = senseVoiceModelStore.state {
+            senseVoiceModelStore.ensureDownloaded { _ in }
+            return
+        }
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let mlModel = self.senseVoiceModelStore.loadModel()  // heavy disk load, OFF main
