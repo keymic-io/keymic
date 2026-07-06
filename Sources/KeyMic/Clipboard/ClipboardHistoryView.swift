@@ -836,6 +836,14 @@ private struct KeyEventMonitor: NSViewRepresentable {
         private func handle(_ event: NSEvent) -> NSEvent? {
             guard isEnabled, let window, window.isVisible, event.window === window else { return event }
 
+            // While an input method is composing (marked text in the field editor), let every
+            // key fall through to the IME — Space/Return/arrows/number keys are how the IME
+            // commits or navigates candidates. A local event monitor sees keys before the
+            // input context does, so without this guard we would steal the IME's commit key.
+            if let editor = window.firstResponder as? NSTextView, editor.hasMarkedText() {
+                return event
+            }
+
             let isCmd = event.modifierFlags.contains(.command)
             let isAltOnly =
                 event.modifierFlags.contains(.option)
