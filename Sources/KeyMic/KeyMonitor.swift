@@ -468,8 +468,7 @@ final class KeyMonitor {
                 // Only discrete taps drive the gesture; swallow auto-repeat so the
                 // held key neither types nor rapidly cycles the highlight.
                 if !isAutoRepeat {
-                    let visible = isClipboardPanelVisible?() ?? false
-                    _ = clipboardSwitcher.onHotkeyTap(panelVisible: visible, hotkeyModifiers: cfg.modifiers)
+                    _ = clipboardSwitcher.onHotkeyTap(hotkeyModifiers: cfg.modifiers)
                     DispatchQueue.main.async { [weak self] in self?.onClipboardSwitcherStep?() }
                 }
                 return nil

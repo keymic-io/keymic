@@ -12,8 +12,8 @@ import CoreGraphics
 /// standalone swiftc test runner — same approach as `ClipboardHistoryKeyHandling`.
 struct ClipboardSwitcherState {
     /// True while a "opened-then-held" session is in progress. Set only on open
-    /// (panel not visible); never re-armed while the panel stays open, so a
-    /// release mid-browse never pastes.
+    /// (session not already active); never re-armed while a session is active,
+    /// so a release mid-browse never pastes.
     private(set) var active = false
     private var requiredModifiers: CGEventFlags = []
     private var tapCount = 0
@@ -22,16 +22,14 @@ struct ClipboardSwitcherState {
     enum ReleaseAction { case commitPaste, none }
 
     /// Call on each discrete hotkey keyDown (auto-repeat already filtered out).
-    mutating func onHotkeyTap(panelVisible: Bool, hotkeyModifiers: CGEventFlags) -> TapAction {
-        if !panelVisible {
+    mutating func onHotkeyTap(hotkeyModifiers: CGEventFlags) -> TapAction {
+        if !active {
             active = true
             requiredModifiers = hotkeyModifiers
             tapCount = 1
             return .open
         }
-        if active {
-            tapCount += 1
-        }
+        tapCount += 1
         return .moveNext
     }
 
