@@ -39,6 +39,12 @@ struct ClipboardSwitcherState {
         guard active, !requiredModifiers.isEmpty else { return .none }
         guard !currentFlags.contains(requiredModifiers) else { return .none }
         // Release edge: at least one required modifier lifted.
+        // The `panelVisible` term is deliberate: a release after the panel was
+        // dismissed mid-gesture (Esc / click-away with the modifier still held)
+        // must not paste. It is read synchronously off `panel.isVisible`, so a
+        // full tap-tap-release flicked faster than the async first-open lands can
+        // still drop the paste — arming on `active` (see onHotkeyTap) narrows that
+        // window but does not close it entirely; the fallback is harmless (browse mode).
         let shouldPaste = tapCount >= 2 && panelVisible
         active = false
         requiredModifiers = []
