@@ -433,6 +433,22 @@ test-sensevoice-model-input:
 	       -o .build/sensevoice-model-input-tests
 	.build/sensevoice-model-input-tests
 
+# Model-gated: proves the int8 export graph's zero-pad attention mask isolates pad frames at
+# EVERY EnumeratedShapes bucket (collapsed-CTC is bit-stable across 128…1800 for one real
+# input). SKIPS gracefully when the 226 MB model is not installed (CI / macOS <15).
+test-sensevoice-padding-parity:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceModelStore.swift \
+	       Sources/KeyMic/Speech/SenseVoice/ProtobufReader.swift \
+	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
+	       Sources/KeyMic/Speech/SenseVoice/CTCDecoder.swift \
+	       Tests/Support/sensevoice/GoldenLoader.swift \
+	       Tests/SenseVoicePaddingParityTests.swift \
+	       -framework CoreML -framework AVFoundation \
+	       -o .build/sensevoice-padding-parity-tests
+	.build/sensevoice-padding-parity-tests
+
 test-voice-state-machine:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/VoiceError.swift \
@@ -709,7 +725,7 @@ test-context-resolver:
 	       -o .build/context-resolver-tests
 	.build/context-resolver-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-voice-model-catalog test-asset-store test-context-resolver
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-clipboard-transform test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
