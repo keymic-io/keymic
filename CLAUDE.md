@@ -125,3 +125,17 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 - Singletons (`KeyMappingManager.shared`, `PersonaStore.shared`) for cross-cutting state; `OpenAICompatibleLLMClient` and other PersonaPlatform components are owned by `AppDelegate`'s graph (injected, not shared).
 - Persistent locations: SwiftData store + lock file under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.
 - `AGENTS.md` (repo root) documents non-obvious macOS HID + TCC gotchas — read it before editing `KeyMonitor.swift` or codesign/Info.plist plumbing.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in the `keymic-io/keymic` GitHub Issues, driven by the `gh` CLI. External PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical triage roles use their default label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.
