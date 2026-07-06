@@ -38,10 +38,12 @@ enum SenseVoiceConfig {
     static let outputLogitsName = "ctc_logits"     // Task 0 修正:实测名为 ctc_logits(非 logits)
     static let outputLengthName = "encoder_out_lens"
 
-    // textnorm embedding 下标(上游 textnorm_dict)。默认 woitn=15(不做逆文本规整,与转换/sanity 脚本一致)。
+    // textnorm embedding 下标(上游 textnorm_dict)。withitn=14 让模型直接输出标点 + 断句 + 大小写
+    // (并附带 ITN 数字/日期规整,如 "one hundred"→"100");woitn=15 输出无标点、英文全小写的裸文本。
+    // 默认 withitn=14:语音输入粘贴的文本自带标点断句,可读性更好。
     static let textNormWithITN = 14
     static let textNormWithoutITN = 15
-    static let defaultTextNorm = 15
+    static let defaultTextNorm = 14
 
     // 解码
     static let blankId = 0                          // Task 0 确认:config.json ctc_blank_id=0;SPM piece[0]=<unk> 复用为 blank

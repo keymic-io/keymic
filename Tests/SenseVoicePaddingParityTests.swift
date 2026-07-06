@@ -85,8 +85,11 @@ struct SenseVoicePaddingParityTestRunner {
         let lengths = try MLMultiArray(shape: [1], dataType: .int32)
         lengths[0] = NSNumber(value: trueT)
         let language = try MLMultiArray(shape: [1], dataType: .int32); language[0] = 0  // auto
+        // Pin woitn (not the app's mutable `defaultTextNorm`): the committed golden in
+        // sample_ids.json was captured in woitn mode, and the pad-mask invariance this test
+        // asserts is independent of the textnorm embedding anyway.
         let textnorm = try MLMultiArray(shape: [1], dataType: .int32)
-        textnorm[0] = NSNumber(value: SenseVoiceConfig.defaultTextNorm)
+        textnorm[0] = NSNumber(value: SenseVoiceConfig.textNormWithoutITN)
 
         let provider = try MLDictionaryFeatureProvider(dictionary: [
             SenseVoiceConfig.inputFeatureName: MLFeatureValue(multiArray: speech),
