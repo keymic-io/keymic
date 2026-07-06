@@ -18,7 +18,7 @@ final class SenseVoiceModelStore {
     // completion thread, so all access goes through `lock`.
     private let lock = NSLock()
     private var _state: State
-    /// The 432 MB `MLModel` is cached after the first successful load so toggling SenseVoice
+    /// The 226 MB `MLModel` is cached after the first successful load so toggling SenseVoice
     /// off/on (or re-deciding the engine on every `UserDefaults` change) does not re-pay the
     /// heavy disk read. Guarded by `lock`.
     private var cachedModel: MLModel?
@@ -31,7 +31,7 @@ final class SenseVoiceModelStore {
 
     /// Serializes the heavy `MLModel(contentsOf:)` disk read so concurrent `loadModel()`
     /// callers (e.g. several `UserDefaults` changes dispatching engine re-decisions before the
-    /// first load finishes) don't each read the 432 MB model. Held only around the disk read,
+    /// first load finishes) don't each read the 226 MB model. Held only around the disk read,
     /// never together with `lock`.
     private let loadLock = NSLock()
 
@@ -77,11 +77,29 @@ final class SenseVoiceModelStore {
         // only ever be in the staging dir, never at `modelURL`.
         let staging = self.baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".staging")
         try? FileManager.default.removeItem(at: staging)
-        _state = FileManager.default.fileExists(atPath: modelURL.path) ? .ready : .notDownloaded
+
+        // Version marker: the model dir is only trusted when the sidecar `.version` file
+        // matches the SHA256 of the zip the current build expects. A dir without a marker
+        // (pre-int8 install) or with a stale marker (old model) is evicted so the next
+        // download fetches the current model.
+        let markerURL = self.baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".version")
+        let modelExists = FileManager.default.fileExists(atPath: modelURL.path)
+        let marker = (try? String(contentsOf: markerURL, encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if modelExists, marker?.caseInsensitiveCompare(SenseVoiceConfig.modelSHA256) != .orderedSame {
+            try? FileManager.default.removeItem(at: modelURL)
+            try? FileManager.default.removeItem(at: markerURL)
+            _state = .notDownloaded
+        } else {
+            _state = modelExists ? .ready : .notDownloaded
+        }
     }
 
     var modelURL: URL { baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName) }
     private var stagingURL: URL { baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".staging") }
+    private var versionMarkerURL: URL {
+        baseDir.appendingPathComponent(SenseVoiceConfig.modelDirName + ".version")
+    }
 
     func verifySHA256(fileURL: URL, expected: String) -> Bool {
         guard let data = try? Data(contentsOf: fileURL) else { return false }
@@ -96,7 +114,7 @@ final class SenseVoiceModelStore {
     /// 指向 `baseDir/<modelDirName>`。该约定待 Task 0 模型探针确认。
     func ensureDownloaded(onState: @escaping (State) -> Void) {
         // Single-flight: a check-and-set under `lock` so a double-click (or two call sites)
-        // can't kick off two concurrent 432 MB downloads racing on the same zip / baseDir.
+        // can't kick off two concurrent 198 MB downloads racing on the same zip / baseDir.
         lock.lock()
         switch _state {
         case .ready:
@@ -148,7 +166,7 @@ final class SenseVoiceModelStore {
     }
 
     /// Finish handler — runs on the background delegateQueue, so the SHA256 verify
-    /// (hashing 432 MB) and `ditto` unzip stay off the main thread.
+    /// (hashing the 198 MB zip) and `ditto` unzip stay off the main thread.
     fileprivate func handleFinishedDownload(tempURL: URL, onState: @escaping (State) -> Void) {
         defer { teardownSession() }
         guard verifySHA256(fileURL: tempURL, expected: SenseVoiceConfig.modelSHA256) else {
@@ -173,6 +191,7 @@ final class SenseVoiceModelStore {
             }
             try? FileManager.default.removeItem(at: modelURL)
             try FileManager.default.moveItem(at: extracted, to: modelURL)  // atomic rename (same volume)
+            try? SenseVoiceConfig.modelSHA256.write(to: versionMarkerURL, atomically: true, encoding: .utf8)
             // 清理中间产物 zip + staging。
             try? FileManager.default.removeItem(at: stagingURL)
             try? FileManager.default.removeItem(at: zip)
@@ -203,7 +222,7 @@ final class SenseVoiceModelStore {
 
     /// 惰性加载 MLModel(主线程外调用)。失败返回 nil。
     ///
-    /// 首次加载约 432 MB,耗时数百毫秒;**必须在主线程外调用**(否则会卡住 event-tap
+    /// 首次加载约 226 MB,耗时数百毫秒;**必须在主线程外调用**(否则会卡住 event-tap
     /// 运行循环触发系统级键鼠冻结)。加载结果缓存,后续切换无需再读盘。
     /// `MLModel(contentsOf:)` 本身在 `lock` 之外执行,避免持锁期间承担重 I/O。
     func loadModel() -> MLModel? {
@@ -215,7 +234,7 @@ final class SenseVoiceModelStore {
         if let cached { return cached }
 
         // Serialize the heavy disk read: concurrent callers block here instead of each reading
-        // 432 MB. The first acquirer loads; the rest fall through to the cached instance below.
+        // 226 MB. The first acquirer loads; the rest fall through to the cached instance below.
         loadLock.lock()
         defer { loadLock.unlock() }
         lock.lock()

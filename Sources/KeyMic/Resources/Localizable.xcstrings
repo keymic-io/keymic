@@ -10972,59 +10972,6 @@
         }
       }
     },
-    "Download model (~432 MB)": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download model (~432 MB)"
-          }
-        },
-        "de": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Modell herunterladen (~432 MB)"
-          }
-        },
-        "es": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Descargar modelo (~432 MB)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "Télécharger le modèle (~432 Mo)"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "モデルをダウンロード(約 432 MB)"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "모델 다운로드 (~432 MB)"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "下载模型(约 432 MB)"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "needs_review",
-            "value": "下載模型(約 432 MB)"
-          }
-        }
-      }
-    },
     "Requires macOS 15+.": {
       "extractionState": "manual",
       "localizations": {

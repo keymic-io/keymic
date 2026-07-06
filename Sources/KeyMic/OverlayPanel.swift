@@ -280,8 +280,13 @@ private struct OverlayContent: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.92))
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: true, vertical: false)
+                    // Keep the newest text: the capsule width is capped at `maxWidth`, so a
+                    // long live transcript truncates at the HEAD (leading "…") instead of the
+                    // tail — the user sees the words just spoken, not the start of the utterance.
+                    // No `fixedSize(horizontal:)`: that would force the full intrinsic width and
+                    // defeat truncation (the text would overflow and get clipped by the capsule).
+                    .truncationMode(.head)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 24)

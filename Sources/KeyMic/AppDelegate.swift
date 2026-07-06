@@ -419,7 +419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return AppleSpeechEngine(locale: Locale(identifier: code))
     }
 
-    /// Build a `SenseVoiceSpeechEngine` from an ALREADY-LOADED `MLModel`. The heavy 432 MB disk
+    /// Build a `SenseVoiceSpeechEngine` from an ALREADY-LOADED `MLModel`. The heavy 226 MB disk
     /// load happens in the caller (off main); this only wires up the bundled am.mvn / vocab and
     /// is cheap enough for the main thread. Returns nil if the bundled resources are missing, in
     /// which case the caller stays on Apple.
@@ -457,6 +457,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let svReady = senseVoiceModelStore.state == .ready
         let rtReady = ONNXRuntimeLoader.shared.store.state == .ready
         let onnxReady = onnxModelStore.state == .ready
+        // SenseVoice selected but model missing (fresh install, or a stale fp16 model was
+        // just evicted by the version marker): kick off the download and fall through to
+        // Apple for now. The store's state observer re-applies the engine preference on
+        // .ready, upgrading automatically. `.failed` is NOT retried here — recovery stays
+        // manual via the Settings button, so a persistent network error can't loop downloads.
+        if model == "senseVoice", #available(macOS 15, *),
+           case .notDownloaded = senseVoiceModelStore.state {
+            senseVoiceModelStore.ensureDownloaded { _ in }
+        }
         let isMacOS26OrLater: Bool = {
             if #available(macOS 26, *) { return true } else { return false }
         }()

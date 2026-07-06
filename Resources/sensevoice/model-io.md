@@ -1,5 +1,19 @@
 # SenseVoiceSmall CoreML — Measured Model I/O (Task 0 Spike)
 
+> **⚠️ 2026-07: superseded in production by the int8 export.** KeyMic now ships
+> `FluidInference/sensevoice-small-coreml`'s int8 variant, repackaged at
+> `lorneluo/sensevoice-small-coreml-int8` (zip 198 MB / 226 MB on disk,
+> SHA256 `373d314c339d2d9c93fb0646ea3bca2efb0aa6c553cd4425b1364f76894dbba4`).
+> Differences vs the fp16 model documented below (everything else — inputs, vocab,
+> id maps, frontend, fixtures — is unchanged and still authoritative):
+>
+> | | fp16 (below) | int8 (shipped) |
+> | --- | --- | --- |
+> | `speech` shape | T flexible **1…3000** (RangeDimension) | **EnumeratedShapes: T ∈ {128, 256, 512, 1024, 1800}** — zero-pad to nearest bucket, true T via `speech_lengths` |
+> | outputs | `ctc_logits` + `encoder_out_lens` | **`ctc_logits` only** — trim to `trueT + 4` in `SenseVoiceModel.infer` |
+> | weights | Float16 | Int8 (weight-only; logits still fp16-ish, read dtype-agnostic) |
+> | accuracy | baseline | LibriSpeech WER 3.22→3.25%, AISHELL CER 3.09→3.09%; collapsed CTC ids **bit-exact** with the fp16 golden on `hello_fbank.json` |
+
 All values below were **measured on this Mac** (darwin, Apple Silicon) by downloading the
 prebuilt `.mlmodelc.zip`, unzipping it, and running the compiled CoreML model via the native
 `CoreML` framework (a Swift probe — `coremltools` cannot load a bare `.mlmodelc`, it errors
