@@ -56,7 +56,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
     private var selectedTextEditorController: SelectedTextEditorController!
-    private var clipboardTransformController: ClipboardTransformController!
 
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
@@ -270,6 +269,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isActive ?? false }
         keyMonitor.isVoiceEnabled = { [weak self] in self?.isVoiceEnabled ?? false }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
+        keyMonitor.onClipboardSwitcherStep = { [weak self] in self?.clipboardController.stepSwitcher() }
+        keyMonitor.onClipboardSwitcherCommit = { [weak self] in self?.clipboardController.pasteSelectedItemsInOrder() }
         keyMonitor.onVaultHotkey = { [weak self] in
             self?.clipboardController.toggle(initialTab: .vault)
         }
@@ -309,14 +310,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         OnnxStores.mltModel.addStateObserver { [weak self] _ in
             DispatchQueue.main.async { self?.syncSpeechEngineIfNeeded() }
         }
-        clipboardTransformController = ClipboardTransformController(
-            store: clipboardController.store,
-            overlayPanel: overlayPanel
-        )
-        clipboardController.transformController = clipboardTransformController
-        keyMonitor.onClipboardTransformHotkey = { [weak self] in
-            self?.clipboardController.transformSelected()
-        }
         secureInputMonitor.onEnter = { [weak self] in self?.keyMonitor.onSecureInputEnter() }
         secureInputMonitor.onExit = { [weak self] in self?.keyMonitor.onSecureInputExit() }
         secureInputMonitor.start()
@@ -325,6 +318,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         HotkeySettingsStore.shared.ensureInitialized()
         lastInputConfigSnapshot = InputConfigSnapshot.current()
+
+        TipsCatalog.clipboardPanelHotkeyDisplay = {
+            HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString() ?? "⌥V"
+        }
 
         // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
         let registry = HotkeyRegistry.shared
@@ -336,7 +333,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (.settingsWindow, .settingsWindow, "Settings window"),
             (.screenshot, .screenshot, "Screenshot"),
             (.selectedTextEditor, .selectedTextEditor, "Selected text editor"),
-            (.clipboardTransform, .clipboardTransform, "Clipboard transformer"),
         ]
         for (feature, owner, purpose) in builtIns {
             if let cfg = hotkeys.hotkey(for: feature) {
