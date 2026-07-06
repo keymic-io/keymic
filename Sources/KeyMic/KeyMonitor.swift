@@ -24,13 +24,17 @@ final class KeyMonitor {
     /// through. Deactivation of an already-running session stays ungated.
     var isVoiceEnabled: (() -> Bool)?
     var onClipboardHotkey: (() -> Void)?
+    /// One step of the hold-modifier switcher gesture: open the panel + highlight
+    /// the first item, or move the highlight down if already open.
+    var onClipboardSwitcherStep: (() -> Void)?
+    /// Commit the switcher gesture: paste the highlighted item and close.
+    var onClipboardSwitcherCommit: (() -> Void)?
     var onVaultHotkey: (() -> Void)?
     var onClipboardQuickPaste: ((Int) -> Void)?
     var isClipboardPanelVisible: (() -> Bool)?
     var onSettingsHotkey: (() -> Void)?
     var onScreenshotHotkey: (() -> Void)?
     var onSelectedTextEditorHotkey: (() -> Void)?
-    var onClipboardTransformHotkey: (() -> Void)?
     var onAction: (([HotkeyAction]) -> Void)?
     /// Synchronous, O(1) lookup of the bundle ID KeyMic believes is frontmost.
     /// MUST NOT call into LaunchServices — this runs in the event-tap callback on the
@@ -68,11 +72,12 @@ final class KeyMonitor {
     /// Physical events still pass through unchanged.
     private var secureInputSuspended = false
     private var clipboardHotkey: HotkeyConfig?
+    /// Cmd+Tab-style state for the clipboard hotkey (hold modifier + repeated tap).
+    private var clipboardSwitcher = ClipboardSwitcherState()
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
     private var selectedTextEditorHotkey: HotkeyConfig?
-    private var clipboardTransformHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
     private var repeatTimers: [CGKeyCode: DispatchSourceTimer] = [:]
@@ -220,6 +225,7 @@ final class KeyMonitor {
         let priorTimerCount = repeatTimers.count
         let prior = state.resetTransient()
         cancelAllRepeatTimers()
+        clipboardSwitcher.reset()
         isResetRecoveryMode = true
 
         // Interrupt any active voice session — fn-held trigger OR persona-hotkey
@@ -254,7 +260,6 @@ final class KeyMonitor {
         settingsHotkey = hotkeys.hotkey(for: .settingsWindow)
         screenshotHotkey = hotkeys.hotkey(for: .screenshot)
         selectedTextEditorHotkey = hotkeys.hotkey(for: .selectedTextEditor)
-        clipboardTransformHotkey = hotkeys.hotkey(for: .clipboardTransform)
         voiceTriggerHotkey = hotkeys.hotkey(for: .voiceTrigger)
         actionBindings = HotkeyBindingsStore.shared.bindings.compactMap { b in
             guard b.enabled,
@@ -451,11 +456,21 @@ final class KeyMonitor {
                 }
             }
 
-            // Clipboard hotkey
+            // Clipboard hotkey — hold-modifier switcher gesture (Cmd+Tab style).
             if let cfg = clipboardHotkey,
                !cfg.isPureModifier,
                cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
-                DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
+                if cfg.modifiers.isEmpty {
+                    // No modifier to detect release on — fall back to plain toggle.
+                    DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
+                    return nil
+                }
+                // Only discrete taps drive the gesture; swallow auto-repeat so the
+                // held key neither types nor rapidly cycles the highlight.
+                if !isAutoRepeat {
+                    _ = clipboardSwitcher.onHotkeyTap(hotkeyModifiers: cfg.modifiers)
+                    DispatchQueue.main.async { [weak self] in self?.onClipboardSwitcherStep?() }
+                }
                 return nil
             }
 
@@ -489,14 +504,6 @@ final class KeyMonitor {
                !cfg.isPureModifier,
                cfg.matches(keyCode: keyCode, flags: event.flags) {
                 DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
-                return nil
-            }
-
-            // Clipboard Transform hotkey
-            if let cfg = clipboardTransformHotkey,
-               !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
-                DispatchQueue.main.async { [weak self] in self?.onClipboardTransformHotkey?() }
                 return nil
             }
 
@@ -537,6 +544,17 @@ final class KeyMonitor {
         // hotkey would start a second voice session AppDelegate doesn't gate, and
         // its release would prematurely stop the persona recording.
         let nowActive = computeTriggerActive(type: type, event: event)
+
+        // Clipboard switcher: releasing the held hotkey modifier commits the
+        // gesture (paste highlighted + close). Never swallows the flagsChanged —
+        // voice/persona logic below still needs it.
+        if type == .flagsChanged {
+            let visible = isClipboardPanelVisible?() ?? false
+            if clipboardSwitcher.onFlagsChanged(currentFlags: event.flags, panelVisible: visible) == .commitPaste {
+                DispatchQueue.main.async { [weak self] in self?.onClipboardSwitcherCommit?() }
+            }
+        }
+
         if state.personaHotkeyKeyDown != nil {
             return Unmanaged.passUnretained(event)
         }
@@ -599,11 +617,6 @@ final class KeyMonitor {
         if let cfg = selectedTextEditorHotkey, !cfg.isPureModifier,
            cfg.matches(keyCode: keyCode, flags: flags) {
             DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
-            return true
-        }
-        if let cfg = clipboardTransformHotkey, !cfg.isPureModifier,
-           cfg.matches(keyCode: keyCode, flags: flags) {
-            DispatchQueue.main.async { [weak self] in self?.onClipboardTransformHotkey?() }
             return true
         }
         return false

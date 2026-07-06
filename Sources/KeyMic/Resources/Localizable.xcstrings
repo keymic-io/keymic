@@ -12296,6 +12296,324 @@
           }
         }
       }
+    },
+    "Press ↩ to paste the first item right away.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie ↩, um das erste Element sofort einzufügen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press ↩ to paste the first item right away."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa ↩ para pegar el primer elemento al instante."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez sur ↩ pour coller immédiatement le premier élément."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "↩ を押すと最初の項目をすぐに貼り付けます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "↩ 을 누르면 첫 번째 항목을 바로 붙여넣습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 ↩ 立即粘贴第一项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "按 ↩ 立即貼上第一項。"
+          }
+        }
+      }
+    },
+    "Press ⌥1–⌥0 to paste one of the first ten items.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie ⌥1–⌥0, um eines der ersten zehn Elemente einzufügen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press ⌥1–⌥0 to paste one of the first ten items."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa ⌥1–⌥0 para pegar uno de los diez primeros elementos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez sur ⌥1–⌥0 pour coller l'un des dix premiers éléments."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥1–⌥0 を押すと最初の10項目のいずれかを貼り付けます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥1–⌥0 을 누르면 처음 10개 항목 중 하나를 붙여넣습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 ⌥1–⌥0 快速粘贴前十项中的任意一项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "按 ⌥1–⌥0 快速貼上前十項中的任意一項。"
+          }
+        }
+      }
+    },
+    "Use ↑↓ + Space to select multiple items to paste.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Mehrere Elemente mit ↑↓ + Leertaste zum Einfügen auswählen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use ↑↓ + Space to select multiple items to paste."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Usa ↑↓ + Espacio para seleccionar varios elementos y pegarlos."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Utilisez ↑↓ + Espace pour sélectionner plusieurs éléments à coller."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "↑↓ + スペース で複数の項目を選択して貼り付けます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "↑↓ + 스페이스 로 여러 항목을 선택해 붙여넣습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用 ↑↓ + 空格 选中多项来粘贴。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "用 ↑↓ + 空格 選取多項來貼上。"
+          }
+        }
+      }
+    },
+    "Press %@ again to move focus to the next item.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie erneut %@, um den Fokus auf das nächste Element zu bewegen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press %@ again to move focus to the next item."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa %@ de nuevo para mover el foco al siguiente elemento."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez de nouveau sur %@ pour déplacer le focus vers l'élément suivant."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "もう一度 %@ を押すとフォーカスが次の項目に移動します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "%@ 을(를) 다시 누르면 포커스가 다음 항목으로 이동합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "再次按 %@ 将焦点移到下一项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "再次按 %@ 將焦點移到下一項。"
+          }
+        }
+      }
+    },
+    "Release the modifier to paste the highlighted item and close.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Lassen Sie den Modifikator los, um das markierte Element einzufügen und zu schließen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Release the modifier to paste the highlighted item and close."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Suelta el modificador para pegar el elemento resaltado y cerrar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Relâchez le modificateur pour coller l'élément en surbrillance et fermer."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "修飾キーを放すとハイライト中の項目を貼り付けて閉じます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "수정자 키를 놓으면 강조된 항목을 붙여넣고 닫습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "松开修饰键即可粘贴当前高亮项并关闭。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "放開修飾鍵即可貼上目前反白的項目並關閉。"
+          }
+        }
+      }
+    },
+    "Press ⌥P to pin or unpin the highlighted item.": {
+      "extractionState": "manual",
+      "localizations": {
+        "de": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Drücken Sie ⌥P, um das markierte Element anzuheften oder zu lösen."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Press ⌥P to pin or unpin the highlighted item."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Pulsa ⌥P para fijar o desfijar el elemento resaltado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "Appuyez sur ⌥P pour épingler ou désépingler l'élément en surbrillance."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥P を押すとハイライト中の項目をピン留め／解除します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "⌥P 을 누르면 강조된 항목을 고정하거나 고정 해제합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 ⌥P 置顶或取消置顶当前高亮项。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "needs_review",
+            "value": "按 ⌥P 置頂或取消置頂目前反白的項目。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -912,8 +912,6 @@ private struct ClipboardSettingsView: View {
     @State private var hotkeyResetError: String?
     private var hotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .clipboardPanel) }
     private var vaultHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .vaultPanel) }
-    @State private var clipboardTransformHotkeyResetError: String?
-    private var clipboardTransformHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .clipboardTransform) }
 
     private var cleanupMode: Binding<CleanupMode> {
         Binding(
@@ -957,21 +955,6 @@ private struct ClipboardSettingsView: View {
                         recorderWidth: 160,
                         resetAction: { hotkeyResetError = resetHotkey(hotkeyStore, for: .vaultPanel) }
                     )
-                }
-                LabeledContent("Transform:") {
-                    HotkeyRecorderWithClear(
-                        encoded: clipboardTransformHotkey,
-                        defaultEncoded: HotkeyFeature.defaults[HotkeyFeature.clipboardTransform.rawValue]!,
-                        mode: .combo,
-                        validator: { cfg in hotkeyStore.validationMessage(for: cfg, owner: .feature(.clipboardTransform)) },
-                        recorderWidth: 200,
-                        resetAction: { clipboardTransformHotkeyResetError = resetHotkey(hotkeyStore, for: .clipboardTransform) }
-                    )
-                }
-                if let clipboardTransformHotkeyResetError {
-                    Text(clipboardTransformHotkeyResetError)
-                        .font(.callout)
-                        .foregroundStyle(.red)
                 }
                 if let hotkeyResetError {
                     Text(hotkeyResetError)

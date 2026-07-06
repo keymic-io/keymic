@@ -20,9 +20,9 @@ struct PersonaTestRunner {
         let decoded = try! JSONDecoder().decode(Persona.self, from: data)
         expect(decoded == p, "Codable round-trip preserves equality")
 
-        // Built-in seeds: exactly 6, ids stable
+        // Built-in seeds: exactly 5, ids stable
         let seeds = Persona.builtInSeeds()
-        expect(seeds.count == 6, "exactly 6 built-in seeds")
+        expect(seeds.count == 5, "exactly 5 built-in seeds")
         let ids = seeds.map(\.id)
         expect(ids == [
             "builtin-default",
@@ -30,17 +30,12 @@ struct PersonaTestRunner {
             "builtin-cli",
             "builtin-context",
             "builtin-general-editor",
-            "builtin-clipboard-transformer",
         ], "built-in ids in canonical order")
         expect(seeds.allSatisfy { $0.builtIn }, "all seeds marked builtIn")
         expect(seeds[2].injectionStrategy == .runShell(commandTemplate: "{query}"),
                "builtin-cli persona uses .runShell({query})")
         expect(seeds[4].injectionStrategy == .replaceSelection,
                "general-editor persona uses replaceSelection strategy")
-        expect(seeds[5].injectionStrategy == .clipboard,
-               "clipboard-transformer persona uses clipboard strategy")
-        expect(seeds[5].contextSources == [.clipboardHistory],
-               "clipboard-transformer declares [.clipboardHistory]")
 
         // Built-in default 沿用 KeyMic 现有的纠错 prompt 文案(关键词)
         expect(seeds[0].stylePrompt.contains("transcription mistakes")

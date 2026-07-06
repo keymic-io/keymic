@@ -14,7 +14,6 @@ final class HotkeyRegistry {
         case settingsWindow
         case screenshot
         case selectedTextEditor
-        case clipboardTransform
         case keyMapping(id: String)
         case hotkeyBinding(id: UUID)
         case persona(id: String)

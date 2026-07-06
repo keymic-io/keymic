@@ -11,6 +11,11 @@ final class ClipboardPanelFocus {
     var pinnedQuickPasteRequestID = 0
     var pinnedQuickPasteIndex = 0
     var togglePinRequestID = 0
+    /// Bumped to move the highlight by `moveSelectionDelta` rows — used by the
+    /// hold-modifier switcher gesture, whose taps are swallowed by the CGEvent
+    /// tap and so never reach the view's local key monitor.
+    var moveSelectionRequestID = 0
+    var moveSelectionDelta = 0
     var initialTab: PanelTab = .clipboard
     var tabRequestID = 0
     var currentTab: PanelTab = .clipboard
