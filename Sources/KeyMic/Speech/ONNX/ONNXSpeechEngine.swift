@@ -19,7 +19,10 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
 
     private let recognizer: UnsafeMutableRawPointer    // sherpa_create_funasr 句柄,引擎持有
     private let capture = AudioCapture16k()
-    private let engine = AVAudioEngine()
+    /// Recreated on every `startSession()`: a long-lived AVAudioEngine caches the input
+    /// device's HAL format, so after a default-input change `start()` throws
+    /// kAudioUnitErr_FormatNotSupported (-10868). See SenseVoiceSpeechEngine.
+    private var engine = AVAudioEngine()
     private var tapInstalled = false
     /// 每次 startSession 自增;后台 final decode 捕获其值,新会话开始后丢弃旧结果(防 stale 注入)。
     private var sessionGeneration = 0
@@ -43,6 +46,7 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         teardown()
         sessionGeneration &+= 1
         capture.reset()
+        engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
             self?.capture.append(buf)
@@ -53,6 +57,7 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
             try engine.start()
         } catch {
             teardown()
+            logger.error("engine.start failed: \(error.localizedDescription, privacy: .public)")
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
         // 离线非流式:无 partial 计时器(D5)。

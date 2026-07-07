@@ -29,7 +29,12 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     private let model: SenseVoiceModel
     private let languageId: Int
     private let textnormId: Int
-    private let engine = AVAudioEngine()
+    /// Recreated on every `startSession()`: a long-lived AVAudioEngine caches the input
+    /// device's HAL format, so after a default-input change (headset connect/disconnect,
+    /// sample-rate switch) `start()` throws kAudioUnitErr_FormatNotSupported (-10868).
+    /// A fresh engine rebinds to the current device — mirrors AppleSpeechEngine's
+    /// per-session `audioEngineFactory`.
+    private var engine = AVAudioEngine()
     private var tapInstalled = false
     /// Fires every 1s during hold to emit live partials. Cancelled in `teardown()`.
     private var partialTimer: DispatchSourceTimer?
@@ -65,6 +70,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         teardown()
         sessionGeneration &+= 1
         capture.reset()
+        engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
             self?.capture.append(buf)
@@ -75,6 +81,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
             try engine.start()
         } catch {
             teardown()
+            logger.error("engine.start failed: \(error.localizedDescription, privacy: .public)")
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
@@ -125,6 +132,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
                 }
             } catch {
                 let message = (error as? VoiceError)?.displayMessage ?? error.localizedDescription
+                logger.error("final decode failed: \(message, privacy: .public)")
                 DispatchQueue.main.async {
                     guard let self, gen == self.sessionGeneration else { return }
                     self.onError?(message)
