@@ -369,6 +369,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // Config Sync (download) rewrote persisted config on disk / in UserDefaults.
+        // Scalar sections (voice/clipboard/…) propagate via userDefaultsDidChange;
+        // the three cache-backed stores must be told to re-read.
+        NotificationCenter.default.addObserver(
+            forName: .configSyncDidApply, object: nil, queue: .main
+        ) { [weak self] note in
+            let sections = note.userInfo?["sections"] as? [String] ?? []
+            if sections.contains("personas") { PersonaStore.shared.reload() }
+            if sections.contains("hotkeys") { HotkeySettingsStore.shared.reload() }
+            if sections.contains("keyMapping") { KeyMappingManager.shared.reload() }
+            self?.syncMenuStates()
+        }
+
         ShellRunner.shared.warmUp()
     }
 

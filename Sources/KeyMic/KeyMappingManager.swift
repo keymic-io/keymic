@@ -88,6 +88,13 @@ final class KeyMappingManager {
         applyHIDMappings()
     }
 
+    /// Re-read mappings + enabled flag from persistence (e.g. after Config Sync
+    /// overwrote them). `mappings`/`isEnabled` didSet re-applies HID mappings.
+    func reload() {
+        mappings = Self.loadOrSeed(from: userDefaults, key: Self.mappingsKey)
+        isEnabled = userDefaults.object(forKey: Self.enabledKey) as? Bool ?? true
+    }
+
     func mapping(for sourceKeyCode: CGKeyCode) -> KeyMapping? {
         guard isEnabled else { return nil }
         return mappings.first { m in

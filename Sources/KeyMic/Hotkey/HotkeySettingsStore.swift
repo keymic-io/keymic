@@ -71,6 +71,12 @@ final class HotkeySettingsStore {
         _ = snapshot
     }
 
+    /// Re-read the snapshot from persistence (e.g. after Config Sync overwrote
+    /// `hotkeySettings.v1`). Observers refresh via the resulting change.
+    func reload() {
+        snapshot = Self.loadOrCreate(defaults: defaults, personas: personasProvider())
+    }
+
     func rawHotkey(for feature: HotkeyFeature) -> String {
         let raw = snapshot.featureHotkeys[feature.rawValue] ?? Self.defaultRawHotkey(for: feature)
         guard let config = HotkeyConfig.parse(raw), Self.isValidStored(config, owner: .feature(feature)) else {

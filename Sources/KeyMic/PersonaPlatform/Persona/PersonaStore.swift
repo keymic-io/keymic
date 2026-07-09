@@ -32,6 +32,13 @@ final class PersonaStore {
         return persona(id: id)
     }
 
+    /// Re-read personas from disk (e.g. after Config Sync overwrote personas.json)
+    /// and broadcast the change so menus/hotkeys refresh.
+    func reload() {
+        load()
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
+    }
+
     func persona(id: String) -> Persona? {
         personas.first { $0.id == id }
     }
