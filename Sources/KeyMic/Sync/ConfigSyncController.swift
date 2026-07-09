@@ -25,6 +25,11 @@ final class ConfigSyncController {
     private let tokenProvider: () -> String?
     private let log = Logger(subsystem: "io.keymic.app", category: "sync-ui")
 
+    /// Last locally-observed payload per section. Lets `noteLocalChange` tell a
+    /// genuine new edit (bump the LWW timestamp) from an unrelated defaults write
+    /// (leave it alone), independent of the remote baseline.
+    private var lastSeenLocal: [SyncSection: [String: JSONValue]] = [:]
+
     var enabled: Bool {
         didSet { UserDefaults.standard.set(enabled, forKey: SyncStateStore.masterEnabledKey) }
     }
@@ -69,6 +74,30 @@ final class ConfigSyncController {
     }
 
     func isSectionEnabled(_ s: SyncSection) -> Bool { enabledSections.contains(s) }
+
+    /// Called when local configuration might have changed (a UserDefaults write or
+    /// a personas-file save). Bumps the LWW `localModifiedAt` of any enabled
+    /// section whose collected payload actually changed, so `refreshStatus` reports
+    /// `.localNewer` and `upload` stamps a current timestamp instead of a stale one.
+    ///
+    /// Two guards keep this honest:
+    /// - `!= remote`: a payload equal to the last-synced value is a remote-apply
+    ///   echo (`recordSynced` already updated `lastRemoteData`), never a local edit.
+    /// - `!= seen`: an unrelated defaults write must not re-stamp a section that
+    ///   didn't change, or churn would push every dirty section's timestamp forward
+    ///   and clobber a newer copy from another device.
+    func noteLocalChange() {
+        guard enabled, !state.isApplyingRemote else { return }
+        for section in enabledSections {
+            let remote = state.state(for: section).lastRemoteData ?? [:]
+            let current = section.collectData(base: remote, env: env)
+            let seen = lastSeenLocal[section] ?? remote
+            lastSeenLocal[section] = current
+            if current != remote && current != seen {
+                state.markDirty(section)
+            }
+        }
+    }
 
     func toggleSection(_ s: SyncSection, on: Bool) {
         if on { enabledSections.insert(s) } else { enabledSections.remove(s) }

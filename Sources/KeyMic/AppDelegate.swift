@@ -360,6 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             AppDelegate.syncPersonaHotkeysToRegistry()
             self?.rebuildPersonasMenu()
+            ConfigSyncController.shared.noteLocalChange()
         }
 
         NotificationCenter.default.addObserver(
@@ -909,7 +910,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // HotkeyRecorder commit writing hotkeySettings.v1) or a background
         // queue. Hop to the main queue so menu/NSMenu/KeyMonitor work never
         // runs in the tap callback path or off the main thread.
-        DispatchQueue.main.async { [weak self] in self?.syncMenuStates() }
+        DispatchQueue.main.async { [weak self] in
+            self?.syncMenuStates()
+            ConfigSyncController.shared.noteLocalChange()
+        }
     }
 
     private func syncMenuStates() {
