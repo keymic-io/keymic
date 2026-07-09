@@ -71,7 +71,7 @@ final class VaultStore {
             secretHash: hash
         )
         do {
-            try keychain.write(account: item.keychainAccount, secret: match.secret)
+            try keychain.write(account: item.keychainAccount, secret: match.secret, biometricProtected: true)
         } catch {
             Self.logger.error("keychain write failed: \(String(describing: error), privacy: .public)")
             return nil
