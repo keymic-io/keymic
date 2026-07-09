@@ -43,13 +43,14 @@ final class SwiftUISettingsWindow: NSPanel {
 // MARK: - Sections
 
 private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
-    case general, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot
+    case general, account, voice, llm, personas, keyMapping, shortcuts, clipboard, screenshot
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .general: String(localized: "General")
+        case .account: String(localized: "Account")
         case .voice: String(localized: "Voice")
         case .llm: "LLM"
         case .personas: String(localized: "Personas")
@@ -63,6 +64,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable, Hashable {
     var symbol: String {
         switch self {
         case .general: "gearshape"
+        case .account: "person.crop.circle"
         case .voice: "mic"
         case .llm: "sparkles"
         case .personas: "person.crop.circle.badge.checkmark"
@@ -153,6 +155,7 @@ struct SettingsRootView: View {
     private var detail: some View {
         switch selection {
         case .general: GeneralSettingsView()
+        case .account: AccountSettingsView()
         case .voice: VoiceSettingsView()
         case .llm: LLMSettingsView()
         case .personas: PersonasView()

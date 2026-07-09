@@ -151,8 +151,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Lifecycle
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        URLSchemeHandler.shared.register()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            Task { await AuthClient.handleCallback(url) }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if activateExistingInstanceIfNeeded() { return }
+
+        Task { @MainActor in await AccountStore.shared.refresh() }
+        Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
+            Task { await AccountStore.shared.refresh() }
+        }
 
         // Clear any stale HID-level mappings left by a previous crash/SIGKILL.
         // `applicationWillTerminate` calls reset() on clean quit, but force-quit
