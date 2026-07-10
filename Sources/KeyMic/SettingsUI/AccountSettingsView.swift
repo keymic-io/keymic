@@ -75,6 +75,63 @@ private struct SettingsCard<Content: View>: View {
     }
 }
 
+// MARK: - Sync status row
+
+/// The single sync-status line, promoted from plain text into an icon + label
+/// component. Colors follow state but never carry meaning alone — every state
+/// has a distinct symbol and label.
+private struct SyncStatusRow: View {
+    let status: OverallSyncStatus
+    let lastSyncedAt: Date?
+
+    private static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol)
+                .foregroundStyle(tint)
+            Text(label)
+            if status == .inSync, let date = lastSyncedAt {
+                Text("· last synced \(Self.dateFormatter.string(from: date))")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .font(.caption)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var symbol: String {
+        switch status {
+        case .notSynced: "circle.dashed"
+        case .inSync: "checkmark.circle.fill"
+        case .localNewer: "arrow.up.circle.fill"
+        case .cloudNewer: "arrow.down.circle.fill"
+        }
+    }
+
+    private var tint: Color {
+        switch status {
+        case .notSynced: .secondary
+        case .inSync: .green
+        case .localNewer, .cloudNewer: .blue
+        }
+    }
+
+    private var label: LocalizedStringKey {
+        switch status {
+        case .notSynced: "Not synced yet"
+        case .inSync: "In sync"
+        case .localNewer: "Local changes not uploaded"
+        case .cloudNewer: "Cloud has newer settings"
+        }
+    }
+}
+
 // MARK: - Config Sync
 
 struct ConfigSyncSectionView: View {
