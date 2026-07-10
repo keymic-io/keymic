@@ -53,6 +53,28 @@ struct AccountSettingsView: View {
     }
 }
 
+// MARK: - Card container
+
+/// Shared card chrome so every Account module has the same visual rhythm:
+/// left-aligned content, consistent padding, subtle border on a control-tinted
+/// background. Presentation only — no state.
+private struct SettingsCard<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            content
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 10))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
+        )
+    }
+}
+
 // MARK: - Config Sync
 
 struct ConfigSyncSectionView: View {
