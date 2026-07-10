@@ -132,6 +132,50 @@ private struct SyncStatusRow: View {
     }
 }
 
+// MARK: - Account cards
+
+private struct SignedInAccountCard: View {
+    let user: MeResponse.User
+
+    var body: some View {
+        SettingsCard {
+            Text("Account").font(.subheadline).bold()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(user.email).font(.headline)
+                if let name = user.name, !name.isEmpty {
+                    Text(name).font(.subheadline).foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement(children: .combine)
+
+            Button("Sign out", role: .destructive) { AccountStore.shared.signOut() }
+                .controlSize(.small)
+        }
+    }
+}
+
+private struct SignedOutAccountCard: View {
+    let revoked: Bool
+
+    var body: some View {
+        SettingsCard {
+            Text("Account").font(.subheadline).bold()
+            if revoked {
+                Text("Your session was revoked. Please sign in again.")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+            } else {
+                Text("Sign in to sync your KeyMic settings across your Macs.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+            Button("Sign in with browser") { AuthClient.beginLogin() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+        }
+    }
+}
+
 // MARK: - Config Sync
 
 struct ConfigSyncSectionView: View {
