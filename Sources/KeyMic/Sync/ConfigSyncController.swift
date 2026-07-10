@@ -2,13 +2,12 @@ import Foundation
 import Observation
 import os
 
-/// Per-section display status shown in the Account tab.
-enum SectionSyncStatus: Equatable {
-    case excluded          // section unchecked
-    case notSynced         // never uploaded/downloaded
-    case inSync            // local == cloud
-    case localNewer        // local edits not yet uploaded
-    case cloudNewer(Date)  // cloud has a newer version
+/// Aggregate sync status shown as a single line in the Account tab.
+enum OverallSyncStatus: Equatable {
+    case notSynced   // nothing uploaded/downloaded yet
+    case inSync      // local == cloud across all sections
+    case localNewer  // local edits not yet uploaded
+    case cloudNewer  // cloud has newer changes to pull
 }
 
 /// State + actions backing the Account tab's Config Sync UI. Owns the sync
@@ -33,8 +32,10 @@ final class ConfigSyncController {
     var enabled: Bool {
         didSet { UserDefaults.standard.set(enabled, forKey: SyncStateStore.masterEnabledKey) }
     }
-    private(set) var enabledSections: Set<SyncSection>
-    private(set) var statuses: [SyncSection: SectionSyncStatus] = [:]
+    /// Sync is whole-config: every section syncs. The LLM API key is never
+    /// carried — `SyncSection.llm.userDefaultsKeys` deliberately omits it.
+    let enabledSections = Set(SyncSection.allCases)
+    private(set) var overall: OverallSyncStatus = .notSynced
     private(set) var busy = false
     private(set) var lastError: String?
     /// Set when the last download changed a section that needs an app restart.
@@ -58,22 +59,15 @@ final class ConfigSyncController {
         self.tokenProvider = tokenProvider
         self.engine = SyncEngine(env: env, state: st, deviceId: deviceId)
         self.enabled = UserDefaults.standard.bool(forKey: SyncStateStore.masterEnabledKey)
-        self.enabledSections = Self.loadEnabledSections()
     }
 
-    private static func loadEnabledSections() -> Set<SyncSection> {
-        guard let raw = UserDefaults.standard.array(forKey: SyncStateStore.enabledSectionsKey) as? [String] else {
-            // Default: everything except llm.
-            return Set(SyncSection.allCases.filter { $0 != .llm })
-        }
-        return Set(raw.compactMap(SyncSection.init(rawValue:)))
+    /// Timestamp of the most recently synced section, for the "last synced" line.
+    /// Derived from state so it survives restarts (no separate storage).
+    var lastSyncedAt: Date? {
+        enabledSections
+            .compactMap { s in state.state(for: s).serverRevision != nil ? state.state(for: s).localModifiedAt : nil }
+            .max()
     }
-
-    private func persistEnabledSections() {
-        UserDefaults.standard.set(enabledSections.map(\.rawValue), forKey: SyncStateStore.enabledSectionsKey)
-    }
-
-    func isSectionEnabled(_ s: SyncSection) -> Bool { enabledSections.contains(s) }
 
     /// Called when local configuration might have changed (a UserDefaults write or
     /// a personas-file save). Bumps the LWW `localModifiedAt` of any enabled
@@ -97,12 +91,6 @@ final class ConfigSyncController {
                 state.markDirty(section)
             }
         }
-    }
-
-    func toggleSection(_ s: SyncSection, on: Bool) {
-        if on { enabledSections.insert(s) } else { enabledSections.remove(s) }
-        persistEnabledSections()
-        statuses[s] = on ? (statuses[s] ?? .notSynced) : .excluded
     }
 
     // MARK: - First-enable bootstrap
@@ -185,7 +173,7 @@ final class ConfigSyncController {
         }
     }
 
-    /// Fetch cloud state and recompute per-section display statuses.
+    /// Fetch cloud state and recompute the aggregate display status.
     func refreshStatus() async {
         guard enabled, let token = tokenProvider() else { return }
         let remote: ConfigGetResponse
@@ -195,22 +183,25 @@ final class ConfigSyncController {
             log.info("status refresh failed: \(String(describing: error))")
             return
         }
-        var next: [SyncSection: SectionSyncStatus] = [:]
-        for section in SyncSection.allCases {
-            guard enabledSections.contains(section) else { next[section] = .excluded; continue }
+        var anyLocalNewer = false, anyCloudNewer = false, anyInSync = false
+        for section in enabledSections {
             let local = section.collectData(base: state.state(for: section).lastRemoteData ?? [:], env: env)
             if let r = remote.sections[section.rawValue] {
                 if r.payload == local {
-                    next[section] = .inSync
+                    anyInSync = true
                 } else {
                     let localMod = state.state(for: section).localModifiedAt ?? .distantPast
-                    next[section] = localMod > r.modifiedAt ? .localNewer : .cloudNewer(r.modifiedAt)
+                    if localMod > r.modifiedAt { anyLocalNewer = true } else { anyCloudNewer = true }
                 }
-            } else {
-                next[section] = .notSynced
+            } else if !local.isEmpty {
+                // Never uploaded but has local content — waiting to push.
+                anyLocalNewer = true
             }
         }
-        statuses = next
+        overall = anyLocalNewer ? .localNewer
+            : anyCloudNewer ? .cloudNewer
+            : anyInSync ? .inSync
+            : .notSynced
     }
 
     /// Cloud has at least one section AND local differs — used by the first-enable

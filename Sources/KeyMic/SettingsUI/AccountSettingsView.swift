@@ -55,28 +55,13 @@ struct AccountSettingsView: View {
 
 // MARK: - Config Sync
 
-private extension SyncSection {
-    var displayName: String {
-        switch self {
-        case .general: return "General"
-        case .voice: return "Voice"
-        case .llm: return "LLM"
-        case .personas: return "Personas"
-        case .hotkeys: return "Hotkeys"
-        case .keyMapping: return "Key Mapping"
-        case .clipboard: return "Clipboard"
-        case .screenshot: return "Screenshot"
-        }
-    }
-}
-
 struct ConfigSyncSectionView: View {
     @State private var controller = ConfigSyncController.shared
 
     private static let dateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateStyle = .medium
-        f.timeStyle = .none
+        f.timeStyle = .short
         return f
     }()
 
@@ -97,10 +82,7 @@ struct ConfigSyncSectionView: View {
             }
 
             if controller.enabled {
-                Text("What syncs:").font(.caption).foregroundStyle(.secondary)
-                ForEach(SyncSection.allCases, id: \.self) { section in
-                    sectionRow(section)
-                }
+                statusLine
 
                 if let err = controller.lastError {
                     Text(err).font(.caption).foregroundStyle(.orange)
@@ -111,17 +93,18 @@ struct ConfigSyncSectionView: View {
                 }
 
                 HStack {
-                    Button("Upload all") { Task { await controller.uploadAll() } }
-                    Button("Download all") { Task { await controller.downloadAll() } }
+                    Button { Task { await controller.uploadAll() } } label: {
+                        Label("Upload", systemImage: "arrow.up")
+                    }
+                    Button { Task { await controller.downloadAll() } } label: {
+                        Label("Download", systemImage: "arrow.down")
+                    }
                     if controller.busy { ProgressView().controlSize(.small) }
                     Spacer()
                 }
                 .disabled(controller.busy)
 
-                // Auto-sync (Pro) is hidden until the subscription plumbing lands.
-                // autoSyncRow
-
-                Text("API keys or clipboard content are never synced.")
+                Text("API keys and clipboard content are never synced.")
                     .font(.caption2).foregroundStyle(.tertiary)
             } else {
                 Text("Sync your settings across all Macs signed in to this account.")
@@ -142,54 +125,26 @@ struct ConfigSyncSectionView: View {
         }
     }
 
-    private func sectionRow(_ section: SyncSection) -> some View {
-        HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
-                get: { controller.isSectionEnabled(section) },
-                set: { controller.toggleSection(section, on: $0) }
-            ))
-            .labelsHidden()
-            Text(section.displayName).frame(width: 110, alignment: .leading)
-            statusLabel(for: section)
-            Spacer()
-        }
-        .font(.callout)
-    }
-
     @ViewBuilder
-    private func statusLabel(for section: SyncSection) -> some View {
-        switch controller.statuses[section] ?? .notSynced {
-        case .excluded:
-            Text(section == .llm ? "excluded · API key never syncs" : "excluded")
-                .font(.caption).foregroundStyle(.tertiary)
+    private var statusLine: some View {
+        switch controller.overall {
         case .notSynced:
-            Text("not synced yet").font(.caption).foregroundStyle(.secondary)
+            Text("Not synced yet").font(.caption).foregroundStyle(.secondary)
         case .inSync:
-            Label("in sync", systemImage: "checkmark").font(.caption).foregroundStyle(.green)
+            HStack(spacing: 4) {
+                Label("In sync", systemImage: "checkmark").foregroundStyle(.green)
+                if let date = controller.lastSyncedAt {
+                    Text("· last synced \(Self.dateFormatter.string(from: date))")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
         case .localNewer:
-            Text("local newer ↑").font(.caption).foregroundStyle(.blue)
-        case .cloudNewer(let date):
-            Text("cloud · \(Self.dateFormatter.string(from: date))")
+            Label("Local changes not uploaded", systemImage: "arrow.up.circle")
+                .font(.caption).foregroundStyle(.blue)
+        case .cloudNewer:
+            Label("Cloud has newer settings", systemImage: "arrow.down.circle")
                 .font(.caption).foregroundStyle(.blue)
         }
-    }
-
-    private var autoSyncRow: some View {
-        HStack {
-            Image(systemName: "bolt.fill").foregroundStyle(.secondary)
-            Text("Auto sync across devices")
-            if !controller.isPro {
-                Text("PRO")
-                    .font(.caption2).bold()
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.secondary.opacity(0.2)))
-            }
-            Spacer()
-            Toggle("", isOn: .constant(false))
-                .labelsHidden()
-                .disabled(!controller.isPro)
-                .help(controller.isPro ? "" : "Upgrade to Pro at keymic.io to enable automatic sync.")
-        }
-        .font(.callout)
     }
 }
