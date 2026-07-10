@@ -251,6 +251,22 @@ private struct ConfigSyncCard: View {
     }
 }
 
+// MARK: - Config Sync info card (signed out)
+
+private struct SignedOutSyncInfoCard: View {
+    var body: some View {
+        SettingsCard {
+            Text("Config Sync").font(.subheadline).bold()
+            Text("Once you sign in, KeyMic can sync your settings — voice, hotkeys, key mapping, personas, and more — across every Mac on your account.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("API keys and clipboard content are never synced.")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
+
 // MARK: - Config Sync
 
 struct ConfigSyncSectionView: View {
