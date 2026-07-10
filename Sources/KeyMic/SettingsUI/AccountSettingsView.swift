@@ -9,41 +9,17 @@ struct AccountSettingsView: View {
 
     var body: some View {
         let _ = viewLog.info("body — signedIn=\(store.signedIn) email=\(store.user?.email ?? "nil", privacy: .public)")
-        return VStack(alignment: .leading, spacing: 16) {
+        return Form {
             if store.signedIn, let user = store.user {
-                SignedInAccountCard(user: user)
-                ConfigSyncCard()
+                SignedInAccountSection(user: user)
+                ConfigSyncSection()
             } else {
-                SignedOutAccountCard(revoked: store.lastRevokedAt != nil)
-                SignedOutSyncInfoCard()
+                SignedOutAccountSection(revoked: store.lastRevokedAt != nil)
+                SignedOutSyncInfoSection()
             }
-            Spacer()
         }
-        .padding(20)
-        .frame(minWidth: 400, minHeight: 240)
+        .formStyle(.grouped)
         .task { await store.refresh() }
-    }
-}
-
-// MARK: - Card container
-
-/// Shared card chrome so every Account module has the same visual rhythm:
-/// left-aligned content, consistent padding, subtle border on a control-tinted
-/// background. Presentation only — no state.
-private struct SettingsCard<Content: View>: View {
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            content
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 10))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(Color(nsColor: .separatorColor).opacity(0.6), lineWidth: 1)
-        )
     }
 }
 
@@ -104,14 +80,13 @@ private struct SyncStatusRow: View {
     }
 }
 
-// MARK: - Account cards
+// MARK: - Account sections
 
-private struct SignedInAccountCard: View {
+private struct SignedInAccountSection: View {
     let user: MeResponse.User
 
     var body: some View {
-        SettingsCard {
-            Text("Account").font(.subheadline).bold()
+        Section {
             VStack(alignment: .leading, spacing: 2) {
                 Text(user.email).font(.headline)
                 if let name = user.name, !name.isEmpty {
@@ -122,53 +97,48 @@ private struct SignedInAccountCard: View {
 
             Button("Sign out", role: .destructive) { AccountStore.shared.signOut() }
                 .controlSize(.small)
+        } header: {
+            Text("Account")
         }
     }
 }
 
-private struct SignedOutAccountCard: View {
+private struct SignedOutAccountSection: View {
     let revoked: Bool
 
     var body: some View {
-        SettingsCard {
-            Text("Account").font(.subheadline).bold()
+        Section {
             if revoked {
                 Text("Your session was revoked. Please sign in again.")
-                    .font(.callout)
                     .foregroundStyle(.orange)
             } else {
                 Text("Sign in to sync your KeyMic settings across your Macs.")
-                    .font(.callout)
                     .foregroundStyle(.secondary)
             }
             Button("Sign in with browser") { AuthClient.beginLogin() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+        } header: {
+            Text("Account")
         }
     }
 }
 
-// MARK: - Config Sync card (signed in)
+// MARK: - Config Sync section (signed in)
 
-private struct ConfigSyncCard: View {
+private struct ConfigSyncSection: View {
     @State private var controller = ConfigSyncController.shared
 
     var body: some View {
-        SettingsCard {
-            HStack {
-                Text("Config Sync").font(.subheadline).bold()
-                Spacer()
-                Toggle("", isOn: Binding(
-                    get: { controller.enabled },
-                    set: { on in
-                        controller.enabled = on
-                        if on { Task { await controller.handleEnable() } }
-                    }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
-                .accessibilityLabel("Config Sync")
-            }
+        Section {
+            Toggle("Enable Config Sync", isOn: Binding(
+                get: { controller.enabled },
+                set: { on in
+                    controller.enabled = on
+                    if on { Task { await controller.handleEnable() } }
+                }
+            ))
+            .toggleStyle(.switch)
 
             if controller.enabled {
                 SyncStatusRow(status: controller.overall, lastSyncedAt: controller.lastSyncedAt)
@@ -204,6 +174,8 @@ private struct ConfigSyncCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        } header: {
+            Text("Config Sync")
         }
         .task { await controller.refreshStatus() }
         .confirmationDialog(
@@ -223,18 +195,19 @@ private struct ConfigSyncCard: View {
     }
 }
 
-// MARK: - Config Sync info card (signed out)
+// MARK: - Config Sync info section (signed out)
 
-private struct SignedOutSyncInfoCard: View {
+private struct SignedOutSyncInfoSection: View {
     var body: some View {
-        SettingsCard {
-            Text("Config Sync").font(.subheadline).bold()
+        Section {
             Text("Once you sign in, KeyMic can sync your settings — voice, hotkeys, key mapping, personas, and more — across every Mac on your account.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Text("API keys and clipboard content are never synced.")
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
+        } header: {
+            Text("Config Sync")
         }
     }
 }
