@@ -176,6 +176,81 @@ private struct SignedOutAccountCard: View {
     }
 }
 
+// MARK: - Config Sync card (signed in)
+
+private struct ConfigSyncCard: View {
+    @State private var controller = ConfigSyncController.shared
+
+    var body: some View {
+        SettingsCard {
+            HStack {
+                Text("Config Sync").font(.subheadline).bold()
+                Spacer()
+                Toggle("", isOn: Binding(
+                    get: { controller.enabled },
+                    set: { on in
+                        controller.enabled = on
+                        if on { Task { await controller.handleEnable() } }
+                    }
+                ))
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .accessibilityLabel("Config Sync")
+            }
+
+            if controller.enabled {
+                SyncStatusRow(status: controller.overall, lastSyncedAt: controller.lastSyncedAt)
+
+                if let err = controller.lastError {
+                    Label(err, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                if controller.restartHint {
+                    Text("Some changes take effect after restart.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                HStack(spacing: 10) {
+                    Button { Task { await controller.uploadAll() } } label: {
+                        Label("Upload", systemImage: "arrow.up")
+                    }
+                    Button { Task { await controller.downloadAll() } } label: {
+                        Label("Download", systemImage: "arrow.down")
+                    }
+                    if controller.busy { ProgressView().controlSize(.small) }
+                    Spacer()
+                }
+                .disabled(controller.busy)
+
+                Text("API keys and clipboard content are never synced.")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            } else {
+                Text("Sync your settings across all Macs signed in to this account.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .task { await controller.refreshStatus() }
+        .confirmationDialog(
+            "This Mac and the cloud have different settings.",
+            isPresented: Binding(
+                get: { controller.showBootstrapSheet },
+                set: { if !$0 { controller.resolveBootstrapCancel() } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Use cloud settings") { Task { await controller.resolveBootstrapUseCloud() } }
+            Button("Keep this Mac's settings") { Task { await controller.resolveBootstrapKeepLocal() } }
+            Button("Cancel", role: .cancel) { controller.resolveBootstrapCancel() }
+        } message: {
+            Text("Choose which settings to keep. The other side will be overwritten.")
+        }
+    }
+}
+
 // MARK: - Config Sync
 
 struct ConfigSyncSectionView: View {
