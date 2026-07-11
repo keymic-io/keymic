@@ -30,6 +30,13 @@ final class VoiceTrigger: SpeechClient {
         isRecording || session != nil || finalResultTimer != nil || runTask != nil || consolePanel != nil
     }
 
+    /// True only while a recording/refine is live — NOT while the post-release
+    /// console is open. KeyMonitor uses this to decide extraneous-key cancel and
+    /// Tab-cycle; the console must be keyboard-usable, so it must read false here.
+    var isVoiceSessionLive: Bool {
+        isRecording || session != nil || finalResultTimer != nil || runTask != nil
+    }
+
     init(engine: PersonaEngine,
          sessionHost: SpeechSessionHost,
          overlayPanel: OverlayPanel,
