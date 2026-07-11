@@ -15,6 +15,10 @@ final class KeyMonitor {
     /// forwarded to the system unchanged — only the in-flight voice session
     /// should be aborted by the consumer.
     var onExtraneousKeyDuringVoice: (() -> Void)?
+    /// Fired on the main queue when Tab (forward) / Shift+Tab (backward) is
+    /// pressed during an active voice-trigger session. The event is swallowed;
+    /// the consumer cycles the voice picker highlight. Does NOT cancel voice.
+    var onPersonaCycle: ((_ forward: Bool) -> Void)?
     /// O(1) lookup of whether the voice state machine is non-idle. Used by
     /// the extraneous-key branch so it doesn't need to track session state.
     var isVoiceActive: (() -> Bool)?
@@ -289,6 +293,12 @@ final class KeyMonitor {
         }
     }
 
+    /// Tab (0x30) → forward; Shift+Tab → backward; anything else → nil.
+    static func personaCycleDirection(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool? {
+        guard keyCode == 0x30 else { return nil }
+        return !flags.contains(.maskShift)
+    }
+
     static func shouldCancelVoiceForUnexpectedKeyPress(
         keyCode: CGKeyCode,
         isAutoRepeat: Bool,
@@ -391,6 +401,25 @@ final class KeyMonitor {
                 if type == .keyUp {
                     state.personaHotkeyKeyDown = nil
                     DispatchQueue.main.async { [weak self] in self?.onTriggerUp?() }
+                }
+                return nil
+            }
+        }
+
+        // Voice picker: while a DEFAULT-TRIGGER voice session is active, Tab / Shift+Tab
+        // cycle the highlighted persona instead of cancelling. Swallow both the keyDown
+        // (cycle on non-autorepeat only) and its matching keyUp. Gated on
+        // personaHotkeyKeyDown == nil so persona-hotkey sessions are unaffected. Must
+        // precede the keyDown cancel paths below (triggerActive interrupt +
+        // shouldCancelVoiceForUnexpectedKeyPress).
+        if (type == .keyDown || type == .keyUp),
+           isVoiceActive?() == true,
+           state.personaHotkeyKeyDown == nil {
+            let tabCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            if let forward = Self.personaCycleDirection(keyCode: tabCode, flags: event.flags) {
+                if type == .keyDown,
+                   event.getIntegerValueField(.keyboardEventAutorepeat) != 1 {
+                    DispatchQueue.main.async { [weak self] in self?.onPersonaCycle?(forward) }
                 }
                 return nil
             }
