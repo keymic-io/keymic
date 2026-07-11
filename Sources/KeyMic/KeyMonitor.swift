@@ -7,7 +7,7 @@ import os.log
 private let log = Logger(subsystem: "io.keymic.app", category: "KeyMonitor")
 
 final class KeyMonitor {
-    var onTriggerDown: (() -> Void)?
+    var onTriggerDown: ((VoiceTriggerSource) -> Void)?
     var onTriggerUp: (() -> Void)?
     var onTriggerInterrupted: (() -> Void)?
     /// Fired on the main queue when a non-trigger keyDown arrives while voice
@@ -560,7 +560,7 @@ final class KeyMonitor {
                     state.personaHotkeyKeyDown = keyCode
                     DispatchQueue.main.async { [weak self] in
                         PersonaStore.shared.setActive(id)
-                        self?.onTriggerDown?()
+                        self?.onTriggerDown?(.personaHotkey(personaId: id))
                     }
                     return nil
                 }
@@ -596,7 +596,7 @@ final class KeyMonitor {
         // the recording cleanly.
         if nowActive && !state.triggerActive && !secureInputSuspended && (isVoiceEnabled?() ?? true) {
             state.triggerActive = true
-            DispatchQueue.main.async { [weak self] in self?.onTriggerDown?() }
+            DispatchQueue.main.async { [weak self] in self?.onTriggerDown?(.defaultTrigger) }
             return nil
         } else if !nowActive && state.triggerActive {
             state.triggerActive = false

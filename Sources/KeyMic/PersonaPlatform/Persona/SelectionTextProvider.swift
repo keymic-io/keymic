@@ -31,15 +31,23 @@ enum SelectionTextProvider {
         }
     }
 
+    /// AX-only selection read (no Cmd+C fallback). Used by the voice picker
+    /// preview while the trigger modifier is held, where a synthetic Cmd+C is
+    /// unreliable. Returns nil when the focused element has no AX selection.
+    static func axOnlySelection() -> String? {
+        if case .text(let s) = axSelection() { return s }
+        return nil
+    }
+
     // MARK: - AX path
 
-    private enum AXResult {
+    enum AXResult {
         case text(String)
         case emptyButSupported
         case unsupported
     }
 
-    private static func axSelection() -> AXResult {
+    static func axSelection() -> AXResult {
         let systemWide = AXUIElementCreateSystemWide()
         var focused: CFTypeRef?
         guard
