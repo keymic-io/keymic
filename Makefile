@@ -348,6 +348,7 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Input/InputState.swift \
 	       Sources/KeyMic/Input/InputResetReason.swift \
 	       Sources/KeyMic/Clipboard/ClipboardSwitcherState.swift \
+	       Sources/KeyMic/PersonaPlatform/Triggers/VoiceTriggerSource.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorClipboardPanelTests.swift \
 	       -o .build/keymonitor-clipboard-panel-tests
