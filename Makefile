@@ -379,6 +379,7 @@ test-keymonitor-persona-cycle:
 	       Sources/KeyMic/Input/InputState.swift \
 	       Sources/KeyMic/Input/InputResetReason.swift \
 	       Sources/KeyMic/Clipboard/ClipboardSwitcherState.swift \
+	       Sources/KeyMic/PersonaPlatform/Triggers/VoiceTriggerSource.swift \
 	       Sources/KeyMic/KeyMonitor.swift \
 	       Tests/KeyMonitorPersonaCycleTests.swift \
 	       -o .build/keymonitor-persona-cycle-tests

@@ -4,13 +4,6 @@ import os.log
 
 private let logger = Logger(subsystem: "io.keymic.app", category: "VoiceTrigger")
 
-/// Which entry point started the current voice session. The picker + console
-/// apply ONLY to `.defaultTrigger`; `.personaHotkey` runs its persona directly.
-enum VoiceTriggerSource: Equatable {
-    case defaultTrigger
-    case personaHotkey(personaId: String)
-}
-
 @MainActor
 final class VoiceTrigger: SpeechClient {
     private let engine: PersonaEngine
