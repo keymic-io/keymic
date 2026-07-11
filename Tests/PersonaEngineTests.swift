@@ -10,6 +10,8 @@ struct PersonaEngineTestRunner {
         testInvocationErrorCancelled()
         testPersonaInjectionStrategyOverride()
         testPersonaContextSourcesUsed()
+        testContextOverrideDefaultsNil()
+        testContextOverrideRendersHistorySources()
         print("PersonaEngineTests passed")
     }
 
@@ -71,6 +73,26 @@ struct PersonaEngineTestRunner {
         expect(p.contextSources.contains(.selection), "should contain .selection")
         expect(p.contextSources.contains(.clipboardTop), "should contain .clipboardTop")
         expect(!p.contextSources.contains(.windowOCR), "should not contain .windowOCR")
+    }
+
+    static func testContextOverrideDefaultsNil() {
+        let inv = Invocation(persona: makePersona(), transcript: "hi", originatingApp: nil, outputOverride: nil)
+        expect(inv.contextOverride == nil, "contextOverride defaults to nil for existing call sites")
+    }
+
+    static func testContextOverrideRendersHistorySources() {
+        // A persona that declares only .selection, but the console added clipboard-history
+        // items. The override's sources must drive buildPrompt so history renders.
+        let ctx = PersonaContext(selection: nil, clipboardTop: nil,
+                                 clipboardHistory: ["h1", "h2"], windowOCR: nil)
+        let override = ContextOverride(context: ctx, sources: [.clipboardHistory])
+        let inv = Invocation(persona: makePersona(contextSources: [.selection]),
+                             transcript: "T", originatingApp: nil, outputOverride: nil,
+                             contextOverride: override)
+        let prompt = inv.contextOverride!.context.buildPrompt(
+            transcript: inv.transcript, sources: inv.contextOverride!.sources)
+        let expected = "[Clipboard history]\n1. h1\n2. h2\n\n[User said]\nT"
+        expect(prompt == expected, "override sources drive buildPrompt:\ngot: \(prompt)\nwant: \(expected)")
     }
 
     // MARK: - Helpers

@@ -41,14 +41,22 @@ final class PersonaEngine {
             return .routed(text: transcript, via: strategy, result: routeResult)
         }
 
-        let context = await PersonaContextBuilder.build(
-            for: invocation.persona,
-            clipboardStore: clipboardStore,
-            onStatusUpdate: onStatusUpdate
-        )
+        let context: PersonaContext
+        let sources: Set<ContextSource>
+        if let override = invocation.contextOverride {
+            context = override.context
+            sources = override.sources
+        } else {
+            context = await PersonaContextBuilder.build(
+                for: invocation.persona,
+                clipboardStore: clipboardStore,
+                onStatusUpdate: onStatusUpdate
+            )
+            sources = invocation.persona.contextSources
+        }
         let userText = context.buildPrompt(
             transcript: transcript,
-            sources: invocation.persona.contextSources
+            sources: sources
         )
 
         // Map cancellation to InvocationError.cancelled (not a bare CancellationError):
