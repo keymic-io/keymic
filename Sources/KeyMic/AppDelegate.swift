@@ -259,12 +259,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionHost: speechSessionHost,
             overlayPanel: overlayPanel,
             personaStore: PersonaStore.shared,
+            clipboardStore: clipboardController.store,
             textInjector: textInjector
         )
-        keyMonitor.onTriggerDown = { [weak self] in
+        keyMonitor.onTriggerDown = { [weak self] source in
             guard let self, self.isVoiceEnabled else { return }
             self.updateStatusIcon(recording: true)
-            Task { @MainActor in self.voiceTrigger.onTriggerDown() }
+            Task { @MainActor in self.voiceTrigger.onTriggerDown(source: source) }
         }
         keyMonitor.onTriggerUp = { [weak self] in
             guard let self else { return }
@@ -280,6 +281,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.updateStatusIcon(recording: false)
             Task { @MainActor in self.voiceTrigger.onExtraneousKeyDuringVoice() }
+        }
+        keyMonitor.onPersonaCycle = { [weak self] forward in
+            guard let self else { return }
+            Task { @MainActor in self.voiceTrigger.onPersonaCycle(forward: forward) }
         }
         keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isActive ?? false }
         keyMonitor.isVoiceEnabled = { [weak self] in self?.isVoiceEnabled ?? false }
