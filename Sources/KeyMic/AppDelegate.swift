@@ -55,7 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
-    private var selectedTextEditorController: SelectedTextEditorController!
 
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
@@ -294,13 +293,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
-        selectedTextEditorController = SelectedTextEditorController(
-            speechEngine: speechEngine,
-            overlayPanel: overlayPanel
-        )
-        keyMonitor.onSelectedTextEditorHotkey = { [weak self] in
-            self?.selectedTextEditorController.open()
-        }
         // Now that the host + all engine consumers exist, decide the engine. If SenseVoice is
         // enabled this kicks off an off-main model load and swaps the engine in when ready;
         // otherwise it is a no-op (already on Apple).
@@ -347,7 +339,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (.vaultPanel, .vaultPanel, "Vault panel"),
             (.settingsWindow, .settingsWindow, "Settings window"),
             (.screenshot, .screenshot, "Screenshot"),
-            (.selectedTextEditor, .selectedTextEditor, "Selected text editor"),
         ]
         for (feature, owner, purpose) in builtIns {
             if let cfg = hotkeys.hotkey(for: feature) {
@@ -536,7 +527,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 speechEngine = engine
                 setupSpeechCallbacks()
                 speechSessionHost?.replaceEngine(engine)
-                selectedTextEditorController?.replaceEngine(engine)
                 recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.speechAnalyzer)
                 return
@@ -552,7 +542,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             speechEngine = makeAppleEngine()
             setupSpeechCallbacks()
             speechSessionHost?.replaceEngine(speechEngine)
-            selectedTextEditorController?.replaceEngine(speechEngine)
             recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
             SpeechEngineStatusStore.shared.update(
                 assetDownloading ? .sfSpeechRecognizerDownloadingAnalyzerAsset : .sfSpeechRecognizer)
@@ -594,7 +583,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.speechEngine = engine
                     self.setupSpeechCallbacks()
                     self.speechSessionHost?.replaceEngine(engine)
-                    self.selectedTextEditorController?.replaceEngine(engine)
                     self.recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
                     SpeechEngineStatusStore.shared.update(.onnx)
                 }
@@ -618,7 +606,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.speechEngine = engine
                 self.setupSpeechCallbacks()
                 self.speechSessionHost?.replaceEngine(engine)
-                self.selectedTextEditorController?.replaceEngine(engine)
                 self.recordSpeechBaseline(model: model, lang: langKey, svReady: true, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.senseVoice)
             }
@@ -632,7 +619,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngine = makeAppleEngine()
         setupSpeechCallbacks()
         speechSessionHost?.replaceEngine(speechEngine)
-        selectedTextEditorController?.replaceEngine(speechEngine)
         SpeechEngineStatusStore.shared.update(.sfSpeechRecognizer)
     }
 

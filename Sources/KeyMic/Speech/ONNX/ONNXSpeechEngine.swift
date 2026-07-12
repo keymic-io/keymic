@@ -40,9 +40,9 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else { throw VoiceError.microphoneAccessDenied(status) }
 
-        // Self-heal: a second entry point (e.g. the selected-text editor bypassing the
-        // session host) may still have our tap installed — installing twice throws an
-        // Obj-C NSException and crashes. Mirror SpeechAnalyzerSpeechEngine.startSession.
+        // Self-heal: a second entry point bypassing the session host may still have our
+        // tap installed — installing twice throws an Obj-C NSException and crashes.
+        // Mirror SpeechAnalyzerSpeechEngine.startSession.
         teardown()
         sessionGeneration &+= 1
         capture.reset()
