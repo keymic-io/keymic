@@ -212,6 +212,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showAccessibilityAlert()
             return
         }
+        // Migrate legacy `hotkeySettings.v1` blob into the dispersed per-feature keys before
+        // anything touches `HotkeySettingsStore.shared` — `keyMonitor.start()` below triggers its
+        // lazy init, and migrating after that point would be too late to affect this session.
+        HotkeySettingsStore.migrateIfNeeded(defaults: .standard, personaStore: PersonaStore.shared)
         if !keyMonitor.start() {
             showAccessibilityAlert()
             return
@@ -326,7 +330,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardController.start()
         _ = UpdaterController.shared
 
-        HotkeySettingsStore.migrateIfNeeded(defaults: .standard, personaStore: PersonaStore.shared)
         HotkeySettingsStore.shared.ensureInitialized()
         lastInputConfigSnapshot = InputConfigSnapshot.current()
 
