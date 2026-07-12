@@ -511,9 +511,9 @@ final class KeyMonitor {
                isVoiceEnabled?() ?? true,
                state.personaHotkeyKeyDown == nil,
                !state.triggerActive {
-                let hotkeys = HotkeySettingsStore.shared
                 for persona in PersonaStore.shared.personas {
-                    guard let cfg = hotkeys.personaHotkey(personaId: persona.id),
+                    guard let raw = persona.hotkey,
+                          let cfg = HotkeyConfig.parse(raw),
                           !cfg.isPureModifier,
                           cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) else { continue }
                     let id = persona.id

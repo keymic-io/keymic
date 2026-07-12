@@ -379,13 +379,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static func syncPersonaHotkeysToRegistry() {
         let registry = HotkeyRegistry.shared
-        let hotkeys = HotkeySettingsStore.shared
-        hotkeys.ensureInitialized()
         for entry in registry.all() {
             if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
         }
         for persona in PersonaStore.shared.personas {
-            guard let cfg = hotkeys.personaHotkey(personaId: persona.id) else { continue }
+            guard let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) else { continue }
             registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
         }
     }
@@ -962,9 +960,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            zip(existing, personas).allSatisfy({ view, persona in
                view.personaId == persona.id
                    && view.title == persona.name
-                   && view.hotkeyText == HotkeySettingsStore.shared
-                       .personaHotkey(personaId: persona.id)?
-                       .displayString()
+                   && view.hotkeyText == persona.hotkey.flatMap(HotkeyConfig.parse)?.displayString()
            }) {
             existing.forEach { $0.needsDisplay = true }
             return
@@ -973,9 +969,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         personasMenu.removeAllItems()
         for persona in personas {
             let pid = persona.id
-            let hotkeyText = HotkeySettingsStore.shared
-                .personaHotkey(personaId: pid)?
-                .displayString()
+            let hotkeyText = persona.hotkey.flatMap(HotkeyConfig.parse)?.displayString()
             let view = PersonaMenuItemView(
                 personaId: pid,
                 title: persona.name,

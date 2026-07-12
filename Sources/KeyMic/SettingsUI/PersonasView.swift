@@ -124,7 +124,7 @@ private struct PersonaRow: View {
                 Image(systemName: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                     .imageScale(.small)
-            } else if let cfg = HotkeySettingsStore.shared.personaHotkey(personaId: persona.id) {
+            } else if let cfg = persona.hotkey.flatMap(HotkeyConfig.parse) {
                 Text(cfg.displayString())
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -426,7 +426,7 @@ struct PersonaHotkeyField: View {
     let personaId: String
 
     var body: some View {
-        let raw = HotkeySettingsStore.shared.rawPersonaHotkey(personaId: personaId)
+        let raw = PersonaStore.shared.persona(id: personaId)?.hotkey
 
         return HStack(spacing: 4) {
             // .id(personaId): the embedded NSViewRepresentable captures personaId in
@@ -440,7 +440,7 @@ struct PersonaHotkeyField: View {
                 .frame(height: 24)
 
             Button {
-                try? HotkeySettingsStore.shared.setPersonaHotkey(nil, personaId: personaId)
+                PersonaStore.shared.setHotkey(nil, personaId: personaId)
                 AppDelegate.syncPersonaHotkeysToRegistry()
             } label: {
                 Image(systemName: "xmark.circle.fill")
@@ -462,7 +462,7 @@ private struct PersonaHotkeyRecorder: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     func makeNSView(context: Context) -> HotkeyRecorder {
-        let initial = HotkeySettingsStore.shared.personaHotkey(personaId: personaId)
+        let initial = PersonaStore.shared.persona(id: personaId)?.hotkey.flatMap(HotkeyConfig.parse)
         let recorder = HotkeyRecorder(
             initial: initial,
             mode: .combo,
@@ -471,7 +471,7 @@ private struct PersonaHotkeyRecorder: NSViewRepresentable {
             },
             onCommit: { [personaId] cfg in
                 DispatchQueue.main.async {
-                    try? HotkeySettingsStore.shared.setPersonaHotkey(cfg, personaId: personaId)
+                    PersonaStore.shared.setHotkey(cfg.encode(), personaId: personaId)
                     AppDelegate.syncPersonaHotkeysToRegistry()
                 }
             }
@@ -483,7 +483,7 @@ private struct PersonaHotkeyRecorder: NSViewRepresentable {
     func updateNSView(_ recorder: HotkeyRecorder, context: Context) {
         context.coordinator.parent = self
         context.coordinator.recorder = recorder
-        let cfg = HotkeySettingsStore.shared.personaHotkey(personaId: personaId)
+        let cfg = PersonaStore.shared.persona(id: personaId)?.hotkey.flatMap(HotkeyConfig.parse)
         recorder.updateValue(cfg)
     }
 
