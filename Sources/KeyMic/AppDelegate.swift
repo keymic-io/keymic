@@ -356,9 +356,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: .configSyncDidApply, object: nil, queue: .main
         ) { [weak self] note in
-            let sections = note.userInfo?["sections"] as? [String] ?? []
+            let sections = Set(note.userInfo?["sections"] as? [String] ?? [])
+            // Feature hotkeys now arrive inside their owning module's section.
+            let hotkeyOwningSections: Set<String> = ["general", "voice", "clipboard", "screenshot"]
             if sections.contains("personas") { PersonaStore.shared.reload() }
-            if sections.contains("hotkeys") { HotkeySettingsStore.shared.reload() }
+            if !hotkeyOwningSections.isDisjoint(with: sections) { HotkeySettingsStore.shared.reload() }
+            if sections.contains("hotkeys") { HotkeyBindingsStore.shared.reload() }
             if sections.contains("keyMapping") { KeyMappingManager.shared.reload() }
             self?.syncMenuStates()
         }

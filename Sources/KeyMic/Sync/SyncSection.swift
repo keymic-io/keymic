@@ -37,18 +37,20 @@ enum SyncSection: String, CaseIterable {
     var userDefaultsKeys: [String] {
         switch self {
         case .general:
-            return ["automaticallyUpdates"]
+            return ["automaticallyUpdates", "settingsWindowHotkey"]
         case .voice:
-            return ["voiceEnabled", "selectedLocaleCode", "voiceModel", "enableSelectionCopyFallback"]
+            return ["voiceEnabled", "selectedLocaleCode", "voiceModel",
+                     "enableSelectionCopyFallback", "voiceTriggerHotkey"]
         case .llm:
             return ["llmAPIBaseURL", "llmModel"]
         case .clipboard:
             return ["clipboardEnabled", "clipboardMaxHistory", "clipboardIgnoreConfidential",
-                    "clipboardPanelPosition", "clipboardCleanupMode", "clipboardCleanupDays"]
+                    "clipboardPanelPosition", "clipboardCleanupMode", "clipboardCleanupDays",
+                    "clipboardPanelHotkey", "vaultPanelHotkey"]
         case .screenshot:
-            return ["screenshotEnabled"]
+            return ["screenshotEnabled", "screenshotHotkey"]
         case .hotkeys:
-            return ["hotkeysEnabled", "hotkeySettings.v1", "hotkeyBindings"]
+            return ["hotkeysEnabled", "hotkeyBindings"]
         case .keyMapping:
             return ["keyMappingEnabled", "keyMappingList"]
         case .personas:
