@@ -204,6 +204,7 @@ test-hotkey-bindings-store:
 test-hotkey-settings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
@@ -218,7 +219,6 @@ test-hotkey-settings-store:
 	       Sources/KeyMic/Output/iTerm/ITermBridge.swift \
 	       Sources/KeyMic/Output/OutputRouter.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
-	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Tests/HotkeySettingsStoreTests.swift \
 	       -o .build/hotkey-settings-store-tests
 	.build/hotkey-settings-store-tests

@@ -66,13 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (Sparkle's SULastCheckTime, screenshot prefs, any @AppStorage write…),
     /// which would interrupt an in-progress dictation session.
     private struct InputConfigSnapshot: Equatable {
-        let hotkeys: HotkeySettingsSnapshot
+        let featureHotkeys: [String: String]
+        let personaHotkeys: [String: String]
         let keyMappings: [KeyMapping]
         let keyMappingEnabled: Bool
 
         static func current() -> InputConfigSnapshot {
             InputConfigSnapshot(
-                hotkeys: HotkeySettingsStore.shared.snapshot,
+                featureHotkeys: HotkeySettingsStore.shared.featureHotkeys,
+                personaHotkeys: Dictionary(uniqueKeysWithValues:
+                    PersonaStore.shared.personas.compactMap { p in p.hotkey.map { (p.id, $0) } }),
                 keyMappings: KeyMappingManager.shared.mappings,
                 keyMappingEnabled: KeyMappingManager.shared.isEnabled
             )
@@ -323,6 +326,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clipboardController.start()
         _ = UpdaterController.shared
 
+        HotkeySettingsStore.migrateIfNeeded(defaults: .standard, personaStore: PersonaStore.shared)
         HotkeySettingsStore.shared.ensureInitialized()
         lastInputConfigSnapshot = InputConfigSnapshot.current()
 
@@ -330,21 +334,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString() ?? "⌥V"
         }
 
-        // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
-        let registry = HotkeyRegistry.shared
-        let hotkeys = HotkeySettingsStore.shared
-        let builtIns: [(HotkeyFeature, HotkeyRegistry.Owner, String)] = [
-            (.voiceTrigger, .voiceTrigger, "Voice trigger"),
-            (.clipboardPanel, .clipboardPanel, "Clipboard panel"),
-            (.vaultPanel, .vaultPanel, "Vault panel"),
-            (.settingsWindow, .settingsWindow, "Settings window"),
-            (.screenshot, .screenshot, "Screenshot"),
-        ]
-        for (feature, owner, purpose) in builtIns {
-            if let cfg = hotkeys.hotkey(for: feature) {
-                registry.register(cfg, owner: owner, purpose: purpose)
-            }
-        }
         AppDelegate.syncPersonaHotkeysToRegistry()
         personaObserverToken = NotificationCenter.default.addObserver(
             forName: PersonaStore.didChangeNotification, object: nil, queue: .main
