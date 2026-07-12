@@ -1253,43 +1253,61 @@ private struct KeyMappingRow: View {
     let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 0) {
-            HotkeyRecorderConfigWithClear(
-                config: keyCodeBinding(for: \.fromKeyCode),
-                mode: .singleKey,
-                validator: validateFrom,
-                displayName: { KeyMapping.displayName(for: $0.keyCode) },
-                recorderWidth: 130
-            )
-            .frame(width: 150)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 0) {
+                HotkeyRecorderConfigWithClear(
+                    config: keyCodeBinding(for: \.fromKeyCode),
+                    mode: .singleKey,
+                    validator: validateFrom,
+                    displayName: { KeyMapping.displayName(for: $0.keyCode) },
+                    recorderWidth: 130
+                )
+                .frame(width: 150)
 
-            Image(systemName: "arrow.right")
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
-
-            HotkeyRecorderConfigWithClear(
-                config: keyCodeBinding(for: \.toKeyCode),
-                mode: .singleKey,
-                validator: validateTo,
-                displayName: { KeyMapping.displayName(for: $0.keyCode) },
-                recorderWidth: 130
-            )
-            .frame(width: 150)
-
-            Spacer(minLength: 8)
-
-            Toggle("", isOn: $mapping.enabled)
-                .labelsHidden()
-                .controlSize(.mini)
-                .frame(width: 40, alignment: .center)
-
-            Button(action: onDelete) {
-                Image(systemName: "trash")
+                Image(systemName: "arrow.right")
                     .foregroundStyle(.secondary)
+                    .frame(width: 24)
+
+                HotkeyRecorderConfigWithClear(
+                    config: keyCodeBinding(for: \.toKeyCode),
+                    mode: .singleKey,
+                    validator: validateTo,
+                    displayName: { KeyMapping.displayName(for: $0.keyCode) },
+                    recorderWidth: 130
+                )
+                .frame(width: 150)
+
+                Spacer(minLength: 8)
+
+                Toggle("", isOn: $mapping.enabled)
+                    .labelsHidden()
+                    .controlSize(.mini)
+                    .frame(width: 40, alignment: .center)
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .frame(width: 28, alignment: .center)
             }
-            .buttonStyle(.borderless)
-            .frame(width: 28, alignment: .center)
+
+            if let warning = registryWarning {
+                Label(warning, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
+    }
+
+    /// Non-blocking: remapping a source key silently disables every hotkey built on
+    /// that key (remap runs first in KeyMonitor). Warn, but allow deliberate overrides.
+    private var registryWarning: String? {
+        guard mapping.enabled, let from = mapping.fromKeyCode else { return nil }
+        let hits = HotkeyRegistry.shared.entriesUsing(
+            keyCode: from, excluding: .keyMapping(id: mapping.id.uuidString)
+        ).filter { if case .keyMapping = $0.owner { return false } else { return true } }
+        return hits.first.map { "Remapping this key disables: \($0.purpose)" }
     }
 
     private func keyCodeBinding(for keyPath: WritableKeyPath<KeyMapping, CGKeyCode?>) -> Binding<HotkeyConfig?> {
@@ -1398,17 +1416,11 @@ private struct ShortcutsSettingsSection: View {
         if cfg.modifiers.isEmpty, !HotkeyConfig.functionRowKeyCodes.contains(cfg.keyCode) {
             return "Need at least one modifier"
         }
-
-        let hotkeyStore = HotkeySettingsStore.shared
-        let voiceKey = hotkeyStore.rawHotkey(for: .voiceTrigger)
-        let clipKey = hotkeyStore.rawHotkey(for: .clipboardPanel)
-
-        if HotkeyConfig.parse(voiceKey) == cfg { return "Conflicts with voice trigger" }
-        if HotkeyConfig.parse(clipKey) == cfg { return "Conflicts with clipboard hotkey" }
-        if store.bindings.contains(where: { $0.id != id && HotkeyConfig.parse($0.trigger) == cfg }) {
-            return "Conflicts with existing shortcut"
-        }
         if cfg.isSystemReserved { return "\(cfg.displayString()) is reserved by macOS" }
+        let excluding = id.map { HotkeyRegistry.Owner.hotkeyBinding(id: $0) }
+        if let first = HotkeyRegistry.shared.conflicts(for: cfg, excluding: excluding).first {
+            return "Conflicts with: \(first.purpose)"
+        }
         return nil
     }
 }

@@ -66,6 +66,7 @@ final class KeyMappingManager {
             guard oldValue != mappings else { return }
             save()
             applyHIDMappings()
+            syncRegistry()
         }
     }
 
@@ -74,6 +75,7 @@ final class KeyMappingManager {
             guard oldValue != isEnabled else { return }
             userDefaults.set(isEnabled, forKey: Self.enabledKey)
             applyHIDMappings()
+            syncRegistry()
         }
     }
 
@@ -86,6 +88,7 @@ final class KeyMappingManager {
         self.mappings = Self.loadOrSeed(from: userDefaults, key: Self.mappingsKey)
         self.isEnabled = userDefaults.object(forKey: Self.enabledKey) as? Bool ?? true
         applyHIDMappings()
+        syncRegistry()
     }
 
     /// Re-read mappings + enabled flag from persistence (e.g. after Config Sync
@@ -93,6 +96,21 @@ final class KeyMappingManager {
     func reload() {
         mappings = Self.loadOrSeed(from: userDefaults, key: Self.mappingsKey)
         isEnabled = userDefaults.object(forKey: Self.enabledKey) as? Bool ?? true
+        syncRegistry()
+    }
+
+    private func syncRegistry() {
+        let registry = HotkeyRegistry.shared
+        for entry in registry.all() {
+            if case .keyMapping = entry.owner { registry.unregister(owner: entry.owner) }
+        }
+        guard isEnabled else { return }
+        for m in mappings where m.enabled {
+            guard let from = m.fromKeyCode else { continue }
+            registry.register(HotkeyConfig(modifiers: [], keyCode: from),
+                              owner: .keyMapping(id: m.id.uuidString),
+                              purpose: String(localized: "Key mapping: \(KeyMapping.displayName(for: from))"))
+        }
     }
 
     func mapping(for sourceKeyCode: CGKeyCode) -> KeyMapping? {

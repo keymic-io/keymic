@@ -87,6 +87,7 @@ run: build
 test:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/KeyMappingManager.swift \
 	       Sources/KeyMic/HIDRemapper.swift \
 	       Tests/KeyMappingManagerTests.swift \
@@ -196,6 +197,8 @@ test-hotkey-action:
 test-hotkey-bindings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyAction.swift \
+	       Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Tests/HotkeyBindingsStoreTests.swift \
 	       -o .build/hotkey-bindings-store-tests
