@@ -308,12 +308,6 @@ private struct GeneralSettingsView: View {
                 Toggle("Automatically check and install updates", isOn: $automaticallyUpdates)
             } header: {
                 Text("Updates")
-            } footer: {
-                Text(
-                    "When enabled, KeyMic checks for updates daily at 11:00 AM and installs them silently. When disabled, you'll be prompted to review updates before installing."
-                )
-                .font(.callout)
-                .foregroundStyle(.secondary)
             }
 
             Section {
