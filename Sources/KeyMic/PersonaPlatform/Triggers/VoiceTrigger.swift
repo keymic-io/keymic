@@ -37,6 +37,19 @@ final class VoiceTrigger: SpeechClient {
         isRecording || session != nil || finalResultTimer != nil || runTask != nil
     }
 
+    /// True while the post-release context console is open. KeyMonitor reads this
+    /// (synchronously) to pass the trigger key THROUGH — no new session, no
+    /// interrupt — so the console stays open and Option-modified typing works in it.
+    var isConsoleOpen: Bool { consolePanel != nil }
+
+    /// True only during a DEFAULT-trigger recording (picker up). KeyMonitor gates
+    /// Tab-cycle interception on this, NOT on whether a persona hotkey is currently
+    /// held: a persona-hotkey session whose key was already released must keep
+    /// today's cancel-on-Tab behavior.
+    var isDefaultTriggerVoiceActive: Bool {
+        isRecording && currentSource == .defaultTrigger
+    }
+
     init(engine: PersonaEngine,
          sessionHost: SpeechSessionHost,
          overlayPanel: OverlayPanel,
@@ -150,6 +163,11 @@ final class VoiceTrigger: SpeechClient {
     }
 
     func handleError(_ msg: String) {
+        // Drop errors that arrive after the session ended (released for a run or the
+        // console, grace timeout, or interruption). A late engine/speech error must
+        // NOT show a toast or schedule cleanup that would tear down an open console
+        // and discard the user's edits.
+        guard session != nil else { return }
         overlayPanel.showMessage(msg)
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
@@ -158,6 +176,8 @@ final class VoiceTrigger: SpeechClient {
     }
 
     func handleAudioLevel(_ level: Float) {
+        // Same rationale as handlePartial/handleFinal: ignore levels after release.
+        guard session != nil else { return }
         overlayPanel.updateAudioLevel(level)
     }
 
@@ -331,11 +351,18 @@ final class VoiceTrigger: SpeechClient {
             state: consoleState,
             onContinue: { [weak self] in
                 guard let self else { return }
-                consoleState.isRunning = true
-                let override = consoleState.assembleOverride()
+                // Trim the edited transcript FIRST: an empty transcript must not
+                // record MRU or fire an LLM run — treat it like a cancel.
+                let trimmed = consoleState.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
                 self.consolePanel?.orderOut(nil)
                 self.consolePanel = nil
-                self.runPersona(persona, transcript: consoleState.transcript,
+                guard !trimmed.isEmpty else {
+                    self.cleanupSessionState(dismissOverlay: true)
+                    return
+                }
+                consoleState.isRunning = true
+                let override = consoleState.assembleOverride()
+                self.runPersona(persona, transcript: trimmed,
                                 originatingApp: originatingApp, contextOverride: override)
             },
             onCancel: { [weak self] in

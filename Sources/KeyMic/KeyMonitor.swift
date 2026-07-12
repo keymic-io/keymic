@@ -22,6 +22,14 @@ final class KeyMonitor {
     /// O(1) lookup of whether the voice state machine is non-idle. Used by
     /// the extraneous-key branch so it doesn't need to track session state.
     var isVoiceActive: (() -> Bool)?
+    /// Synchronous, O(1): true only while a DEFAULT-trigger voice session is
+    /// recording. Gates Tab-cycle interception so persona-hotkey push-to-talk keeps
+    /// its cancel-on-Tab behavior even after the hotkey key is released.
+    var isDefaultTriggerVoiceActive: (() -> Bool)?
+    /// Synchronous, O(1): true while the post-release context console is open. The
+    /// event tap then passes the trigger key through (no activation, no interrupt)
+    /// so the console stays usable — including Option-modified typing.
+    var isConsoleOpen: (() -> Bool)?
     /// O(1) lookup of the user-level "Voice Enabled" toggle. When it returns
     /// false, voice-trigger and persona push-to-talk *activation* must not
     /// swallow events — fn keeps its system behavior and persona hotkeys pass
@@ -233,9 +241,11 @@ final class KeyMonitor {
         isResetRecoveryMode = true
 
         // Interrupt any active voice session — fn-held trigger OR persona-hotkey
-        // push-to-talk. AppDelegate's cancelRecording is idempotent so a single
-        // notification covers both sources.
-        if prior.triggerActive || prior.personaHotkeyKeyDown != nil {
+        // push-to-talk OR an open post-release console (which has neither a held
+        // trigger nor a persona-hotkey keyDown, yet must still be torn down on a
+        // reset such as settings reload / stop / secure-input). onTriggerInterrupted
+        // is idempotent (guards on isActive), so a single notification covers all.
+        if prior.triggerActive || prior.personaHotkeyKeyDown != nil || (isConsoleOpen?() ?? false) {
             DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
         }
 
@@ -406,15 +416,16 @@ final class KeyMonitor {
             }
         }
 
-        // Voice picker: while a DEFAULT-TRIGGER voice session is active, Tab / Shift+Tab
-        // cycle the highlighted persona instead of cancelling. Swallow both the keyDown
-        // (cycle on non-autorepeat only) and its matching keyUp. Gated on
-        // personaHotkeyKeyDown == nil so persona-hotkey sessions are unaffected. Must
-        // precede the keyDown cancel paths below (triggerActive interrupt +
+        // Voice picker: while a DEFAULT-TRIGGER voice session is recording, Tab /
+        // Shift+Tab cycle the highlighted persona instead of cancelling. Swallow both
+        // the keyDown (cycle on non-autorepeat only) and its matching keyUp. Gated on
+        // an explicit default-trigger signal — NOT on `personaHotkeyKeyDown == nil`,
+        // which goes stale once a persona hotkey's key is released while transcription
+        // is still live (that would wrongly swallow Tab for a persona-hotkey session).
+        // Must precede the keyDown cancel paths below (triggerActive interrupt +
         // shouldCancelVoiceForUnexpectedKeyPress).
         if (type == .keyDown || type == .keyUp),
-           isVoiceActive?() == true,
-           state.personaHotkeyKeyDown == nil {
+           isDefaultTriggerVoiceActive?() == true {
             let tabCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
             if let forward = Self.personaCycleDirection(keyCode: tabCode, flags: event.flags) {
                 if type == .keyDown,
@@ -594,7 +605,13 @@ final class KeyMonitor {
         // Always honour *deactivation* — if Secure Input toggles on while
         // a session is already running, releasing the trigger must still stop
         // the recording cleanly.
-        if nowActive && !state.triggerActive && !secureInputSuspended && (isVoiceEnabled?() ?? true) {
+        // Also gate on `!isConsoleOpen`: while the post-release console is open the
+        // trigger key must pass through unchanged (return the event below) so it
+        // doesn't set `triggerActive` — otherwise the next keyDown would fire
+        // `onTriggerInterrupted` and close the console mid-edit (e.g. Option+Arrow
+        // when Right Option is the trigger).
+        if nowActive && !state.triggerActive && !secureInputSuspended && (isVoiceEnabled?() ?? true)
+            && !(isConsoleOpen?() ?? false) {
             state.triggerActive = true
             DispatchQueue.main.async { [weak self] in self?.onTriggerDown?(.defaultTrigger) }
             return nil

@@ -66,6 +66,9 @@ private struct ContextConsoleView: View {
     @Bindable var state: ContextConsoleState
     let onContinue: () -> Void
     let onCancel: () -> Void
+    /// Focus the transcript editor as soon as the panel presents, so keyboard input
+    /// lands in it without a click (the panel is nonactivating).
+    @FocusState private var editorFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -77,6 +80,7 @@ private struct ContextConsoleView: View {
                 .frame(minHeight: 80)
                 .padding(6)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
+                .focused($editorFocused)
 
             Text("Context")
                 .font(.system(size: 11, weight: .semibold))
@@ -111,6 +115,7 @@ private struct ContextConsoleView: View {
         .background(
             RoundedRectangle(cornerRadius: 14).fill(.regularMaterial)
         )
+        .onAppear { editorFocused = true }
     }
 
     private func kindLabel(_ kind: ContextCandidate.Kind) -> String {

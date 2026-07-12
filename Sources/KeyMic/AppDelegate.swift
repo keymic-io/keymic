@@ -287,6 +287,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self.voiceTrigger.onPersonaCycle(forward: forward) }
         }
         keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isVoiceSessionLive ?? false }
+        keyMonitor.isDefaultTriggerVoiceActive = { [weak self] in self?.voiceTrigger?.isDefaultTriggerVoiceActive ?? false }
+        keyMonitor.isConsoleOpen = { [weak self] in self?.voiceTrigger?.isConsoleOpen ?? false }
         keyMonitor.isVoiceEnabled = { [weak self] in self?.isVoiceEnabled ?? false }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onClipboardSwitcherStep = { [weak self] in self?.clipboardController.stepSwitcher() }
