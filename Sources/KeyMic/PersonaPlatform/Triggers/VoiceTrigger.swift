@@ -74,7 +74,16 @@ final class VoiceTrigger: SpeechClient {
             lastPartial = ""
             isRecording = true
             overlayPanel.show(text: "Listening...")
-            if case .defaultTrigger = source { showPicker() }
+            switch source {
+            case .defaultTrigger:
+                showPicker()
+            case .personaHotkey(let id):
+                // Show the picker as visual feedback: the triggered persona is
+                // highlighted and its context (selection + clipboard) previewed.
+                // finish() still runs this persona directly — the picker is not
+                // interactive here (Tab-cycle stays gated off for persona hotkeys).
+                showPicker(highlightPersonaID: id)
+            }
             NSSound(named: .init("Tink"))?.play()
             try session.start()
         } catch SpeechSessionError.busy {
@@ -86,7 +95,7 @@ final class VoiceTrigger: SpeechClient {
         }
     }
 
-    private func showPicker() {
+    private func showPicker(highlightPersonaID: String? = nil) {
         // Build entries (default input + MRU personas) and capture a cheap,
         // side-effect-free context snapshot: AX selection + clipboard top only.
         // NEVER a Cmd+C round-trip here — the trigger modifier is held.
@@ -94,11 +103,19 @@ final class VoiceTrigger: SpeechClient {
             personas: personaStore.personas,
             history: PersonaMRU.shared.historyIDs()
         )
-        pickerState.highlightedIndex = 0
+        // Default trigger starts on "Default input"; a persona hotkey pre-highlights
+        // its own persona so its context windows are shown immediately.
+        pickerState.highlightedIndex = highlightPersonaID.flatMap { id in
+            pickerState.entries.firstIndex {
+                if case .persona(let p) = $0 { return p.id == id }
+                return false
+            }
+        } ?? 0
         let axSel = SelectionTextProvider.axOnlySelection()
         pickerState.selectionPreview = axSel
         pickerState.axSelectionUnavailable = (axSel == nil)
-        pickerState.clipboardPreview = NSPasteboard.general.string(forType: .string)
+        pickerState.fieldTextPreview = SelectionTextProvider.axFocusedFieldValue()
+        pickerState.clipboardHistory = clipboardStore.recentTexts(limit: 10)
 
         // Anchor above the capsule. The capsule sits at y = visibleFrame.minY + 56,
         // height 56 → its top is minY + 112, centered on visibleFrame.midX.

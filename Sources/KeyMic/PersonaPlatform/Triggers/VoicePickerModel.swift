@@ -28,7 +28,9 @@ enum VoicePickerModel {
         case .defaultInput:
             return (false, false)
         case .persona(let p):
-            return (p.contextSources.contains(.selection), p.contextSources.contains(.clipboardTop))
+            let clipboard = p.contextSources.contains(.clipboardTop)
+                || p.contextSources.contains(.clipboardHistory)
+            return (p.contextSources.contains(.selection), clipboard)
         }
     }
 }

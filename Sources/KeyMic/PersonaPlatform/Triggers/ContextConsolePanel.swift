@@ -52,9 +52,12 @@ final class ContextConsolePanel: NSPanel {
     func present() {
         if let screen = NSScreen.main {
             let v = screen.visibleFrame
+            // Bottom-align with the capsule's bottom edge (the capsule sits at
+            // visibleFrame.minY + 56) and center horizontally — the console
+            // appears where the pickup capsule was, not floating mid-screen.
             setFrameOrigin(NSPoint(
                 x: v.midX - frame.width / 2,
-                y: v.midY - frame.height / 2
+                y: v.minY + 56
             ))
         }
         orderFrontRegardless()
@@ -75,13 +78,8 @@ private struct ContextConsoleView: View {
             Text("Refine & send")
                 .font(.system(size: 13, weight: .semibold))
 
-            TextEditor(text: $state.transcript)
-                .font(.system(size: 13))
-                .frame(minHeight: 80)
-                .padding(6)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
-                .focused($editorFocused)
-
+            // Context (top): clipboard + selected text, mirroring the pickup
+            // preview which stacks context above the input.
             Text("Context")
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
@@ -101,6 +99,14 @@ private struct ContextConsoleView: View {
                 }
             }
             .frame(maxHeight: 120)
+
+            // Transcript editor (bottom), closest to where the capsule sat.
+            TextEditor(text: $state.transcript)
+                .font(.system(size: 13))
+                .frame(minHeight: 80)
+                .padding(6)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color(nsColor: .textBackgroundColor)))
+                .focused($editorFocused)
 
             HStack {
                 Spacer()
