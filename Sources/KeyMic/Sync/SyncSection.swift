@@ -111,6 +111,50 @@ enum SyncSection: String, CaseIterable {
     }
 }
 
+/// How a section reconciles a 3-way (base/local/remote) difference.
+enum MergePolicy {
+    /// Whole-payload last-write-wins (scalar sections).
+    case replace
+    /// Item-level merge of the array at `path`, keyed by `idKey`; scalar
+    /// siblings follow section-LWW.
+    case mergeCollection(path: [String], idKey: String)
+}
+
+extension SyncSection {
+    /// NOTE: hotkeys/keyMapping arrays live under `__json_data__` because their
+    /// UserDefaults values are JSON-encoded `Data` blobs that
+    /// `JSONValue.from(foundation:)` wraps; personas is file-backed and is not.
+    var mergePolicy: MergePolicy {
+        switch self {
+        case .personas:   return .mergeCollection(path: ["envelope", "personas"], idKey: "id")
+        case .hotkeys:    return .mergeCollection(path: ["hotkeyBindings", "__json_data__"], idKey: "id")
+        case .keyMapping: return .mergeCollection(path: ["keyMappingList", "__json_data__"], idKey: "id")
+        default:          return .replace
+        }
+    }
+
+    /// Reconcile a section payload. `.replace` picks the newer side whole.
+    /// `.mergeCollection` takes scalar fields from the newer side (`frame`) and
+    /// item-merges the array at `path`. When every side lacks the collection
+    /// path, the frame is returned untouched (never materialize an empty blob).
+    func mergedPayload(base: [String: JSONValue], local: [String: JSONValue],
+                       remote: [String: JSONValue], localNewer: Bool) -> [String: JSONValue] {
+        switch mergePolicy {
+        case .replace:
+            return localNewer ? local : remote
+        case let .mergeCollection(path, idKey):
+            let frame = localNewer ? local : remote
+            let b = jsonArrayIfPresent(at: path, in: base)
+            let l = jsonArrayIfPresent(at: path, in: local)
+            let r = jsonArrayIfPresent(at: path, in: remote)
+            if b == nil, l == nil, r == nil { return frame }
+            let items = mergeItemArrays(base: b ?? [], local: l ?? [], remote: r ?? [],
+                                        idKey: idKey, localNewer: localNewer)
+            return settingJSONArray(items, at: path, in: frame)
+        }
+    }
+}
+
 /// The wire shape stored per section on the backend: `{ "v": 1, "data": {...} }`.
 struct SectionPayload: Codable, Equatable {
     var v: Int
