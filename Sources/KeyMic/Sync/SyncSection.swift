@@ -143,7 +143,12 @@ extension SyncSection {
         case .replace:
             return localNewer ? local : remote
         case let .mergeCollection(path, idKey):
-            let frame = localNewer ? local : remote
+            // Scalar fields follow section-LWW (newer side wins shared keys), but a
+            // key only the other side has — e.g. an unknown field a newer client
+            // added to the cloud — is unioned in so it is never dropped.
+            var frame = localNewer ? local : remote
+            let other = localNewer ? remote : local
+            for (k, v) in other where frame[k] == nil { frame[k] = v }
             let b = jsonArrayIfPresent(at: path, in: base)
             let l = jsonArrayIfPresent(at: path, in: local)
             let r = jsonArrayIfPresent(at: path, in: remote)

@@ -27,6 +27,7 @@ struct SyncMergeTests {
         testLocalDeletionPropagates()
         testRemoteOnlyAddPulledIn()
         testBothEditSectionLWW()
+        testOneSidedEditNotOverriddenByLWW()
         testDeleteVsEdit()
         testEditVsDelete()
         testBothSidesDelete()
@@ -40,6 +41,7 @@ struct SyncMergeTests {
         testSectionReplaceIsLWW()
         testSectionPersonasEnvelopePath()
         testSectionAbsentPathNotMaterialized()
+        testSectionPreservesRemoteUnknownField()
         // Engine flows.
         await testDownloadMergesAndRecordsRemoteBase()
         await testDownloadStatusBecomesLocalNewer()
@@ -75,6 +77,21 @@ struct SyncMergeTests {
                "both-edit: localNewer keeps local")
         expect(mergeItemArrays(base: base, local: local, remote: remote, idKey: "id", localNewer: false) == [item("a", 3)],
                "both-edit: !localNewer takes remote")
+    }
+
+    // Only one side changed the item from base ⇒ take the changed side regardless
+    // of the section-LWW verdict (a one-sided edit is not a genuine conflict).
+    static func testOneSidedEditNotOverriddenByLWW() {
+        let base = [item("a", 1)]
+        // local unchanged (== base), remote edited a; localNewer true because some
+        // other local add bumped the section timestamp.
+        let takeRemote = mergeItemArrays(base: base, local: [item("a", 1)], remote: [item("a", 9)],
+                                         idKey: "id", localNewer: true)
+        expect(takeRemote == [item("a", 9)], "one-sided remote edit survives even when localNewer")
+        // remote unchanged, local edited a; !localNewer must still take local's edit.
+        let takeLocal = mergeItemArrays(base: base, local: [item("a", 7)], remote: [item("a", 1)],
+                                        idKey: "id", localNewer: false)
+        expect(takeLocal == [item("a", 7)], "one-sided local edit survives even when !localNewer")
     }
 
     static func testDeleteVsEdit() {
@@ -180,6 +197,20 @@ struct SyncMergeTests {
         let merged = SyncSection.hotkeys.mergedPayload(base: [:], local: local, remote: remote, localNewer: true)
         expect(merged["hotkeyBindings"] == nil, "absent collection path is not materialized")
         expect(merged == local, "frame returned untouched when no side has the collection")
+    }
+
+    // A field only the (newer) remote has must survive the merge even when the
+    // local side wins the section-LWW frame.
+    static func testSectionPreservesRemoteUnknownField() {
+        let local = hotkeysPayload(false, [item("a", 1), item("b", 1)])   // local, no unknown field
+        var remote = hotkeysPayload(true, [item("a", 1)])
+        remote["futureField"] = .string("keep-me")                        // added by a newer client
+        let merged = SyncSection.hotkeys.mergedPayload(base: hotkeysPayload(true, [item("a", 1)]),
+                                                       local: local, remote: remote, localNewer: true)
+        expect(merged["futureField"] == .string("keep-me"), "remote unknown field preserved when localNewer")
+        expect(merged["hotkeysEnabled"] == .bool(false), "shared scalar still follows LWW (local wins)")
+        expect(ids(jsonArray(at: ["hotkeyBindings", "__json_data__"], in: merged)) == ["a", "b"],
+               "items still merged")
     }
 
     // MARK: - Engine flows

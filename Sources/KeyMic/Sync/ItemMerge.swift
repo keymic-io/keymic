@@ -34,8 +34,20 @@ func mergeItemArrays(base: [JSONValue], local: [JSONValue], remote: [JSONValue],
         emitted.insert(id)
         if let remoteItem = remoteById[id] {
             // Present on both sides.
-            if entry == remoteItem { result.append(entry) }
-            else { result.append(localNewer ? entry : remoteItem) }  // both-edit
+            if entry == remoteItem {
+                result.append(entry)                                 // identical
+            } else {
+                let baseItem = baseById[id]
+                let localChanged = entry != baseItem                 // (baseItem == nil ⇒ changed)
+                let remoteChanged = remoteItem != baseItem
+                if localChanged && remoteChanged {
+                    result.append(localNewer ? entry : remoteItem)   // genuine both-edit → LWW
+                } else if localChanged {
+                    result.append(entry)                             // only local changed
+                } else {
+                    result.append(remoteItem)                        // only remote changed
+                }
+            }
         } else if let baseItem = baseById[id] {
             // Remote deleted it.
             if entry == baseItem { /* local unchanged; honor deletion → drop */ }
