@@ -149,6 +149,9 @@ struct Persona: Codable, Identifiable, Equatable {
                     [Selected text]: 01a6c93f-eb7f-4605-93a3-0c0ea3d5c02d
                     [Return text]: 01A6C93F-EB7F-4605-93A3-0C0EA3D5C02D
 
+                    If [User said] is empty, meaningless, or completely unrelated to \
+                    [Selected text] / [Recent clipboard], return an empty string.
+
                     If there is no context, perform normal transcription correction on the input. \
                     Return ONLY the resulting text — no labels, no explanations.
                     """,

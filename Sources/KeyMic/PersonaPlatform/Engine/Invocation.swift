@@ -36,6 +36,10 @@ enum InvocationResult {
 
 enum BypassReason {
     case emptyInput
+    /// The LLM deliberately returned an empty string (e.g. the persona judged
+    /// the transcript meaningless / unrelated to its context). Nothing is
+    /// injected — falling back to the raw transcript would defeat the point.
+    case emptyLLMResponse
 }
 
 enum InvocationError: Error {

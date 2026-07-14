@@ -294,7 +294,8 @@ final class VoiceTrigger: SpeechClient {
                     self?.overlayPanel.updateText(status)
                 }
                 switch result {
-                case .bypassed(.emptyInput):
+                case .bypassed:
+                    // .emptyInput or .emptyLLMResponse — nothing to inject.
                     await MainActor.run {
                         self.overlayPanel.dismiss()
                     }
