@@ -26,6 +26,11 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
     private var tapInstalled = false
     /// 每次 startSession 自增;后台 final decode 捕获其值,新会话开始后丢弃旧结果(防 stale 注入)。
     private var sessionGeneration = 0
+    /// Bluetooth SCO cold start can leave the engine "running" with no frames
+    /// arriving. Mirror AppleSpeechEngine's 800ms watchdog: no first buffer →
+    /// tear down and surface an error instead of silently recording nothing.
+    private var firstBufferReceived = false
+    private var audioWatchdog: DispatchWorkItem?
 
     /// recognizer 须由调用方(AppDelegate)在 off-main 用 sherpa_create_funasr 建好后传入。
     init(recognizer: UnsafeMutableRawPointer, locale: Locale) {
@@ -46,10 +51,16 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         teardown()
         sessionGeneration &+= 1
         capture.reset()
+        firstBufferReceived = false
         engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
             self?.capture.append(buf)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.firstBufferReceived else { return }
+                self.firstBufferReceived = true
+                self.audioWatchdog?.cancel(); self.audioWatchdog = nil
+            }
         }
         tapInstalled = true
         engine.prepare()
@@ -60,6 +71,17 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
             logger.error("engine.start failed: \(error.localizedDescription, privacy: .public)")
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
+        let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
+        let myGen = sessionGeneration
+        let watchdog = DispatchWorkItem { [weak self] in
+            guard let self, self.sessionGeneration == myGen, !self.firstBufferReceived else { return }
+            logger.error(
+                "No audio frames in 800ms — Bluetooth SCO cold-start failure (device: \(deviceName, privacy: .public))")
+            self.teardown()
+            self.onError?("麦克风未响应，请松开后稍候再试")
+        }
+        audioWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: watchdog)
         // 离线非流式:无 partial 计时器(D5)。
         return VoiceSession { [weak self] in self?.teardown() }
     }
@@ -100,6 +122,8 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
     }
 
     private func teardown() {
+        audioWatchdog?.cancel()
+        audioWatchdog = nil
         if tapInstalled {
             engine.inputNode.removeTap(onBus: 0)
             tapInstalled = false

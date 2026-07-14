@@ -2,6 +2,17 @@ import AppKit
 import Observation
 import SwiftUI
 
+// MARK: - Capsule layout
+
+/// Single source of truth for the pickup capsule's geometry, shared by the
+/// capsule panel itself and the picker / console windows that anchor to it.
+enum CapsuleLayout {
+    /// Capsule height.
+    static let height: CGFloat = 56
+    /// Capsule bottom offset above the screen's `visibleFrame.minY`.
+    static let bottomOffset: CGFloat = 56
+}
+
 // MARK: - State
 
 @Observable
@@ -20,7 +31,7 @@ final class OverlayPanel: NSPanel {
     private var pendingToast: String?
     private var toastDismissWorkItem: DispatchWorkItem?
 
-    private let capsuleHeight: CGFloat = 56
+    private let capsuleHeight: CGFloat = CapsuleLayout.height
     private let hPad: CGFloat = 24
     private let waveSize: CGFloat = 44
     private let gap: CGFloat = 14
@@ -73,7 +84,7 @@ final class OverlayPanel: NSPanel {
         guard let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
         let x = area.midX - w / 2
-        let y = area.minY + 56
+        let y = area.minY + CapsuleLayout.bottomOffset
 
         setFrame(NSRect(x: x, y: y - 14, width: w, height: capsuleHeight), display: true)
         alphaValue = 0

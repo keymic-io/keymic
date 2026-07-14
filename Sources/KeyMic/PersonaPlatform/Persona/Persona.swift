@@ -86,7 +86,7 @@ struct Persona: Codable, Identifiable, Equatable {
                     ONLY fix clear, obvious transcription mistakes. When in doubt, leave the text unchanged.
 
                     What to fix:
-                    - English words/acronyms wrongly rendered as sound-alike tokens \
+                    - English words/acronyms wrongly rendered as sound-alike tokens or Chinese characters \
                     (e.g. "pie-thon" → "Python", "jay-son" → "JSON", "A P eye" → "API")
                     - Obvious Chinese homophone errors where context makes the correct character clear
                     - Broken English words or phrases split/merged incorrectly by the recognizer
@@ -110,7 +110,7 @@ struct Persona: Codable, Identifiable, Equatable {
                 id: "builtin-translate",
                 name: "Auto Translate",
                 icon: "globe",
-                stylePrompt: "Automatically detect the input language and translate it into English. Keep the tone professional and fluent. Return ONLY the translated text.",
+                stylePrompt: "Detect the input language and translate it into English. Keep the tone professional and fluent. Preserve technical terms, code identifiers, product names, and numbers as-is. If the input is already English, return it unchanged apart from fixing obvious transcription errors. Return ONLY the translated text — no explanations, no quotes.",
                 temperature: 0.6,
                 hotkey: nil,
                 contextSources: [],
@@ -122,7 +122,7 @@ struct Persona: Codable, Identifiable, Equatable {
                 id: "builtin-cli",
                 name: "CLI Wizard",
                 icon: "terminal",
-                stylePrompt: "Convert voice transcription into executable shell commands. Be concise and accurate for technical users. Return ONLY the command, with no markdown fences.",
+                stylePrompt: "Convert the voice transcription into ONE executable shell command for macOS (zsh). Be concise and accurate for technical users. Prefer tools available on a standard macOS install. Return ONLY the command — a single line, no markdown fences, no leading \"$\", no explanations.",
                 temperature: 0.1,
                 hotkey: nil,
                 contextSources: [],
@@ -136,13 +136,24 @@ struct Persona: Codable, Identifiable, Equatable {
                 name: "Context",
                 icon: "text.quote",
                 stylePrompt: """
-                    You will receive three inputs:
-                    1. [Selected text] — text currently selected in the foreground app (may be empty)
-                    2. [Recent clipboard] — the most recent clipboard text (may be empty)
+                    You may receive some of these inputs (any of them can be absent):
+                    1. [Selected text] — text currently selected in the foreground app
+                    2. [Recent clipboard] — the most recent clipboard text
                     3. [User said] — the user's speech transcription
 
-                    Use the context to infer the intent of [User said], then rewrite it into clearer and more accurate text.\
-                    If context is empty, perform normal transcription correction. Return ONLY the rewritten text.
+                    Treat [User said] as the instruction. Apply it to [Selected text] if present, \
+                    otherwise to [Recent clipboard].
+
+                    Example:
+                    [User said]: change into upper case
+                    [Selected text]: 01a6c93f-eb7f-4605-93a3-0c0ea3d5c02d
+                    [Return text]: 01A6C93F-EB7F-4605-93A3-0C0EA3D5C02D
+
+                    If [User said] is empty, meaningless, or completely unrelated to \
+                    [Selected text] / [Recent clipboard], return an empty string.
+
+                    If there is no context, perform normal transcription correction on the input. \
+                    Return ONLY the resulting text — no labels, no explanations.
                     """,
                 temperature: 0.5,
                 hotkey: nil,
@@ -156,9 +167,10 @@ struct Persona: Codable, Identifiable, Equatable {
                 name: "General Editor",
                 icon: "pencil.and.outline",
                 stylePrompt: """
-                    You are a precise editor that rewrites a user's SELECTED text according to a brief \
-                    INSTRUCTION. Return ONLY the rewritten text — no preamble, no explanations, no quotes, \
-                    no markdown fences. Preserve the original language unless the instruction asks otherwise.
+                    You are a precise editor. Input arrives as [Selected text] (the text to rewrite) and \
+                    [User said] (a brief instruction). Rewrite [Selected text] according to the instruction. \
+                    Return ONLY the rewritten text — no preamble, no explanations, no quotes, no markdown \
+                    fences. Preserve the original language unless the instruction asks otherwise.
                     """,
                 temperature: 0.4,
                 hotkey: nil,

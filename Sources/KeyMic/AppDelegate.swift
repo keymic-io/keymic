@@ -265,12 +265,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             sessionHost: speechSessionHost,
             overlayPanel: overlayPanel,
             personaStore: PersonaStore.shared,
+            clipboardStore: clipboardController.store,
             textInjector: textInjector
         )
-        keyMonitor.onTriggerDown = { [weak self] in
+        keyMonitor.onTriggerDown = { [weak self] source in
             guard let self, self.isVoiceEnabled else { return }
             self.updateStatusIcon(recording: true)
-            Task { @MainActor in self.voiceTrigger.onTriggerDown() }
+            Task { @MainActor in self.voiceTrigger.onTriggerDown(source: source) }
         }
         keyMonitor.onTriggerUp = { [weak self] in
             guard let self else { return }
@@ -287,7 +288,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.updateStatusIcon(recording: false)
             Task { @MainActor in self.voiceTrigger.onExtraneousKeyDuringVoice() }
         }
-        keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isActive ?? false }
+        keyMonitor.onPersonaCycle = { [weak self] forward in
+            guard let self else { return }
+            Task { @MainActor in self.voiceTrigger.onPersonaCycle(forward: forward) }
+        }
+        keyMonitor.isVoiceActive = { [weak self] in self?.voiceTrigger?.isVoiceSessionLive ?? false }
+        keyMonitor.isDefaultTriggerVoiceActive = { [weak self] in self?.voiceTrigger?.isDefaultTriggerVoiceActive ?? false }
+        keyMonitor.isConsoleOpen = { [weak self] in self?.voiceTrigger?.isConsoleOpen ?? false }
         keyMonitor.isVoiceEnabled = { [weak self] in self?.isVoiceEnabled ?? false }
         keyMonitor.onClipboardHotkey = { [weak self] in self?.clipboardController.toggle() }
         keyMonitor.onClipboardSwitcherStep = { [weak self] in self?.clipboardController.stepSwitcher() }
