@@ -48,9 +48,16 @@ struct KeychainVault: KeychainBackend {
 
         let status = SecItemAdd(query as CFDictionary, nil)
         if status == errSecDuplicateItem {
-            let updateAttrs: [String: Any] = [kSecValueData as String: data]
-            let updateStatus = SecItemUpdate(baseQuery(account: account) as CFDictionary, updateAttrs as CFDictionary)
-            if updateStatus != errSecSuccess { throw KeychainError.writeFailed(updateStatus) }
+            // SecItemUpdate cannot replace an existing item's kSecAttrAccessControl,
+            // so updating only kSecValueData would leave a pre-ACL entry readable
+            // without the intended `.userPresence` protection. Delete + re-add so
+            // the current access control (or plain accessibility) always applies.
+            let deleteStatus = SecItemDelete(baseQuery(account: account) as CFDictionary)
+            guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+                throw KeychainError.writeFailed(deleteStatus)
+            }
+            let retryStatus = SecItemAdd(query as CFDictionary, nil)
+            if retryStatus != errSecSuccess { throw KeychainError.writeFailed(retryStatus) }
         } else if status != errSecSuccess {
             throw KeychainError.writeFailed(status)
         }

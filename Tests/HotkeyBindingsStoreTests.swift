@@ -44,7 +44,49 @@ struct HotkeyBindingsStoreTestRunner {
             defaults.data(forKey: "hotkeyBindings") == Data(mixedJSON.utf8),
             "partial decode must not write back during init")
 
+        testRegistrySyncOnMutation()
+        testReloadRereadsDefaults()
+
         print("HotkeyBindingsStoreTests passed")
+    }
+
+    static func makeDefaults() -> UserDefaults {
+        let suiteName = "keymic-test-\(UUID().uuidString)"
+        return UserDefaults(suiteName: suiteName)!
+    }
+
+    static func testRegistrySyncOnMutation() {
+        let registry = HotkeyRegistry()
+        let store = HotkeyBindingsStore(defaults: makeDefaults(), registry: registry)
+        let cfg = HotkeyConfig.parse("ctrl+alt+t")!
+        let binding = HotkeyBinding(trigger: cfg.encode(), actions: [.typeText("x")], enabled: true)
+
+        store.bindings = [binding]
+        expect(
+            registry.conflicts(for: cfg, excluding: nil as HotkeyRegistry.Owner?)
+                .contains { $0.owner == .hotkeyBinding(id: binding.id) },
+            "enabled binding registered")
+
+        var disabled = binding; disabled.enabled = false
+        store.bindings = [disabled]
+        expect(
+            registry.conflicts(for: cfg, excluding: nil as HotkeyRegistry.Owner?).isEmpty,
+            "disabled binding unregistered")
+
+        store.bindings = []
+        expect(registry.all().isEmpty, "removed binding unregistered")
+    }
+
+    static func testReloadRereadsDefaults() {
+        let defaults = makeDefaults()
+        let registry = HotkeyRegistry()
+        let store = HotkeyBindingsStore(defaults: defaults, registry: registry)
+        let binding = HotkeyBinding(trigger: "ctrl+alt+t", actions: [.typeText("x")], enabled: true)
+        // simulate a Config Sync download writing directly to defaults
+        defaults.set(try! JSONEncoder().encode([binding]), forKey: HotkeyBindingsStore.userDefaultsKey)
+        store.reload()
+        expect(store.bindings.count == 1, "reload picked up synced binding")
+        expect(registry.all().count == 1, "reload re-synced registry")
     }
 
     static func expect(_ cond: Bool, _ msg: String) {

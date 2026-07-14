@@ -59,6 +59,25 @@ final class ConfigSyncController {
         self.tokenProvider = tokenProvider
         self.engine = SyncEngine(env: env, state: st, deviceId: deviceId)
         self.enabled = UserDefaults.standard.bool(forKey: SyncStateStore.masterEnabledKey)
+        NotificationCenter.default.addObserver(
+            forName: AccountStore.didSignOutNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleSignOut() }
+        }
+    }
+
+    /// Sign-out invalidates everything account-scoped: per-section revision/remote
+    /// caches (a different account must never inherit this account's
+    /// `lastRemoteData` as its upload base), the local-edit tracker, and the
+    /// master toggle (re-enabling after the next sign-in re-runs the
+    /// first-enable bootstrap against that account's cloud).
+    func handleSignOut() {
+        enabled = false
+        state.reset()
+        lastSeenLocal.removeAll()
+        overall = .notSynced
+        lastError = nil
+        restartHint = false
     }
 
     /// Timestamp of the most recently synced section, for the "last synced" line.
@@ -142,7 +161,18 @@ final class ConfigSyncController {
 
     // MARK: - Actions
 
-    func uploadAll() async { await run { try await self.engine.upload(sections: Array(self.enabledSections), token: $0) } }
+    func uploadAll() async {
+        await run { token in
+            let resp = try await self.engine.upload(sections: Array(self.enabledSections), token: token)
+            // Accepted collection sections were merged and applied to local storage;
+            // hot-reload their in-memory stores (upload posts no download notification).
+            let reload = resp.accepted.compactMap(SyncSection.init(rawValue:)).filter(Self.hotReloadable.contains)
+            if !reload.isEmpty {
+                NotificationCenter.default.post(name: .configSyncDidApply, object: nil,
+                                                userInfo: ["sections": reload.map(\.rawValue)])
+            }
+        }
+    }
 
     func downloadAll() async {
         await run { token in

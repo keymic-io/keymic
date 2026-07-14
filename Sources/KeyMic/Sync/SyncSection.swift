@@ -37,18 +37,20 @@ enum SyncSection: String, CaseIterable {
     var userDefaultsKeys: [String] {
         switch self {
         case .general:
-            return ["automaticallyUpdates"]
+            return ["automaticallyUpdates", "settingsWindowHotkey"]
         case .voice:
-            return ["voiceEnabled", "selectedLocaleCode", "voiceModel", "enableSelectionCopyFallback"]
+            return ["voiceEnabled", "selectedLocaleCode", "voiceModel",
+                     "enableSelectionCopyFallback", "voiceTriggerHotkey"]
         case .llm:
             return ["llmAPIBaseURL", "llmModel"]
         case .clipboard:
             return ["clipboardEnabled", "clipboardMaxHistory", "clipboardIgnoreConfidential",
-                    "clipboardPanelPosition", "clipboardCleanupMode", "clipboardCleanupDays"]
+                    "clipboardPanelPosition", "clipboardCleanupMode", "clipboardCleanupDays",
+                    "clipboardPanelHotkey", "vaultPanelHotkey"]
         case .screenshot:
-            return ["screenshotEnabled"]
+            return ["screenshotEnabled", "screenshotHotkey"]
         case .hotkeys:
-            return ["hotkeysEnabled", "hotkeySettings.v1", "hotkeyBindings"]
+            return ["hotkeysEnabled", "hotkeyBindings"]
         case .keyMapping:
             return ["keyMappingEnabled", "keyMappingList"]
         case .personas:
@@ -105,6 +107,55 @@ enum SyncSection: String, CaseIterable {
                     env.defaults.removeObject(forKey: key)
                 }
             }
+        }
+    }
+}
+
+/// How a section reconciles a 3-way (base/local/remote) difference.
+enum MergePolicy {
+    /// Whole-payload last-write-wins (scalar sections).
+    case replace
+    /// Item-level merge of the array at `path`, keyed by `idKey`; scalar
+    /// siblings follow section-LWW.
+    case mergeCollection(path: [String], idKey: String)
+}
+
+extension SyncSection {
+    /// NOTE: hotkeys/keyMapping arrays live under `__json_data__` because their
+    /// UserDefaults values are JSON-encoded `Data` blobs that
+    /// `JSONValue.from(foundation:)` wraps; personas is file-backed and is not.
+    var mergePolicy: MergePolicy {
+        switch self {
+        case .personas:   return .mergeCollection(path: ["envelope", "personas"], idKey: "id")
+        case .hotkeys:    return .mergeCollection(path: ["hotkeyBindings", "__json_data__"], idKey: "id")
+        case .keyMapping: return .mergeCollection(path: ["keyMappingList", "__json_data__"], idKey: "id")
+        default:          return .replace
+        }
+    }
+
+    /// Reconcile a section payload. `.replace` picks the newer side whole.
+    /// `.mergeCollection` takes scalar fields from the newer side (`frame`) and
+    /// item-merges the array at `path`. When every side lacks the collection
+    /// path, the frame is returned untouched (never materialize an empty blob).
+    func mergedPayload(base: [String: JSONValue], local: [String: JSONValue],
+                       remote: [String: JSONValue], localNewer: Bool) -> [String: JSONValue] {
+        switch mergePolicy {
+        case .replace:
+            return localNewer ? local : remote
+        case let .mergeCollection(path, idKey):
+            // Scalar fields follow section-LWW (newer side wins shared keys), but a
+            // key only the other side has — e.g. an unknown field a newer client
+            // added to the cloud — is unioned in so it is never dropped.
+            var frame = localNewer ? local : remote
+            let other = localNewer ? remote : local
+            for (k, v) in other where frame[k] == nil { frame[k] = v }
+            let b = jsonArrayIfPresent(at: path, in: base)
+            let l = jsonArrayIfPresent(at: path, in: local)
+            let r = jsonArrayIfPresent(at: path, in: remote)
+            if b == nil, l == nil, r == nil { return frame }
+            let items = mergeItemArrays(base: b ?? [], local: l ?? [], remote: r ?? [],
+                                        idKey: idKey, localNewer: localNewer)
+            return settingJSONArray(items, at: path, in: frame)
         }
     }
 }

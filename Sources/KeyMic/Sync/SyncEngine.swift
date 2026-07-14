@@ -24,42 +24,104 @@ final class SyncEngine {
         self.now = now
     }
 
-    /// Upload the given sections. Each section's payload is collected over its
-    /// last-seen remote data (unknown-field preservation) and stamped with its
-    /// tracked localModifiedAt (falling back to now). Accepted sections update
-    /// bookkeeping; stale sections are downloaded into local bookkeeping so the
-    /// next reconcile sees the server value.
+    /// Smallest bump that makes a merged write strictly newer than the record it
+    /// supersedes, so the server (which rejects `modifiedAt <= current`) accepts it.
+    private static let mergeBump: TimeInterval = 0.001
+
+    /// Upload the given sections. Merge needs the current cloud state, so this
+    /// GETs first. Scalar sections push their collected payload and lose to a
+    /// newer cloud value (unchanged LWW). Collection sections push a
+    /// base/local/remote item-merge; the merged union supersedes the cloud, so
+    /// its PUT timestamp is bumped past the cloud record while the *real*
+    /// localModifiedAt still decides item-level conflicts. On accept, the merged
+    /// result is applied locally so remote-only additions are pulled in. A stale
+    /// collection is re-merged against the returned newer record and re-PUT, up
+    /// to two retries; still-stale (or any stale scalar) adopts cloud bookkeeping.
     @discardableResult
     func upload(sections: [SyncSection], token: String) async throws -> ConfigPutResponse {
-        var entries: [String: ConfigPutEntry] = [:]
-        for section in sections {
-            let base = state.state(for: section).lastRemoteData ?? [:]
-            let data = section.collectData(base: base, env: env)
-            let modifiedAt = state.state(for: section).localModifiedAt ?? now()
-            entries[section.rawValue] = ConfigPutEntry(payload: data, modifiedAt: modifiedAt)
-        }
-        let body = ConfigPutBody(deviceId: deviceId, sections: entries)
-        let resp = try await transport.put(body, token: token)
+        var remoteById = (try await transport.get(token: token)).sections
+        var pending = sections
+        var accepted: [String] = []
+        var staleOut: [String: RemoteSection] = [:]
+        var attempt = 0
+        let maxAttempts = 3   // one initial PUT + two stale retries
 
-        for name in resp.accepted {
-            guard let section = SyncSection(rawValue: name),
-                  let entry = entries[name] else { continue }
-            // Server revision for an accepted write = previous + 1; we may not know
-            // the exact number, so re-fetch is authoritative. For now bump locally.
-            let prev = state.state(for: section).serverRevision ?? 0
-            state.recordSynced(section, remoteData: entry.payload, revision: prev + 1, modifiedAt: entry.modifiedAt)
+        while !pending.isEmpty && attempt < maxAttempts {
+            attempt += 1
+            var entries: [String: ConfigPutEntry] = [:]
+            var mergedByName: [String: [String: JSONValue]] = [:]
+            for section in pending {
+                let base = state.state(for: section).lastRemoteData ?? [:]
+                let local = section.collectData(base: base, env: env)
+                let conflictTime = state.state(for: section).localModifiedAt ?? now()
+                let remote = remoteById[section.rawValue]
+                let payload: [String: JSONValue]
+                let putTime: Date
+                switch section.mergePolicy {
+                case .replace:
+                    payload = local
+                    putTime = conflictTime   // real LWW; a newer cloud value wins → stale → adopt
+                case .mergeCollection:
+                    let localNewer = conflictTime > (remote?.modifiedAt ?? .distantPast)
+                    payload = section.mergedPayload(base: base, local: local,
+                                                    remote: remote?.payload ?? [:], localNewer: localNewer)
+                    if let rm = remote?.modifiedAt {
+                        putTime = max(conflictTime, rm.addingTimeInterval(Self.mergeBump))
+                    } else {
+                        putTime = conflictTime
+                    }
+                    mergedByName[section.rawValue] = payload
+                }
+                entries[section.rawValue] = ConfigPutEntry(payload: payload, modifiedAt: putTime)
+            }
+
+            let resp = try await transport.put(ConfigPutBody(deviceId: deviceId, sections: entries), token: token)
+
+            for name in resp.accepted {
+                guard let section = SyncSection(rawValue: name), let entry = entries[name] else { continue }
+                let prev = state.state(for: section).serverRevision ?? 0
+                state.recordSynced(section, remoteData: entry.payload, revision: prev + 1, modifiedAt: entry.modifiedAt)
+                if let merged = mergedByName[name] {
+                    let wasApplying = state.isApplyingRemote
+                    state.isApplyingRemote = true
+                    section.applyData(merged, env: env)   // bring remote-only additions into local
+                    state.isApplyingRemote = wasApplying
+                }
+                accepted.append(name)
+            }
+
+            var next: [SyncSection] = []
+            for (name, record) in resp.stale {
+                guard let section = SyncSection(rawValue: name) else { continue }
+                remoteById[name] = record   // newer cloud record for the next merge
+                switch section.mergePolicy {
+                case .mergeCollection:
+                    next.append(section)    // re-merge (union preserved) and retry
+                case .replace:
+                    // Scalar can never win a stale race; adopt cloud now.
+                    state.recordSynced(section, remoteData: record.payload, revision: record.revision, modifiedAt: record.modifiedAt)
+                    staleOut[name] = record
+                }
+            }
+            pending = next
         }
-        for (name, record) in resp.stale {
-            guard let section = SyncSection(rawValue: name) else { continue }
-            // The server has a newer value than ours; adopt its bookkeeping so a
-            // subsequent download/reconcile applies it rather than re-uploading.
+
+        // Collections still stale after the retry budget → adopt cloud bookkeeping.
+        for section in pending {
+            guard let record = remoteById[section.rawValue] else { continue }
             state.recordSynced(section, remoteData: record.payload, revision: record.revision, modifiedAt: record.modifiedAt)
+            staleOut[section.rawValue] = record
         }
-        return resp
+        return ConfigPutResponse(accepted: accepted, stale: staleOut)
     }
 
-    /// Download all sections and apply the given enabled ones locally. Returns the
-    /// section keys whose local values actually changed.
+    /// Download all sections and apply the given enabled ones locally. Collection
+    /// sections are item-merged against local; scalar sections adopt the cloud
+    /// value (unchanged). No PUT — the base recorded is the cloud value. When a
+    /// collection merge leaves local-only items (`merged != remote`), the
+    /// section's `localModifiedAt` is stamped just past the cloud time so status
+    /// reports `.localNewer` (prompting an Upload). Returns the sections whose
+    /// local values actually changed.
     @discardableResult
     func download(applying enabled: Set<SyncSection>, token: String) async throws -> [SyncSection] {
         let resp = try await transport.get(token: token)
@@ -68,12 +130,29 @@ final class SyncEngine {
         defer { state.isApplyingRemote = false }
         for (name, record) in resp.sections {
             guard let section = SyncSection(rawValue: name), enabled.contains(section) else { continue }
-            let before = section.collectData(base: state.state(for: section).lastRemoteData ?? [:], env: env)
-            if before != record.payload {
-                section.applyData(record.payload, env: env)
+            let base = state.state(for: section).lastRemoteData ?? [:]
+            let local = section.collectData(base: base, env: env)
+            let applyValue: [String: JSONValue]
+            let stampedAt: Date
+            switch section.mergePolicy {
+            case .replace:
+                applyValue = record.payload            // pull adopts cloud
+                stampedAt = record.modifiedAt
+            case .mergeCollection:
+                let localMod = state.state(for: section).localModifiedAt ?? .distantPast
+                let localNewer = localMod > record.modifiedAt
+                applyValue = section.mergedPayload(base: base, local: local,
+                                                   remote: record.payload, localNewer: localNewer)
+                stampedAt = applyValue == record.payload
+                    ? record.modifiedAt
+                    : max(localMod, record.modifiedAt.addingTimeInterval(Self.mergeBump))
+            }
+            if local != applyValue {
+                section.applyData(applyValue, env: env)
                 changed.append(section)
             }
-            state.recordSynced(section, remoteData: record.payload, revision: record.revision, modifiedAt: record.modifiedAt)
+            // Cloud holds `record.payload` (we did not push); record it as the base.
+            state.recordSynced(section, remoteData: record.payload, revision: record.revision, modifiedAt: stampedAt)
         }
         return changed
     }

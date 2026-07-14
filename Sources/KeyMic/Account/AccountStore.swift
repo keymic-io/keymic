@@ -10,6 +10,11 @@ final class AccountStore {
         now: { Date() }
     )
 
+    /// Posted after an explicit sign-out. ConfigSyncController resets its sync
+    /// state on this so a different account never inherits the previous
+    /// account's `lastRemoteData` as its upload base.
+    static let didSignOutNotification = Notification.Name("io.keymic.app.AccountStore.didSignOut")
+
     private let keychain: KeychainStore
     private var fetcher: (String) async throws -> MeResponse
     private let now: () -> Date
@@ -79,5 +84,6 @@ final class AccountStore {
         keychain.delete()
         user = nil
         lastRevokedAt = nil
+        NotificationCenter.default.post(name: Self.didSignOutNotification, object: self)
     }
 }

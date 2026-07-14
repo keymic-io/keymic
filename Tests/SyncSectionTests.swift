@@ -19,7 +19,8 @@ struct SyncSectionTests {
         let env = SyncEnvironment(defaults: defaults, personasFileURL: personasURL)
 
         testScalarRoundTrip(env)
-        testBlobRoundTrip(env)
+        testHotkeyKeysLiveInModuleSections()
+        testHotkeyAbsentEqualsDefaultRoundTrip(env)
         testUnknownFieldPreserved(env)
         testLLMNeverCollectsAPIKey(env)
         testApplyClearsAbsentKeys(env)
@@ -52,29 +53,27 @@ struct SyncSectionTests {
         expect(env.defaults.bool(forKey: "enableSelectionCopyFallback") == false, "fallback restored")
     }
 
-    static func testBlobRoundTrip(_ env: SyncEnvironment) {
-        // hotkeySettings.v1 is stored as JSON-encoded Data. It must sync as a
-        // readable subtree and re-materialize byte-equivalent.
-        let snapshot: [String: Any] = [
-            "version": 1,
-            "featureHotkeys": ["voiceTrigger": "fn", "clipboardPanel": "alt+v"],
-            "personaHotkeys": [:] as [String: String],
-        ]
-        let blob = try! JSONSerialization.data(withJSONObject: snapshot)
-        env.defaults.set(blob, forKey: "hotkeySettings.v1")
-        env.defaults.set(true, forKey: "hotkeysEnabled")
+    // Feature hotkeys sync inside their module's section, as plain strings.
+    static func testHotkeyKeysLiveInModuleSections() {
+        expect(SyncSection.general.userDefaultsKeys.contains("settingsWindowHotkey"), "general owns settingsWindowHotkey")
+        expect(SyncSection.voice.userDefaultsKeys.contains("voiceTriggerHotkey"), "voice owns voiceTriggerHotkey")
+        expect(SyncSection.clipboard.userDefaultsKeys.contains("clipboardPanelHotkey"), "clipboard owns clipboardPanelHotkey")
+        expect(SyncSection.clipboard.userDefaultsKeys.contains("vaultPanelHotkey"), "clipboard owns vaultPanelHotkey")
+        expect(SyncSection.screenshot.userDefaultsKeys.contains("screenshotHotkey"), "screenshot owns screenshotHotkey")
+        expect(SyncSection.hotkeys.userDefaultsKeys == ["hotkeysEnabled", "hotkeyBindings"], "hotkeys section reduced to enabled + bindings")
+    }
 
-        let data = SyncSection.hotkeys.collectData(env: env)
-        env.defaults.removeObject(forKey: "hotkeySettings.v1")
-        SyncSection.hotkeys.applyData(data, env: env)
+    // Absent = default: an unset hotkey key must not appear in the payload,
+    // and applying a payload without it must clear a local customization.
+    static func testHotkeyAbsentEqualsDefaultRoundTrip(_ env: SyncEnvironment) {
+        env.defaults.set("alt+c", forKey: "clipboardPanelHotkey")
+        var data = SyncSection.clipboard.collectData(env: env)
+        expect(data["clipboardPanelHotkey"] == .string("alt+c"), "customization collected")
 
-        guard let restored = env.defaults.data(forKey: "hotkeySettings.v1"),
-              let obj = try? JSONSerialization.jsonObject(with: restored) as? [String: Any] else {
-            fatalError("FAILED: hotkey blob not restored as Data")
-        }
-        expect(obj["version"] as? Int == 1, "blob version restored")
-        let feats = obj["featureHotkeys"] as? [String: String]
-        expect(feats?["voiceTrigger"] == "fn", "blob nested value restored")
+        data.removeValue(forKey: "clipboardPanelHotkey")
+        SyncSection.clipboard.applyData(data, env: env)
+        expect(env.defaults.string(forKey: "clipboardPanelHotkey") == nil,
+               "absent key clears local customization (revert to default)")
     }
 
     static func testUnknownFieldPreserved(_ env: SyncEnvironment) {

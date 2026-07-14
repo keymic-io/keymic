@@ -43,8 +43,19 @@ final class PersonaStore {
         personas.first { $0.id == id }
     }
 
-    func persona(forHotkey hotkey: String) -> Persona? {
-        personas.first { $0.hotkey == hotkey }
+    /// Assign or clear a persona's hotkey (HotkeyConfig.encode() format).
+    /// Kick-out policy: any other persona holding the same hotkey loses it.
+    /// No-op if the persona doesn't exist.
+    func setHotkey(_ raw: String?, personaId: String) {
+        guard let idx = personas.firstIndex(where: { $0.id == personaId }) else { return }
+        if let raw {
+            for i in personas.indices where personas[i].id != personaId && personas[i].hotkey == raw {
+                personas[i].hotkey = nil
+            }
+        }
+        personas[idx].hotkey = raw
+        personas[idx].updatedAt = Date()
+        save()
     }
 
     func setActive(_ id: String?) {
