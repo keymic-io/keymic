@@ -53,11 +53,11 @@ final class ContextConsolePanel: NSPanel {
         if let screen = NSScreen.main {
             let v = screen.visibleFrame
             // Bottom-align with the capsule's bottom edge (the capsule sits at
-            // visibleFrame.minY + 56) and center horizontally — the console
-            // appears where the pickup capsule was, not floating mid-screen.
+            // visibleFrame.minY + bottomOffset) and center horizontally — the
+            // console appears where the pickup capsule was, not floating mid-screen.
             setFrameOrigin(NSPoint(
                 x: v.midX - frame.width / 2,
-                y: v.minY + 56
+                y: v.minY + CapsuleLayout.bottomOffset
             ))
         }
         orderFrontRegardless()

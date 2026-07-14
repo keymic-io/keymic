@@ -117,11 +117,12 @@ final class VoiceTrigger: SpeechClient {
         pickerState.fieldTextPreview = SelectionTextProvider.axFocusedFieldValue()
         pickerState.clipboardHistory = clipboardStore.recentTexts(limit: 10)
 
-        // Anchor above the capsule. The capsule sits at y = visibleFrame.minY + 56,
-        // height 56 → its top is minY + 112, centered on visibleFrame.midX.
+        // Anchor above the capsule. The capsule sits at y = visibleFrame.minY +
+        // bottomOffset with height `height`, so its top is that sum, centered on
+        // visibleFrame.midX.
         guard let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
-        pickerPanel.present(aboveCapsuleTop: area.minY + 56 + 56, centerX: area.midX)
+        pickerPanel.present(aboveCapsuleTop: area.minY + CapsuleLayout.bottomOffset + CapsuleLayout.height, centerX: area.midX)
     }
 
     func onPersonaCycle(forward: Bool) {
@@ -150,8 +151,7 @@ final class VoiceTrigger: SpeechClient {
         runTask?.cancel()
         runTask = nil
         session?.cancel()
-        consolePanel?.orderOut(nil)
-        consolePanel = nil
+        closeConsole()
         cleanupSessionState(dismissOverlay: true)
     }
 
@@ -371,8 +371,7 @@ final class VoiceTrigger: SpeechClient {
                 // Trim the edited transcript FIRST: an empty transcript must not
                 // record MRU or fire an LLM run — treat it like a cancel.
                 let trimmed = consoleState.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                self.consolePanel?.orderOut(nil)
-                self.consolePanel = nil
+                self.closeConsole()
                 guard !trimmed.isEmpty else {
                     self.cleanupSessionState(dismissOverlay: true)
                     return
@@ -384,8 +383,7 @@ final class VoiceTrigger: SpeechClient {
             },
             onCancel: { [weak self] in
                 guard let self else { return }
-                self.consolePanel?.orderOut(nil)
-                self.consolePanel = nil
+                self.closeConsole()
                 self.cleanupSessionState(dismissOverlay: true)
             }
         )
@@ -421,10 +419,15 @@ final class VoiceTrigger: SpeechClient {
         }
     }
 
-    private func cleanupSessionState(dismissOverlay: Bool) {
-        pickerPanel.dismiss()
+    /// Tear down the context console if one is showing. Idempotent.
+    private func closeConsole() {
         consolePanel?.orderOut(nil)
         consolePanel = nil
+    }
+
+    private func cleanupSessionState(dismissOverlay: Bool) {
+        pickerPanel.dismiss()
+        closeConsole()
         finalResultTimer?.invalidate()
         finalResultTimer = nil
         isRecording = false
