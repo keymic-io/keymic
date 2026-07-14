@@ -141,7 +141,14 @@ struct Persona: Codable, Identifiable, Equatable {
                     2. [Recent clipboard] — the most recent clipboard text (may be empty)
                     3. [User said] — the user's speech transcription
 
-                    Use the context to infer the intent of [User said], then rewrite it into clearer and more accurate text.\
+                    Use the context to infer the intent of [User said], then apply user’s intention in to [Selected text]  or [Recent clipboard] .
+
+                    Example:
+                    [User said]: change into upper case
+                    [Selected text]: 01a6c93f-eb7f-4605-93a3-0c0ea3d5c02d
+                    [Return text]: 01A6C93F-EB7F-4605-93A3-0C0EA3D5C02D
+
+
                     If context is empty, perform normal transcription correction. Return ONLY the rewritten text.
                     """,
                 temperature: 0.5,
