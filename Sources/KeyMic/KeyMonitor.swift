@@ -559,7 +559,6 @@ final class KeyMonitor {
                     let id = persona.id
                     state.personaHotkeyKeyDown = keyCode
                     DispatchQueue.main.async { [weak self] in
-                        PersonaStore.shared.setActive(id)
                         self?.onTriggerDown?(.personaHotkey(personaId: id))
                     }
                     return nil
