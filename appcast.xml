@@ -4,11 +4,11 @@
         <title>KeyMic</title>
         <item>
             <title>1.0.3</title>
-            <pubDate>Tue, 14 Jul 2026 22:42:09 +1000</pubDate>
+            <pubDate>Tue, 14 Jul 2026 23:24:38 +1000</pubDate>
             <sparkle:version>1.0.3</sparkle:version>
             <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/keymic-io/keymic/releases/download/v1.0.3/KeyMic-1.0.3.zip" length="4703189" type="application/octet-stream" sparkle:edSignature="m3ZvqKEQA0BZhny3f6VD7LpfWOFW7aLlHw+SDzPL3wHzU6B8ZQuHTOXbi6Lm/+ixIE9G4sPV1PoiKAsi1n4zDA=="/>
+            <enclosure url="https://github.com/keymic-io/keymic/releases/download/v1.0.3/KeyMic-1.0.3-universal.zip" length="4703184" type="application/octet-stream" sparkle:edSignature="U5tTksYAmam9XYHH1SqaLsfk2vJk3mkpuhj+MRxIZZbYuH4IqMUY9la+VQAORWLrCHcZni4YQxQqfg//2Eq3Aw=="/>
         </item>
     </channel>
 </rss>
