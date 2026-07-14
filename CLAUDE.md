@@ -8,7 +8,6 @@ KeyMic is a single macOS menu-bar app (`LSUIElement`) that bundles several produ
 
 - **Voice input** — hold a trigger key (Fn or Right Option), speak, transcribed text is routed into the focused field. Transcription runs on one of four swappable engines (see *Speech engines*). Optional LLM refinement runs through the **Persona** pipeline.
 - **Personas** — the voice/LLM path is generalized into user-configurable "personas" (`Persona`: style prompt, temperature, hotkey, context sources, injection strategy). `PersonaEngine.run(Invocation)` builds context, calls the LLM, and hands the result to `OutputRouter` (see *PersonaPlatform & output routing*).
-- **Selected Text Editor** — hotkey-triggered panel (`Sources/KeyMic/SelectedTextEditor/`) that grabs the current selection, lets the user edit it with an LLM prompt + hold-to-talk voice, and injects the result back.
 - **Clipboard history** — text-only background monitor, SwiftData-backed storage, hotkey panel (`⌥V`) with search, arrow navigation, `⌥1`–`⌥0` quick paste, hold-modifier switcher gesture, and space-separated multi-paste.
 - **Key mapping** — Karabiner-style modifier remaps applied via a session-level `CGEvent` tap (e.g. Right Cmd → Forward Delete, Caps Lock → Left Control).
 - **Hotkey actions** — user-configurable shortcuts bound to `HotkeyAction` cases (`HotkeyConfig` + `HotkeyBindingsStore` + `HotkeyActionRunner`).
@@ -53,7 +52,7 @@ The SwiftPM package has two targets: the `KeyMic` executable and a `CSherpaOnnx`
 
 `Sources/KeyMic/AppDelegate.swift` owns every long-lived component and connects them by callback:
 
-- `KeyMonitor` → emits `onTriggerDown` / `onTriggerUp` (voice hold), `onClipboardHotkey` (⌥V), `onSelectedTextEditorHotkey`, and per-persona hotkeys.
+- `KeyMonitor` → emits `onTriggerDown` / `onTriggerUp` (voice hold), `onClipboardHotkey` (⌥V), and per-persona hotkeys.
 - Voice path: `KeyMonitor.onTriggerDown/Up` → `VoiceTrigger` (in `PersonaPlatform/Triggers/`) → active `SpeechEngineProtocol` via `SpeechSessionHost` → 2 s grace timer → `PersonaEngine.run(Invocation)` → `LLMClient` → `OutputRouter.route(PersonaOutput)` → `InjectionStrategy` handler (Cmd+V via `TextInjector`, or clipboard/openURL/shell/iTerm). `AppDelegate` constructs the platform graph in `applicationDidFinishLaunching` and routes engine callbacks via `speechSessionHost.routePartial/Final/Error/AudioLevel`.
 - The speech engine starts on the cheap Apple path (main-safe, no model load), then `applySpeechEnginePreference()` asynchronously loads and swaps in a heavier engine (SenseVoice / ONNX / SpeechAnalyzer) off the main thread once its model is ready. A generation counter guards against a stale async swap clobbering a newer decision.
 - Clipboard path: `onClipboardHotkey` → `ClipboardController.toggle` (showing `ClipboardPanel` SwiftUI view).
@@ -94,7 +93,7 @@ The LLM+injection half of the voice path. `PersonaEngine.run(Invocation)` (trans
 
 `OutputRouter.route(PersonaOutput)` dispatches on `InjectionStrategy`: `replaceFocusedText`, `replaceSelection`, `clipboard`, `openURL(template)` (scheme-safelisted, `{query}`/`{selection}`/`{clipboard}` placeholders), `runShell(commandTemplate)` (via `ShellOutputRunner` + `ShellConfirmationSheet`), `writeToITermPane` (via `Output/iTerm/ITermBridge`). Falls back to clipboard with a typed `FallbackReason` when injection is impossible (no focused element, AX permission missing, etc.).
 
-`PersonaStore.shared` persists personas; built-ins include the general editor persona used by the Selected Text Editor.
+`PersonaStore.shared` persists personas; built-ins include a general editor persona (`replaceSelection` strategy, `[.selection]` context).
 
 ### Context & input state
 

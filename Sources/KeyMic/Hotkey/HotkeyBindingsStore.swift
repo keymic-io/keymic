@@ -10,24 +10,49 @@ final class HotkeyBindingsStore {
     private static let logger = Logger(subsystem: "io.keymic.app", category: "HotkeyBindingsStore")
 
     var bindings: [HotkeyBinding] {
-        didSet { save() }
+        didSet {
+            save()
+            syncRegistry()
+        }
     }
 
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let registry: HotkeyRegistry
     /// Guards against any save during init — a decode failure must never trigger an
     /// immediate write-back that overwrites the (possibly recoverable) data on disk.
     @ObservationIgnored private var isLoaded = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, registry: HotkeyRegistry = .shared) {
         self.defaults = defaults
+        self.registry = registry
         self.bindings = Self.load(from: defaults)
         self.isLoaded = true
+        syncRegistry()
+    }
+
+    /// Re-read from defaults (Config Sync download rewrote the key) and re-sync.
+    func reload() {
+        isLoaded = false
+        bindings = Self.load(from: defaults)
+        isLoaded = true
+        syncRegistry()
     }
 
     private func save() {
         guard isLoaded else { return }
         guard let data = try? JSONEncoder().encode(bindings) else { return }
         defaults.set(data, forKey: Self.userDefaultsKey)
+    }
+
+    private func syncRegistry() {
+        for entry in registry.all() {
+            if case .hotkeyBinding = entry.owner { registry.unregister(owner: entry.owner) }
+        }
+        for binding in bindings where binding.enabled {
+            guard let cfg = HotkeyConfig.parse(binding.trigger) else { continue }
+            registry.register(cfg, owner: .hotkeyBinding(id: binding.id),
+                              purpose: String(localized: "Shortcut: \(cfg.displayString())"))
+        }
     }
 
     /// Wrapper that swallows per-element decode failures, so one corrupt record (or a

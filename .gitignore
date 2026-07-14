@@ -33,5 +33,3 @@ scripts/keys/
 # Agent runtime
 agent-runtime/
 
-# GSD planning artifacts (local only)
-.planning/

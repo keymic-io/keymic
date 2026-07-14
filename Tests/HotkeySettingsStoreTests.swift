@@ -11,25 +11,16 @@ private func assert(_ condition: @autoclosure () -> Bool, _ message: String) {
 @main
 struct HotkeySettingsStoreTests {
     static func main() throws {
-        try testInitializesCompleteSnapshot()
-        try testPersistsFeatureHotkey()
-        try testPersistsPersonaHotkey()
-        try testIgnoresInvalidPersonaHotkey()
-        try testFeatureFallbackForInvalidStoredValue()
         try testRejectsDuplicateAcrossFeatures()
-        try testRejectsDuplicateAcrossPersona()
-        try testPersonaRecordingKicksOutOtherPersona()
-        try testPersonaRecordingThrowsOnFeatureConflict()
-        try testValidationMessageSkipsPersonaConflictForPersonaOwner()
         try testRejectsNonModifierVoiceTrigger()
         try testRejectsPureModifierFeatureHotkey()
         try testRejectsSingleKeyFeatureHotkey()
-        try testRejectsPureModifierPersonaHotkey()
-        try testRejectsSingleKeyPersonaHotkey()
-        try testSanitizesInvalidStoredFeatureShape()
-        try testSanitizesInvalidStoredPersonaShape()
-        try testResetHotkeyPersistsDefault()
-        try testResetHotkeyRejectsConflictingDefault()
+        try testValidationBlocksFeatureConflictViaRegistry()
+        try testValidationSkipsPersonaPersonaConflict()
+        try testDispersedKeyRoundTrip()
+        try testSetterRegistersIntoRegistry()
+        try testMigrationFromBlob()
+        try testMigrationFromLegacyVoiceTriggerKey()
         print("HotkeySettingsStoreTests passed")
     }
 
@@ -39,84 +30,28 @@ struct HotkeySettingsStoreTests {
         return defaults
     }
 
-    private static func makeStore(
-        defaults: UserDefaults = makeDefaults(),
-        personas: [Persona] = []
-    ) -> HotkeySettingsStore {
-        HotkeySettingsStore(defaults: defaults, personasProvider: { personas })
-    }
-
-    private static func testInitializesCompleteSnapshot() throws {
-        let store = makeStore(personas: [
-            Persona(
-                id: "p1",
-                name: "P1",
-                icon: "sparkles",
-                stylePrompt: "",
-                temperature: 0.3,
-                hotkey: "cmd+alt+1",
-                contextSources: [],
-                builtIn: false,
-                createdAt: Date(),
-                updatedAt: Date()
-            )
-        ])
-
-        assert(store.rawHotkey(for: .voiceTrigger) == "fn", "voice default should be fn")
-        assert(store.rawHotkey(for: .clipboardPanel) == "alt+v", "clipboard default should be alt+v")
-        assert(store.rawHotkey(for: .vaultPanel) == "alt+b", "vault default should be alt+b")
-        assert(store.rawHotkey(for: .settingsWindow) == "cmd+shift+,", "settings default should be cmd+shift+,")
-        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "screenshot default should be ctrl+alt+a")
-        for feature in HotkeyFeature.allCases {
-            assert(store.hotkey(for: feature) != nil, "default hotkey for \(feature.rawValue) should parse")
+    private static func makePersonaStore(personaIds: [String]) -> PersonaStore {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hotkey-settings-store-tests-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        let store = PersonaStore(storeURL: tmp.appendingPathComponent("personas.json"))
+        let now = Date()
+        for id in personaIds {
+            store.add(Persona(
+                id: id, name: id, icon: "star",
+                stylePrompt: "", temperature: 0.5, hotkey: nil,
+                contextSources: [], builtIn: false,
+                createdAt: now, updatedAt: now
+            ))
         }
-        assert(store.rawPersonaHotkey(personaId: "p1") == "cmd+alt+1", "initial persona hotkey should be captured")
-    }
-
-    private static func testPersistsFeatureHotkey() throws {
-        let defaults = makeDefaults()
-        var store = makeStore(defaults: defaults)
-        try store.setHotkey(HotkeyConfig(modifiers: [.maskCommand, .maskShift], keyCode: 0x0B), for: .screenshot)
-
-        store = makeStore(defaults: defaults)
-        assert(store.rawHotkey(for: .screenshot) == "shift+cmd+b", "feature hotkey should persist")
-    }
-
-    private static func testPersistsPersonaHotkey() throws {
-        let defaults = makeDefaults()
-        var store = makeStore(defaults: defaults)
-        try store.setPersonaHotkey(HotkeyConfig(modifiers: [.maskCommand, .maskAlternate], keyCode: 0x0C), personaId: "p1")
-
-        store = makeStore(defaults: defaults)
-        assert(store.rawPersonaHotkey(personaId: "p1") == "alt+cmd+q", "persona hotkey should persist")
-    }
-
-    private static func testIgnoresInvalidPersonaHotkey() throws {
-        let defaults = makeDefaults()
-        let snapshot = HotkeySettingsSnapshot(
-            version: 1,
-            featureHotkeys: HotkeyFeature.defaults,
-            personaHotkeys: ["p1": "not-a-hotkey"]
-        )
-        defaults.set(try JSONEncoder().encode(snapshot), forKey: HotkeySettingsStore.userDefaultsKey)
-
-        let store = makeStore(defaults: defaults)
-        assert(store.rawPersonaHotkey(personaId: "p1") == nil, "invalid persona hotkey should be ignored")
-    }
-
-    private static func testFeatureFallbackForInvalidStoredValue() throws {
-        let defaults = makeDefaults()
-        var featureHotkeys = HotkeyFeature.defaults
-        featureHotkeys[HotkeyFeature.screenshot.rawValue] = "not-a-hotkey"
-        let snapshot = HotkeySettingsSnapshot(version: 1, featureHotkeys: featureHotkeys, personaHotkeys: [:])
-        defaults.set(try JSONEncoder().encode(snapshot), forKey: HotkeySettingsStore.userDefaultsKey)
-
-        let store = makeStore(defaults: defaults)
-        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "invalid feature hotkey should fall back to default")
+        return store
     }
 
     private static func testRejectsDuplicateAcrossFeatures() throws {
-        let store = makeStore()
+        // Feature-vs-feature conflicts are registry-backed; the store's own
+        // init/registerAll registers the clipboardPanel default into `registry`.
+        let registry = HotkeyRegistry()
+        let store = HotkeySettingsStore(defaults: makeDefaults(), registry: registry)
         do {
             try store.setHotkey(HotkeyConfig.parse("alt+v")!, for: .vaultPanel)
             assert(false, "duplicate feature hotkey should throw")
@@ -125,59 +60,8 @@ struct HotkeySettingsStoreTests {
         }
     }
 
-    private static func testRejectsDuplicateAcrossPersona() throws {
-        let store = makeStore()
-        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p1")
-        do {
-            try store.setHotkey(HotkeyConfig.parse("cmd+alt+q")!, for: .screenshot)
-            assert(false, "duplicate persona hotkey should throw")
-        } catch let error as HotkeySettingsStore.ValidationError {
-            assert(error.message.contains("Persona"), "duplicate error should mention Persona")
-        }
-    }
-
-    private static func testPersonaRecordingKicksOutOtherPersona() throws {
-        let store = makeStore()
-        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p1")
-        assert(store.rawPersonaHotkey(personaId: "p1") == "alt+cmd+q", "p1 should hold the original hotkey")
-
-        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p2")
-
-        assert(store.rawPersonaHotkey(personaId: "p1") == nil, "p1 binding should be cleared after p2 takes the same hotkey")
-        assert(store.rawPersonaHotkey(personaId: "p2") == "alt+cmd+q", "p2 should now hold the hotkey")
-    }
-
-    private static func testPersonaRecordingThrowsOnFeatureConflict() throws {
-        let store = makeStore()
-        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p1")
-
-        do {
-            try store.setPersonaHotkey(HotkeyConfig.parse("alt+v")!, personaId: "p1")
-            assert(false, "persona hotkey conflicting with feature should throw")
-        } catch let error as HotkeySettingsStore.ValidationError {
-            assert(error.message.contains("Clipboard"), "feature conflict error should mention Clipboard")
-        }
-
-        assert(store.rawPersonaHotkey(personaId: "p1") == "alt+cmd+q", "p1 binding should remain unchanged after feature conflict")
-    }
-
-    private static func testValidationMessageSkipsPersonaConflictForPersonaOwner() throws {
-        let store = makeStore()
-        try store.setPersonaHotkey(HotkeyConfig.parse("cmd+alt+q")!, personaId: "p1")
-
-        let cfg = HotkeyConfig.parse("cmd+alt+q")!
-        assert(
-            store.validationMessage(for: cfg, owner: .persona("p2")) == nil,
-            "validationMessage for persona owner should ignore persona-to-persona conflicts (kick-out policy)"
-        )
-
-        let featureConfig = HotkeyConfig.parse("alt+v")!
-        let msg = store.validationMessage(for: featureConfig, owner: .persona("p2"))
-        assert(msg != nil && msg!.contains("Clipboard"), "validationMessage for persona owner should still report feature conflict; got \(msg ?? "nil")")
-    }
-
     private static func testRejectsNonModifierVoiceTrigger() throws {
-        let store = makeStore()
+        let store = HotkeySettingsStore(defaults: makeDefaults(), registry: HotkeyRegistry())
         do {
             try store.setHotkey(HotkeyConfig.parse("cmd+alt+q")!, for: .voiceTrigger)
             assert(false, "non-modifier voice trigger should throw")
@@ -187,7 +71,7 @@ struct HotkeySettingsStoreTests {
     }
 
     private static func testRejectsPureModifierFeatureHotkey() throws {
-        let store = makeStore()
+        let store = HotkeySettingsStore(defaults: makeDefaults(), registry: HotkeyRegistry())
         do {
             try store.setHotkey(HotkeyConfig.parse("rightalt")!, for: .screenshot)
             assert(false, "pure modifier feature hotkey should throw")
@@ -197,7 +81,7 @@ struct HotkeySettingsStoreTests {
     }
 
     private static func testRejectsSingleKeyFeatureHotkey() throws {
-        let store = makeStore()
+        let store = HotkeySettingsStore(defaults: makeDefaults(), registry: HotkeyRegistry())
         do {
             try store.setHotkey(HotkeyConfig.parse("q")!, for: .screenshot)
             assert(false, "single-key feature hotkey should throw")
@@ -206,75 +90,74 @@ struct HotkeySettingsStoreTests {
         }
     }
 
-    private static func testRejectsPureModifierPersonaHotkey() throws {
-        let store = makeStore()
-        do {
-            try store.setPersonaHotkey(HotkeyConfig.parse("rightalt")!, personaId: "p1")
-            assert(false, "pure modifier persona hotkey should throw")
-        } catch let error as HotkeySettingsStore.ValidationError {
-            assert(error.message == "Need a key, not just modifiers", "persona pure modifier error should match UI wording")
-        }
+    /// Registry-backed replacement for the deleted `testPersonaRecordingThrowsOnFeatureConflict`:
+    /// a persona recording a hotkey already held by a feature (registered via the store's own
+    /// registerAll at init) is blocked.
+    private static func testValidationBlocksFeatureConflictViaRegistry() throws {
+        let registry = HotkeyRegistry()
+        let store = HotkeySettingsStore(defaults: makeDefaults(), registry: registry)
+        let msg = store.validationMessage(for: HotkeyConfig.parse("alt+v")!, owner: .persona("p1"))
+        assert(msg?.contains("Clipboard panel") == true, "persona recording blocked by feature entry")
     }
 
-    private static func testRejectsSingleKeyPersonaHotkey() throws {
-        let store = makeStore()
-        do {
-            try store.setPersonaHotkey(HotkeyConfig.parse("q")!, personaId: "p1")
-            assert(false, "single-key persona hotkey should throw")
-        } catch let error as HotkeySettingsStore.ValidationError {
-            assert(error.message == "Need at least one modifier", "persona single-key error should match UI wording")
-        }
+    /// Registry-backed replacement for the deleted `testValidationMessageSkipsPersonaConflictForPersonaOwner`:
+    /// persona-vs-persona conflicts resolve by kick-out at commit time and must never block recording.
+    private static func testValidationSkipsPersonaPersonaConflict() throws {
+        let registry = HotkeyRegistry()
+        registry.register(HotkeyConfig.parse("alt+q")!, owner: .persona(id: "other"), purpose: "Persona: Other")
+        let store = HotkeySettingsStore(defaults: makeDefaults(), registry: registry)
+        let msg = store.validationMessage(for: HotkeyConfig.parse("alt+q")!, owner: .persona("p1"))
+        assert(msg == nil, "persona-persona conflicts resolve by kick-out, not blocked")
     }
 
-    private static func testSanitizesInvalidStoredFeatureShape() throws {
+    static func testDispersedKeyRoundTrip() throws {
         let defaults = makeDefaults()
-        var featureHotkeys = HotkeyFeature.defaults
-        featureHotkeys[HotkeyFeature.screenshot.rawValue] = "fn"
-        featureHotkeys[HotkeyFeature.clipboardPanel.rawValue] = "q"
-        let snapshot = HotkeySettingsSnapshot(version: 1, featureHotkeys: featureHotkeys, personaHotkeys: [:])
-        defaults.set(try JSONEncoder().encode(snapshot), forKey: HotkeySettingsStore.userDefaultsKey)
-
-        let store = makeStore(defaults: defaults)
-        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "stored pure-modifier feature hotkey should fall back to default")
-        assert(store.rawHotkey(for: .clipboardPanel) == "alt+v", "stored single-key feature hotkey should fall back to default")
+        let store = HotkeySettingsStore(defaults: defaults, registry: HotkeyRegistry())
+        // default: no key on disk, default value served
+        assert(defaults.string(forKey: "clipboardPanelHotkey") == nil, "default not persisted")
+        assert(store.rawHotkey(for: .clipboardPanel) == "alt+v", "default served when key absent")
+        // customize: key written
+        try store.setHotkey(HotkeyConfig.parse("alt+c")!, for: .clipboardPanel)
+        assert(defaults.string(forKey: "clipboardPanelHotkey") == "alt+c", "customization persisted per-key")
+        // reset: key removed
+        try store.resetHotkey(for: .clipboardPanel)
+        assert(defaults.string(forKey: "clipboardPanelHotkey") == nil, "reset removes the key")
+        assert(store.rawHotkey(for: .clipboardPanel) == "alt+v", "reset restores default")
     }
 
-    private static func testSanitizesInvalidStoredPersonaShape() throws {
+    static func testSetterRegistersIntoRegistry() throws {
+        let registry = HotkeyRegistry()
+        let store = HotkeySettingsStore(defaults: makeDefaults(), registry: registry)
+        try store.setHotkey(HotkeyConfig.parse("alt+c")!, for: .clipboardPanel)
+        let hits = registry.conflicts(for: HotkeyConfig.parse("alt+c")!, excluding: nil as HotkeyRegistry.Owner?)
+        assert(hits.contains { $0.owner == .clipboardPanel }, "setter refreshes registry entry")
+    }
+
+    static func testMigrationFromBlob() throws {
         let defaults = makeDefaults()
-        let snapshot = HotkeySettingsSnapshot(
-            version: 1,
-            featureHotkeys: HotkeyFeature.defaults,
-            personaHotkeys: ["p1": "fn", "p2": "q", "p3": "cmd+alt+q"]
-        )
-        defaults.set(try JSONEncoder().encode(snapshot), forKey: HotkeySettingsStore.userDefaultsKey)
-
-        let store = makeStore(defaults: defaults)
-        assert(store.rawPersonaHotkey(personaId: "p1") == nil, "stored pure-modifier persona hotkey should be ignored")
-        assert(store.rawPersonaHotkey(personaId: "p2") == nil, "stored single-key persona hotkey should be ignored")
-        assert(store.rawPersonaHotkey(personaId: "p3") == "cmd+alt+q", "stored valid persona hotkey should remain")
+        // seed a legacy blob: customized screenshot key + one persona hotkey
+        let blob: [String: Any] = [
+            "version": 1,
+            "featureHotkeys": ["screenshot": "ctrl+alt+s", "clipboardPanel": "alt+v"],
+            "personaHotkeys": ["user-a": "alt+q"],
+        ]
+        defaults.set(try JSONSerialization.data(withJSONObject: blob), forKey: "hotkeySettings.v1")
+        let personaStore = makePersonaStore(personaIds: ["user-a"])   // temp-file store with one persona
+        HotkeySettingsStore.migrateIfNeeded(defaults: defaults, personaStore: personaStore)
+        assert(defaults.string(forKey: "screenshotHotkey") == "ctrl+alt+s", "customized feature migrated")
+        assert(defaults.string(forKey: "clipboardPanelHotkey") == nil, "default-valued feature not migrated")
+        assert(personaStore.persona(id: "user-a")?.hotkey == "alt+q", "persona hotkey migrated to model")
+        assert(defaults.bool(forKey: "hotkeyStorageMigrated.v2"), "flag set")
+        // idempotent: second run with mutated blob must be a no-op
+        defaults.set("garbage".data(using: .utf8), forKey: "hotkeySettings.v1")
+        HotkeySettingsStore.migrateIfNeeded(defaults: defaults, personaStore: personaStore)
+        assert(defaults.string(forKey: "screenshotHotkey") == "ctrl+alt+s", "second run is a no-op")
     }
 
-    private static func testResetHotkeyPersistsDefault() throws {
+    static func testMigrationFromLegacyVoiceTriggerKey() throws {
         let defaults = makeDefaults()
-        var store = makeStore(defaults: defaults)
-        try store.setHotkey(HotkeyConfig.parse("ctrl+shift+a")!, for: .screenshot)
-        try store.resetHotkey(for: .screenshot)
-
-        store = makeStore(defaults: defaults)
-        assert(store.rawHotkey(for: .screenshot) == "ctrl+alt+a", "reset feature hotkey should persist default")
-    }
-
-    private static func testResetHotkeyRejectsConflictingDefault() throws {
-        let store = makeStore()
-        try store.setHotkey(HotkeyConfig.parse("ctrl+shift+a")!, for: .screenshot)
-        try store.setPersonaHotkey(HotkeyConfig.parse("ctrl+alt+a")!, personaId: "p1")
-
-        do {
-            try store.resetHotkey(for: .screenshot)
-            assert(false, "reset should reject a default hotkey already used by another owner")
-        } catch let error as HotkeySettingsStore.ValidationError {
-            assert(error.message.contains("Persona"), "reset conflict should mention the conflicting owner")
-        }
-        assert(store.rawHotkey(for: .screenshot) == "ctrl+shift+a", "failed reset should leave existing feature hotkey unchanged")
+        defaults.set("rightalt", forKey: "voiceTriggerKey")   // pre-v1 builds
+        HotkeySettingsStore.migrateIfNeeded(defaults: defaults, personaStore: makePersonaStore(personaIds: []))
+        assert(defaults.string(forKey: "voiceTriggerHotkey") == "rightalt", "legacy voice trigger migrated")
     }
 }

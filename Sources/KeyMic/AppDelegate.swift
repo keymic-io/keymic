@@ -55,7 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
-    private var selectedTextEditorController: SelectedTextEditorController!
 
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
@@ -67,13 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// (Sparkle's SULastCheckTime, screenshot prefs, any @AppStorage write…),
     /// which would interrupt an in-progress dictation session.
     private struct InputConfigSnapshot: Equatable {
-        let hotkeys: HotkeySettingsSnapshot
+        let featureHotkeys: [String: String]
+        let personaHotkeys: [String: String]
         let keyMappings: [KeyMapping]
         let keyMappingEnabled: Bool
 
         static func current() -> InputConfigSnapshot {
             InputConfigSnapshot(
-                hotkeys: HotkeySettingsStore.shared.snapshot,
+                featureHotkeys: HotkeySettingsStore.shared.featureHotkeys,
+                personaHotkeys: Dictionary(uniqueKeysWithValues:
+                    PersonaStore.shared.personas.compactMap { p in p.hotkey.map { (p.id, $0) } }),
                 keyMappings: KeyMappingManager.shared.mappings,
                 keyMappingEnabled: KeyMappingManager.shared.isEnabled
             )
@@ -151,8 +153,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Lifecycle
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        URLSchemeHandler.shared.register()
+    }
+
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            Task { await AuthClient.handleCallback(url) }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         if activateExistingInstanceIfNeeded() { return }
+
+        Task { @MainActor in await AccountStore.shared.refresh() }
+        Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
+            Task { await AccountStore.shared.refresh() }
+        }
 
         // Clear any stale HID-level mappings left by a previous crash/SIGKILL.
         // `applicationWillTerminate` calls reset() on clean quit, but force-quit
@@ -195,6 +212,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             showAccessibilityAlert()
             return
         }
+        // Migrate legacy `hotkeySettings.v1` blob into the dispersed per-feature keys before
+        // anything touches `HotkeySettingsStore.shared` — `keyMonitor.start()` below triggers its
+        // lazy init, and migrating after that point would be too late to affect this session.
+        HotkeySettingsStore.migrateIfNeeded(defaults: .standard, personaStore: PersonaStore.shared)
         if !keyMonitor.start() {
             showAccessibilityAlert()
             return
@@ -279,13 +300,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
-        selectedTextEditorController = SelectedTextEditorController(
-            speechEngine: speechEngine,
-            overlayPanel: overlayPanel
-        )
-        keyMonitor.onSelectedTextEditorHotkey = { [weak self] in
-            self?.selectedTextEditorController.open()
-        }
         // Now that the host + all engine consumers exist, decide the engine. If SenseVoice is
         // enabled this kicks off an off-main model load and swaps the engine in when ready;
         // otherwise it is a no-op (already on Apple).
@@ -323,28 +337,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             HotkeySettingsStore.shared.hotkey(for: .clipboardPanel)?.displayString() ?? "⌥V"
         }
 
-        // Register built-in hotkeys with HotkeyRegistry so persona recorder can detect conflicts.
-        let registry = HotkeyRegistry.shared
-        let hotkeys = HotkeySettingsStore.shared
-        let builtIns: [(HotkeyFeature, HotkeyRegistry.Owner, String)] = [
-            (.voiceTrigger, .voiceTrigger, "Voice trigger"),
-            (.clipboardPanel, .clipboardPanel, "Clipboard panel"),
-            (.vaultPanel, .vaultPanel, "Vault panel"),
-            (.settingsWindow, .settingsWindow, "Settings window"),
-            (.screenshot, .screenshot, "Screenshot"),
-            (.selectedTextEditor, .selectedTextEditor, "Selected text editor"),
-        ]
-        for (feature, owner, purpose) in builtIns {
-            if let cfg = hotkeys.hotkey(for: feature) {
-                registry.register(cfg, owner: owner, purpose: purpose)
-            }
-        }
         AppDelegate.syncPersonaHotkeysToRegistry()
         personaObserverToken = NotificationCenter.default.addObserver(
             forName: PersonaStore.didChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             AppDelegate.syncPersonaHotkeysToRegistry()
             self?.rebuildPersonasMenu()
+            ConfigSyncController.shared.noteLocalChange()
         }
 
         NotificationCenter.default.addObserver(
@@ -354,18 +353,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // Config Sync (download) rewrote persisted config on disk / in UserDefaults.
+        // Scalar sections (voice/clipboard/…) propagate via userDefaultsDidChange;
+        // the three cache-backed stores must be told to re-read.
+        NotificationCenter.default.addObserver(
+            forName: .configSyncDidApply, object: nil, queue: .main
+        ) { [weak self] note in
+            let sections = Set(note.userInfo?["sections"] as? [String] ?? [])
+            // Feature hotkeys now arrive inside their owning module's section.
+            let hotkeyOwningSections: Set<String> = ["general", "voice", "clipboard", "screenshot"]
+            if sections.contains("personas") { PersonaStore.shared.reload() }
+            if !hotkeyOwningSections.isDisjoint(with: sections) { HotkeySettingsStore.shared.reload() }
+            if sections.contains("hotkeys") { HotkeyBindingsStore.shared.reload() }
+            if sections.contains("keyMapping") { KeyMappingManager.shared.reload() }
+            self?.syncMenuStates()
+        }
+
         ShellRunner.shared.warmUp()
     }
 
     static func syncPersonaHotkeysToRegistry() {
         let registry = HotkeyRegistry.shared
-        let hotkeys = HotkeySettingsStore.shared
-        hotkeys.ensureInitialized()
         for entry in registry.all() {
             if case .persona = entry.owner { registry.unregister(owner: entry.owner) }
         }
         for persona in PersonaStore.shared.personas {
-            guard let cfg = hotkeys.personaHotkey(personaId: persona.id) else { continue }
+            guard let raw = persona.hotkey, let cfg = HotkeyConfig.parse(raw) else { continue }
             registry.register(cfg, owner: .persona(id: persona.id), purpose: "Persona: \(persona.name)")
         }
     }
@@ -507,7 +520,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 speechEngine = engine
                 setupSpeechCallbacks()
                 speechSessionHost?.replaceEngine(engine)
-                selectedTextEditorController?.replaceEngine(engine)
                 recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.speechAnalyzer)
                 return
@@ -523,7 +535,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             speechEngine = makeAppleEngine()
             setupSpeechCallbacks()
             speechSessionHost?.replaceEngine(speechEngine)
-            selectedTextEditorController?.replaceEngine(speechEngine)
             recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
             SpeechEngineStatusStore.shared.update(
                 assetDownloading ? .sfSpeechRecognizerDownloadingAnalyzerAsset : .sfSpeechRecognizer)
@@ -565,7 +576,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.speechEngine = engine
                     self.setupSpeechCallbacks()
                     self.speechSessionHost?.replaceEngine(engine)
-                    self.selectedTextEditorController?.replaceEngine(engine)
                     self.recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
                     SpeechEngineStatusStore.shared.update(.onnx)
                 }
@@ -589,7 +599,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.speechEngine = engine
                 self.setupSpeechCallbacks()
                 self.speechSessionHost?.replaceEngine(engine)
-                self.selectedTextEditorController?.replaceEngine(engine)
                 self.recordSpeechBaseline(model: model, lang: langKey, svReady: true, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.senseVoice)
             }
@@ -603,7 +612,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngine = makeAppleEngine()
         setupSpeechCallbacks()
         speechSessionHost?.replaceEngine(speechEngine)
-        selectedTextEditorController?.replaceEngine(speechEngine)
         SpeechEngineStatusStore.shared.update(.sfSpeechRecognizer)
     }
 
@@ -881,7 +889,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // HotkeyRecorder commit writing hotkeySettings.v1) or a background
         // queue. Hop to the main queue so menu/NSMenu/KeyMonitor work never
         // runs in the tap callback path or off the main thread.
-        DispatchQueue.main.async { [weak self] in self?.syncMenuStates() }
+        DispatchQueue.main.async { [weak self] in
+            self?.syncMenuStates()
+            ConfigSyncController.shared.noteLocalChange()
+        }
     }
 
     private func syncMenuStates() {
@@ -944,9 +955,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
            zip(existing, personas).allSatisfy({ view, persona in
                view.personaId == persona.id
                    && view.title == persona.name
-                   && view.hotkeyText == HotkeySettingsStore.shared
-                       .personaHotkey(personaId: persona.id)?
-                       .displayString()
+                   && view.hotkeyText == persona.hotkey.flatMap(HotkeyConfig.parse)?.displayString()
            }) {
             existing.forEach { $0.needsDisplay = true }
             return
@@ -955,9 +964,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         personasMenu.removeAllItems()
         for persona in personas {
             let pid = persona.id
-            let hotkeyText = HotkeySettingsStore.shared
-                .personaHotkey(personaId: pid)?
-                .displayString()
+            let hotkeyText = persona.hotkey.flatMap(HotkeyConfig.parse)?.displayString()
             let view = PersonaMenuItemView(
                 personaId: pid,
                 title: persona.name,

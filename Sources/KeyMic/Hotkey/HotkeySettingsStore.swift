@@ -1,9 +1,6 @@
 import CoreGraphics
 import Foundation
 import Observation
-import os.log
-
-private let hotkeySettingsLogger = Logger(subsystem: "io.keymic.app", category: "HotkeySettings")
 
 enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
     case voiceTrigger
@@ -11,7 +8,6 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
     case vaultPanel
     case settingsWindow
     case screenshot
-    case selectedTextEditor
 
     var displayName: String {
         switch self {
@@ -20,7 +16,6 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         case .vaultPanel: return String(localized: "Vault panel")
         case .settingsWindow: return String(localized: "Settings window")
         case .screenshot: return String(localized: "Screenshot")
-        case .selectedTextEditor: return String(localized: "Selected text editor")
         }
     }
 
@@ -30,53 +25,71 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.vaultPanel.rawValue: "alt+b",                 // Open the Vault panel.
         HotkeyFeature.settingsWindow.rawValue: "cmd+shift+,",       // Open the Settings window.
         HotkeyFeature.screenshot.rawValue: "ctrl+alt+a",            // Open screenshot selection and annotation.
-        HotkeyFeature.selectedTextEditor.rawValue: "alt+e",         // Open Selected Text Editor panel.
     ]
 }
 
-struct HotkeySettingsSnapshot: Codable, Equatable {
-    var version: Int
-    var featureHotkeys: [String: String]
-    var personaHotkeys: [String: String]
+extension HotkeyFeature {
+    var registryOwner: HotkeyRegistry.Owner {
+        switch self {
+        case .voiceTrigger: return .voiceTrigger
+        case .clipboardPanel: return .clipboardPanel
+        case .vaultPanel: return .vaultPanel
+        case .settingsWindow: return .settingsWindow
+        case .screenshot: return .screenshot
+        }
+    }
+}
+
+extension HotkeyFeature {
+    /// Dispersed per-module UserDefaults key. Synced by the module's own
+    /// SyncSection (see SyncSection.userDefaultsKeys). Absent = default.
+    var userDefaultsKey: String {
+        switch self {
+        case .voiceTrigger: return "voiceTriggerHotkey"
+        case .clipboardPanel: return "clipboardPanelHotkey"
+        case .vaultPanel: return "vaultPanelHotkey"
+        case .settingsWindow: return "settingsWindowHotkey"
+        case .screenshot: return "screenshotHotkey"
+        }
+    }
 }
 
 @Observable
 final class HotkeySettingsStore {
-    static let shared = HotkeySettingsStore(personasProvider: { PersonaStore.shared.personas })
-    static let userDefaultsKey = "hotkeySettings.v1"
+    static let shared = HotkeySettingsStore()
+    static let migratedFlagKey = "hotkeyStorageMigrated.v2"
+    private static let legacyBlobKey = "hotkeySettings.v1"
+    private static let legacyVoiceTriggerKey = "voiceTriggerKey"
 
     struct ValidationError: Error, Equatable {
         let message: String
     }
 
-    private static let currentVersion = 1
-
-    private(set) var snapshot: HotkeySettingsSnapshot {
-        didSet { save(snapshot) }
-    }
+    /// Customized feature hotkeys only (feature rawValue → encoded string).
+    /// Defaults are never stored — absent = HotkeyFeature.defaults.
+    private(set) var featureHotkeys: [String: String]
 
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let personasProvider: () -> [Persona]
+    @ObservationIgnored private let registry: HotkeyRegistry
 
-    init(
-        defaults: UserDefaults = .standard,
-        personasProvider: @escaping () -> [Persona]
-    ) {
+    init(defaults: UserDefaults = .standard, registry: HotkeyRegistry = .shared) {
         self.defaults = defaults
-        self.personasProvider = personasProvider
-        self.snapshot = Self.loadOrCreate(defaults: defaults, personas: personasProvider())
+        self.registry = registry
+        self.featureHotkeys = Self.load(defaults: defaults)
+        registerAll()
     }
 
-    func ensureInitialized() {
-        _ = snapshot
+    /// Kept for AppDelegate call-site compatibility; construction is eager now.
+    func ensureInitialized() {}
+
+    /// Re-read dispersed keys (Config Sync download rewrote UserDefaults).
+    func reload() {
+        featureHotkeys = Self.load(defaults: defaults)
+        registerAll()
     }
 
     func rawHotkey(for feature: HotkeyFeature) -> String {
-        let raw = snapshot.featureHotkeys[feature.rawValue] ?? Self.defaultRawHotkey(for: feature)
-        guard let config = HotkeyConfig.parse(raw), Self.isValidStored(config, owner: .feature(feature)) else {
-            return Self.defaultRawHotkey(for: feature)
-        }
-        return raw
+        featureHotkeys[feature.rawValue] ?? HotkeyFeature.defaults[feature.rawValue]!
     }
 
     func hotkey(for feature: HotkeyFeature) -> HotkeyConfig? {
@@ -84,69 +97,34 @@ final class HotkeySettingsStore {
     }
 
     func setHotkey(_ config: HotkeyConfig, for feature: HotkeyFeature) throws {
-        try assignFeature(config, raw: config.encode(), feature: feature)
+        try assign(config, raw: config.encode(), feature: feature)
     }
 
     func resetHotkey(for feature: HotkeyFeature) throws {
-        let raw = Self.defaultRawHotkey(for: feature)
-        try assignFeature(HotkeyConfig.parse(raw)!, raw: raw, feature: feature)
-    }
-
-    private func assignFeature(_ config: HotkeyConfig, raw: String, feature: HotkeyFeature) throws {
-        let owner: Owner = .feature(feature)
-        try Self.validateStored(config, owner: owner)
-        try validateFeatureConflict(config, owner: owner)
-        try validatePersonaConflict(config, owner: owner)
-        var next = snapshot
-        next.featureHotkeys[feature.rawValue] = raw
-        snapshot = next
-    }
-
-    func rawPersonaHotkey(personaId: String) -> String? {
-        guard let raw = snapshot.personaHotkeys[personaId],
-              let config = HotkeyConfig.parse(raw),
-              Self.isValidStored(config, owner: .persona(personaId)) else { return nil }
-        return raw
-    }
-
-    func personaHotkey(personaId: String) -> HotkeyConfig? {
-        rawPersonaHotkey(personaId: personaId).flatMap(HotkeyConfig.parse)
-    }
-
-    /// Persona-to-persona conflicts are resolved by kick-out policy: if another
-    /// persona already binds `config`, its binding is silently cleared so the
-    /// new persona can claim the hotkey. Feature conflicts still throw —
-    /// recording over a feature requires the user to clear/reset the feature
-    /// hotkey explicitly in feature settings.
-    func setPersonaHotkey(_ config: HotkeyConfig?, personaId: String) throws {
-        var next = snapshot
-        if let config {
-            try Self.validateStored(config, owner: .persona(personaId))
-            try validateFeatureConflict(config, owner: .persona(personaId))
-            for (otherId, raw) in snapshot.personaHotkeys
-            where otherId != personaId && HotkeyConfig.parse(raw) == config {
-                next.personaHotkeys.removeValue(forKey: otherId)
-            }
-            next.personaHotkeys[personaId] = config.encode()
-        } else {
-            next.personaHotkeys.removeValue(forKey: personaId)
-        }
-        snapshot = next
+        let raw = HotkeyFeature.defaults[feature.rawValue]!
+        try assign(HotkeyConfig.parse(raw)!, raw: raw, feature: feature)
     }
 
     func validationMessage(for config: HotkeyConfig, owner: Owner) -> String? {
         do {
             try Self.validateStored(config, owner: owner)
-            try validateFeatureConflict(config, owner: owner)
-            if case .feature = owner {
-                try validatePersonaConflict(config, owner: owner)
-            }
-            return nil
         } catch let error as ValidationError {
             return error.message
         } catch {
             return error.localizedDescription
         }
+        let excluding: HotkeyRegistry.Owner
+        switch owner {
+        case .feature(let f): excluding = f.registryOwner
+        case .persona(let id): excluding = .persona(id: id)
+        }
+        // Persona-vs-persona conflicts resolve by kick-out at commit time — never block them.
+        let conflicts = registry.conflicts(for: config, excluding: excluding)
+            .filter { entry in
+                if case .persona = owner, case .persona = entry.owner { return false }
+                return true
+            }
+        return conflicts.first.map { String(localized: "Conflicts with: \($0.purpose)") }
     }
 
     enum Owner: Equatable {
@@ -154,80 +132,45 @@ final class HotkeySettingsStore {
         case persona(String)
     }
 
-    private func validateFeatureConflict(_ config: HotkeyConfig, owner: Owner) throws {
+    // MARK: - Private
+
+    private func assign(_ config: HotkeyConfig, raw: String, feature: HotkeyFeature) throws {
+        try Self.validateStored(config, owner: .feature(feature))
+        if let msg = validationMessage(for: config, owner: .feature(feature)) {
+            throw ValidationError(message: msg)
+        }
+        if raw == HotkeyFeature.defaults[feature.rawValue] {
+            featureHotkeys.removeValue(forKey: feature.rawValue)
+            defaults.removeObject(forKey: feature.userDefaultsKey)
+        } else {
+            featureHotkeys[feature.rawValue] = raw
+            defaults.set(raw, forKey: feature.userDefaultsKey)
+        }
+        registry.register(config, owner: feature.registryOwner, purpose: feature.displayName)
+    }
+
+    private func registerAll() {
         for feature in HotkeyFeature.allCases {
-            guard owner != .feature(feature),
-                  let existing = hotkey(for: feature),
-                  existing == config else { continue }
-            throw ValidationError(message: String(localized: "Conflicts with: \(feature.displayName)"))
-        }
-    }
-
-    private func validatePersonaConflict(_ config: HotkeyConfig, owner: Owner) throws {
-        for (personaId, raw) in snapshot.personaHotkeys {
-            guard owner != .persona(personaId),
-                  HotkeyConfig.parse(raw) == config else { continue }
-            let name = personasProvider().first { $0.id == personaId }?.name ?? personaId
-            throw ValidationError(message: String(localized: "Conflicts with: Persona: \(name)"))
-        }
-    }
-
-    private static let legacyVoiceTriggerKey = "voiceTriggerKey"
-
-    private static func loadOrCreate(defaults: UserDefaults, personas: [Persona]) -> HotkeySettingsSnapshot {
-        if let data = defaults.data(forKey: userDefaultsKey) {
-            if let decoded = try? JSONDecoder().decode(HotkeySettingsSnapshot.self, from: data) {
-                return sanitize(decoded)
-            }
-            hotkeySettingsLogger.error("failed to decode persisted hotkey settings; rebuilding defaults")
-        }
-
-        var featureHotkeys = HotkeyFeature.defaults
-        // Migrate legacy voice trigger setting so users upgrading from
-        // pre-hotkeySettings.v1 builds keep their customized modifier.
-        if let legacy = defaults.string(forKey: legacyVoiceTriggerKey),
-           let config = HotkeyConfig.parse(legacy),
-           isValidStored(config, owner: .feature(.voiceTrigger)) {
-            featureHotkeys[HotkeyFeature.voiceTrigger.rawValue] = legacy
-        }
-
-        let created = HotkeySettingsSnapshot(
-            version: currentVersion,
-            featureHotkeys: featureHotkeys,
-            personaHotkeys: Dictionary(
-                uniqueKeysWithValues: personas.compactMap { persona in
-                    guard let raw = persona.hotkey,
-                          let config = HotkeyConfig.parse(raw),
-                          isValidStored(config, owner: .persona(persona.id)) else { return nil }
-                    return (persona.id, raw)
-                }
-            )
-        )
-        save(created, defaults: defaults)
-        return created
-    }
-
-    private static func sanitize(_ snapshot: HotkeySettingsSnapshot) -> HotkeySettingsSnapshot {
-        var featureHotkeys = HotkeyFeature.defaults
-        for feature in HotkeyFeature.allCases {
-            if let raw = snapshot.featureHotkeys[feature.rawValue],
-               let config = HotkeyConfig.parse(raw),
-               isValidStored(config, owner: .feature(feature)) {
-                featureHotkeys[feature.rawValue] = raw
+            if let cfg = hotkey(for: feature) {
+                registry.register(cfg, owner: feature.registryOwner, purpose: feature.displayName)
             }
         }
-        let personaHotkeys = snapshot.personaHotkeys.filter { personaId, raw in
-            guard let config = HotkeyConfig.parse(raw) else { return false }
-            return isValidStored(config, owner: .persona(personaId))
+    }
+
+    private static func load(defaults: UserDefaults) -> [String: String] {
+        var out: [String: String] = [:]
+        for feature in HotkeyFeature.allCases {
+            guard let raw = defaults.string(forKey: feature.userDefaultsKey),
+                  let config = HotkeyConfig.parse(raw),
+                  (try? validateStored(config, owner: .feature(feature))) != nil,
+                  raw != HotkeyFeature.defaults[feature.rawValue]
+            else { continue }
+            out[feature.rawValue] = raw
         }
-        return HotkeySettingsSnapshot(version: currentVersion, featureHotkeys: featureHotkeys, personaHotkeys: personaHotkeys)
+        return out
     }
 
-    private static func isValidStored(_ config: HotkeyConfig, owner: Owner) -> Bool {
-        (try? validateStored(config, owner: owner)) != nil
-    }
-
-    private static func validateStored(_ config: HotkeyConfig, owner: Owner) throws {
+    static func validateStored(_ config: HotkeyConfig, owner: Owner) throws {
         switch owner {
         case .feature(.voiceTrigger):
             if !config.isPureModifier {
@@ -247,22 +190,35 @@ final class HotkeySettingsStore {
         }
     }
 
-    private static func defaultRawHotkey(for feature: HotkeyFeature) -> String {
-        HotkeyFeature.defaults[feature.rawValue]!
-    }
+    // MARK: - Migration
 
-    private func save(_ snapshot: HotkeySettingsSnapshot) {
-        Self.save(snapshot, defaults: defaults)
-    }
+    /// One-time migration from the hotkeySettings.v1 blob (and the even older
+    /// voiceTriggerKey). The blob's personaHotkeys are authoritative over any
+    /// stale Persona.hotkey value. Old keys are left on disk, never read again.
+    static func migrateIfNeeded(defaults: UserDefaults, personaStore: PersonaStore) {
+        guard !defaults.bool(forKey: migratedFlagKey) else { return }
+        defer { defaults.set(true, forKey: migratedFlagKey) }
 
-    private static func save(_ snapshot: HotkeySettingsSnapshot, defaults: UserDefaults) {
-        guard let data = try? JSONEncoder().encode(snapshot) else {
-            hotkeySettingsLogger.error("failed to encode hotkey settings")
-            return
+        if let data = defaults.data(forKey: legacyBlobKey),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let featureHotkeys = obj["featureHotkeys"] as? [String: String] ?? [:]
+            for feature in HotkeyFeature.allCases {
+                guard let raw = featureHotkeys[feature.rawValue],
+                      raw != HotkeyFeature.defaults[feature.rawValue],
+                      let config = HotkeyConfig.parse(raw),
+                      (try? validateStored(config, owner: .feature(feature))) != nil
+                else { continue }
+                defaults.set(raw, forKey: feature.userDefaultsKey)
+            }
+            let personaHotkeys = obj["personaHotkeys"] as? [String: String] ?? [:]
+            for (personaId, raw) in personaHotkeys where HotkeyConfig.parse(raw) != nil {
+                personaStore.setHotkey(raw, personaId: personaId)
+            }
+        } else if let legacy = defaults.string(forKey: legacyVoiceTriggerKey),
+                  let config = HotkeyConfig.parse(legacy),
+                  config.isPureModifier,
+                  legacy != HotkeyFeature.defaults[HotkeyFeature.voiceTrigger.rawValue] {
+            defaults.set(legacy, forKey: HotkeyFeature.voiceTrigger.userDefaultsKey)
         }
-        // `defaults.set` itself posts UserDefaults.didChangeNotification; do NOT
-        // post it manually here or every observer (menu sync, KeyMonitor reload,
-        // clipboard prefs, updater policy) runs twice per save.
-        defaults.set(data, forKey: userDefaultsKey)
     }
 }

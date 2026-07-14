@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store smoke-onnx
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-keychain-store test-me-api test-exchange-api test-auth-client test-account test-sync-section test-sync-engine test-sync-merge smoke-onnx
 
 
 build:
@@ -87,6 +87,7 @@ run: build
 test:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/KeyMappingManager.swift \
 	       Sources/KeyMic/HIDRemapper.swift \
 	       Tests/KeyMappingManagerTests.swift \
@@ -196,6 +197,8 @@ test-hotkey-action:
 test-hotkey-bindings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyAction.swift \
+	       Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Tests/HotkeyBindingsStoreTests.swift \
 	       -o .build/hotkey-bindings-store-tests
@@ -204,6 +207,7 @@ test-hotkey-bindings-store:
 test-hotkey-settings-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Hotkey/HotkeyConfig.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
@@ -221,6 +225,43 @@ test-hotkey-settings-store:
 	       Tests/HotkeySettingsStoreTests.swift \
 	       -o .build/hotkey-settings-store-tests
 	.build/hotkey-settings-store-tests
+
+test-sync-section:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Sync/JSONValue.swift \
+	       Sources/KeyMic/Sync/ItemMerge.swift \
+	       Sources/KeyMic/Sync/SyncSection.swift \
+	       Tests/SyncSectionTests.swift \
+	       -o .build/sync-section-tests
+	.build/sync-section-tests
+
+test-sync-engine:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Sync/JSONValue.swift \
+	       Sources/KeyMic/Sync/ItemMerge.swift \
+	       Sources/KeyMic/Sync/SyncSection.swift \
+	       Sources/KeyMic/Sync/SyncState.swift \
+	       Sources/KeyMic/Account/BackendConfig.swift \
+	       Sources/KeyMic/Sync/ConfigSyncAPI.swift \
+	       Sources/KeyMic/Sync/SyncEngine.swift \
+	       Sources/KeyMic/Sync/ConfigSyncBootstrap.swift \
+	       Tests/SyncEngineTests.swift \
+	       -o .build/sync-engine-tests
+	.build/sync-engine-tests
+
+test-sync-merge:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Sync/JSONValue.swift \
+	       Sources/KeyMic/Sync/ItemMerge.swift \
+	       Sources/KeyMic/Sync/SyncSection.swift \
+	       Sources/KeyMic/Sync/SyncState.swift \
+	       Sources/KeyMic/Account/BackendConfig.swift \
+	       Sources/KeyMic/Sync/ConfigSyncAPI.swift \
+	       Sources/KeyMic/Sync/SyncEngine.swift \
+	       Sources/KeyMic/Sync/ConfigSyncBootstrap.swift \
+	       Tests/SyncMergeTests.swift \
+	       -o .build/sync-merge-tests
+	.build/sync-merge-tests
 
 test-kind-classifier:
 	mkdir -p .build
@@ -311,6 +352,7 @@ test-keymonitor-clipboard-panel:
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/ContextSource.swift \
@@ -534,6 +576,45 @@ test-overlay-state:
 	       -o .build/overlay-state-tests
 	.build/overlay-state-tests
 
+test-keychain-store:
+	swiftc -parse-as-library \
+	  Sources/KeyMic/Account/KeychainStore.swift \
+	  Tests/test_keychain_store.swift \
+	  -o /tmp/keymic-test-keychain-store
+	/tmp/keymic-test-keychain-store
+
+test-me-api:
+	swiftc -parse-as-library \
+	  Sources/KeyMic/Account/BackendConfig.swift \
+	  Sources/KeyMic/Account/MeAPI.swift \
+	  Tests/test_me_api.swift \
+	  -o /tmp/keymic-test-me-api
+	/tmp/keymic-test-me-api
+
+test-exchange-api:
+	swiftc -parse-as-library \
+	  Sources/KeyMic/Account/BackendConfig.swift \
+	  Sources/KeyMic/Account/MeAPI.swift \
+	  Sources/KeyMic/Account/ExchangeAPI.swift \
+	  Tests/test_exchange_api.swift \
+	  -o /tmp/keymic-test-exchange-api
+	/tmp/keymic-test-exchange-api
+
+test-auth-client:
+	swiftc -parse-as-library \
+	  Sources/KeyMic/Account/BackendConfig.swift \
+	  Sources/KeyMic/Account/KeychainStore.swift \
+	  Sources/KeyMic/Account/MeAPI.swift \
+	  Sources/KeyMic/Account/ExchangeAPI.swift \
+	  Sources/KeyMic/Account/AccountStore.swift \
+	  Sources/KeyMic/Account/AuthClient.swift \
+	  Tests/test_auth_client.swift \
+	  -o /tmp/keymic-test-auth-client
+	/tmp/keymic-test-auth-client
+
+test-account: test-keychain-store test-me-api test-exchange-api test-auth-client
+	@echo "✅ All account tests passed"
+
 test-persona:
 	mkdir -p .build
 	swiftc Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
@@ -692,14 +773,6 @@ test-context-source:
 	       -o .build/context-source-tests
 	.build/context-source-tests
 
-test-selected-text-editor:
-	mkdir -p .build
-	swiftc Sources/KeyMic/SelectedTextEditor/EditorAction.swift \
-	       Sources/KeyMic/SelectedTextEditor/EditorPrompt.swift \
-	       Tests/SelectedTextEditorTests.swift \
-	       -o .build/selected-text-editor-tests
-	.build/selected-text-editor-tests
-
 test-shell-output:
 	mkdir -p .build
 	swiftc Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
@@ -747,7 +820,7 @@ test-context-resolver:
 	       -o .build/context-resolver-tests
 	.build/context-resolver-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
