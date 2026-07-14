@@ -41,6 +41,11 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     /// Single-flight: skip a tick if the previous partial decode is still running,
     /// so slow decodes can't pile up. Main-actor only.
     private var isDecoding = false
+    /// Bluetooth SCO cold start can leave the engine "running" with no frames
+    /// arriving. Mirror AppleSpeechEngine's 800ms watchdog: no first buffer →
+    /// tear down and surface an error instead of silently recording nothing.
+    private var firstBufferReceived = false
+    private var audioWatchdog: DispatchWorkItem?
     /// Bumped on every `startSession()`. A background final/partial decode captures the
     /// generation it was dispatched under and drops its result if a newer session has
     /// started in the meantime — otherwise utterance A's late final could be injected
@@ -70,10 +75,16 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         teardown()
         sessionGeneration &+= 1
         capture.reset()
+        firstBufferReceived = false
         engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
             self?.capture.append(buf)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.firstBufferReceived else { return }
+                self.firstBufferReceived = true
+                self.audioWatchdog?.cancel(); self.audioWatchdog = nil
+            }
         }
         tapInstalled = true
         engine.prepare()
@@ -86,6 +97,16 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         }
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
         logger.debug("startSession — input device: \(deviceName, privacy: .public)")
+        let myGen = sessionGeneration
+        let watchdog = DispatchWorkItem { [weak self] in
+            guard let self, self.sessionGeneration == myGen, !self.firstBufferReceived else { return }
+            logger.error(
+                "No audio frames in 800ms — Bluetooth SCO cold-start failure (device: \(deviceName, privacy: .public))")
+            self.teardown()
+            self.onError?("麦克风未响应，请松开后稍候再试")
+        }
+        audioWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: watchdog)
         // Pseudo-streaming: re-decode the growing buffer once per second. First fire at
         // +1s naturally implements the "<1s hold emits no partial" threshold.
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -184,6 +205,8 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     }
 
     private func teardown() {
+        audioWatchdog?.cancel()
+        audioWatchdog = nil
         partialTimer?.cancel()
         partialTimer = nil
         if tapInstalled {
