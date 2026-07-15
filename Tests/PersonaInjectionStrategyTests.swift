@@ -127,7 +127,6 @@ struct PersonaInjectionStrategyTestRunner {
             "builtin-cli": .runShell(commandTemplate: "{query}"),
             "builtin-context": .replaceFocusedText,
             "builtin-general-editor": .replaceSelection,
-            "builtin-clipboard-transformer": .clipboard,
         ]
         for seed in Persona.builtInSeeds() {
             guard let want = expected[seed.id] else {

@@ -18,7 +18,7 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         onVaultPaste: @escaping (VaultItem) -> Void,
         onVaultDelete: @escaping (VaultItem) -> Void,
         onDismiss: @escaping () -> Void,
-        onTransformSelected: @escaping () -> Void
+        onPasteSelected: @escaping () -> Void
     ) {
         let view = ClipboardHistoryView(
             selectionBridge: selectionBridge,
@@ -30,7 +30,7 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
             onVaultPaste: onVaultPaste,
             onVaultDelete: onVaultDelete,
             onDismiss: onDismiss,
-            onTransformSelected: onTransformSelected
+            onPasteSelected: onPasteSelected
         )
         .modelContainer(modelContainer)
 
@@ -110,7 +110,7 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
         guard focus.currentTab == .clipboard, isAltOnlyKeyDown(event) else { return nil }
         if event.keyCode == 0x23 {
             // While typing, only hijack ⌥P when there is a pin target.
-            guard !typingInText || !selectionBridge.selectedIDs.isEmpty else { return nil }
+            guard !typingInText || selectionBridge.hasCurrentTarget else { return nil }
             return { [focus] in focus.togglePinRequestID += 1 }
         }
         if let index = pinnedQuickPasteIndex(for: event.keyCode) {
@@ -267,6 +267,11 @@ final class ClipboardPanel: NSPanel, NSWindowDelegate {
     func quickPaste(index: Int) {
         focus.quickPasteIndex = index
         focus.quickPasteRequestID += 1
+    }
+
+    func moveSelection(by delta: Int) {
+        focus.moveSelectionDelta = delta
+        focus.moveSelectionRequestID += 1
     }
 
     private static func initialContentRect() -> NSRect {

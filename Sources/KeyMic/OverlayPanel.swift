@@ -2,6 +2,17 @@ import AppKit
 import Observation
 import SwiftUI
 
+// MARK: - Capsule layout
+
+/// Single source of truth for the pickup capsule's geometry, shared by the
+/// capsule panel itself and the picker / console windows that anchor to it.
+enum CapsuleLayout {
+    /// Capsule height.
+    static let height: CGFloat = 56
+    /// Capsule bottom offset above the screen's `visibleFrame.minY`.
+    static let bottomOffset: CGFloat = 56
+}
+
 // MARK: - State
 
 @Observable
@@ -20,7 +31,7 @@ final class OverlayPanel: NSPanel {
     private var pendingToast: String?
     private var toastDismissWorkItem: DispatchWorkItem?
 
-    private let capsuleHeight: CGFloat = 56
+    private let capsuleHeight: CGFloat = CapsuleLayout.height
     private let hPad: CGFloat = 24
     private let waveSize: CGFloat = 44
     private let gap: CGFloat = 14
@@ -73,7 +84,7 @@ final class OverlayPanel: NSPanel {
         guard let screen = NSScreen.main else { return }
         let area = screen.visibleFrame
         let x = area.midX - w / 2
-        let y = area.minY + 56
+        let y = area.minY + CapsuleLayout.bottomOffset
 
         setFrame(NSRect(x: x, y: y - 14, width: w, height: capsuleHeight), display: true)
         alphaValue = 0
@@ -280,8 +291,13 @@ private struct OverlayContent: View {
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color.white.opacity(0.92))
                     .lineLimit(1)
-                    .truncationMode(.tail)
-                    .fixedSize(horizontal: true, vertical: false)
+                    // Keep the newest text: the capsule width is capped at `maxWidth`, so a
+                    // long live transcript truncates at the HEAD (leading "…") instead of the
+                    // tail — the user sees the words just spoken, not the start of the utterance.
+                    // No `fixedSize(horizontal:)`: that would force the full intrinsic width and
+                    // defeat truncation (the text would overflow and get clipped by the capsule).
+                    .truncationMode(.head)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 24)

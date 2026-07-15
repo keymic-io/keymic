@@ -44,7 +44,10 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
     private let analyzerFormat: AVAudioFormat
     private let microphoneAuthorizationProbe: () -> AVAuthorizationStatus
 
-    private let engine = AVAudioEngine()
+    /// Recreated on every `startSession()`: a long-lived AVAudioEngine caches the input
+    /// device's HAL format, so after a default-input change `start()` throws
+    /// kAudioUnitErr_FormatNotSupported (-10868). See SenseVoiceSpeechEngine.
+    private var engine = AVAudioEngine()
     private var inputTapInstalled = false
     private var analyzer: SpeechAnalyzer?
     private var transcriber: SpeechTranscriber?
@@ -119,6 +122,7 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
         }
 
         // Mic tap: RMS level + convert to analyzer format + yield.
+        engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let inputNode = engine.inputNode
         let micFormat = inputNode.outputFormat(forBus: 0)
         let targetFormat = analyzerFormat
@@ -160,6 +164,7 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
         do { try engine.start() }
         catch {
             teardownInternal()
+            logger.error("engine.start failed: \(error.localizedDescription, privacy: .public)")
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
 

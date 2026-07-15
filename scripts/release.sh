@@ -117,7 +117,7 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 codesign --force --deep --sign "${CODESIGN_IDENTITY}" "${BUNDLE}/Contents/Frameworks/Sparkle.framework"
 codesign --force --sign "${CODESIGN_IDENTITY}" --entitlements "${PROJECT_DIR}/${APP_NAME}.entitlements" "${BUNDLE}"
 
-APP_ZIP="${APP_NAME}-${VERSION}.zip"
+APP_ZIP="${APP_NAME}-${VERSION}-universal.zip"
 ditto -c -k --sequesterRsrc --keepParent "${BUNDLE}" "${RELEASE_DIR}/${APP_ZIP}"
 echo "==> Packaged: ${RELEASE_DIR}/${APP_ZIP}"
 
@@ -172,6 +172,6 @@ gh release create "v${VERSION}" \
     --repo "${RELEASE_REPO_SLUG}" \
     --title "${APP_NAME} v${VERSION}" \
     --notes "Release v${VERSION}" \
-    "${RELEASE_DIR}/${APP_NAME}-${VERSION}.zip"
+    "${RELEASE_DIR}/${APP_ZIP}"
 
 echo "Release v${VERSION} complete!"

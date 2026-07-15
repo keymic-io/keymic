@@ -29,13 +29,23 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     private let model: SenseVoiceModel
     private let languageId: Int
     private let textnormId: Int
-    private let engine = AVAudioEngine()
+    /// Recreated on every `startSession()`: a long-lived AVAudioEngine caches the input
+    /// device's HAL format, so after a default-input change (headset connect/disconnect,
+    /// sample-rate switch) `start()` throws kAudioUnitErr_FormatNotSupported (-10868).
+    /// A fresh engine rebinds to the current device — mirrors AppleSpeechEngine's
+    /// per-session `audioEngineFactory`.
+    private var engine = AVAudioEngine()
     private var tapInstalled = false
     /// Fires every 1s during hold to emit live partials. Cancelled in `teardown()`.
     private var partialTimer: DispatchSourceTimer?
     /// Single-flight: skip a tick if the previous partial decode is still running,
     /// so slow decodes can't pile up. Main-actor only.
     private var isDecoding = false
+    /// Bluetooth SCO cold start can leave the engine "running" with no frames
+    /// arriving. Mirror AppleSpeechEngine's 800ms watchdog: no first buffer →
+    /// tear down and surface an error instead of silently recording nothing.
+    private var firstBufferReceived = false
+    private var audioWatchdog: DispatchWorkItem?
     /// Bumped on every `startSession()`. A background final/partial decode captures the
     /// generation it was dispatched under and drops its result if a newer session has
     /// started in the meantime — otherwise utterance A's late final could be injected
@@ -59,15 +69,22 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else { throw VoiceError.microphoneAccessDenied(status) }
 
-        // Self-heal: a second entry point (e.g. the selected-text editor bypassing the
-        // session host) may still have our tap installed — installing twice throws an
-        // Obj-C NSException and crashes. Mirror SpeechAnalyzerSpeechEngine.startSession.
+        // Self-heal: a second entry point bypassing the session host may still have our
+        // tap installed — installing twice throws an Obj-C NSException and crashes.
+        // Mirror SpeechAnalyzerSpeechEngine.startSession.
         teardown()
         sessionGeneration &+= 1
         capture.reset()
+        firstBufferReceived = false
+        engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
             self?.capture.append(buf)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.firstBufferReceived else { return }
+                self.firstBufferReceived = true
+                self.audioWatchdog?.cancel(); self.audioWatchdog = nil
+            }
         }
         tapInstalled = true
         engine.prepare()
@@ -75,10 +92,21 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
             try engine.start()
         } catch {
             teardown()
+            logger.error("engine.start failed: \(error.localizedDescription, privacy: .public)")
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
         logger.debug("startSession — input device: \(deviceName, privacy: .public)")
+        let myGen = sessionGeneration
+        let watchdog = DispatchWorkItem { [weak self] in
+            guard let self, self.sessionGeneration == myGen, !self.firstBufferReceived else { return }
+            logger.error(
+                "No audio frames in 800ms — Bluetooth SCO cold-start failure (device: \(deviceName, privacy: .public))")
+            self.teardown()
+            self.onError?("麦克风未响应，请松开后稍候再试")
+        }
+        audioWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: watchdog)
         // Pseudo-streaming: re-decode the growing buffer once per second. First fire at
         // +1s naturally implements the "<1s hold emits no partial" threshold.
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -125,6 +153,7 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
                 }
             } catch {
                 let message = (error as? VoiceError)?.displayMessage ?? error.localizedDescription
+                logger.error("final decode failed: \(message, privacy: .public)")
                 DispatchQueue.main.async {
                     guard let self, gen == self.sessionGeneration else { return }
                     self.onError?(message)
@@ -176,6 +205,8 @@ final class SenseVoiceSpeechEngine: SpeechEngineProtocol {
     }
 
     private func teardown() {
+        audioWatchdog?.cancel()
+        audioWatchdog = nil
         partialTimer?.cancel()
         partialTimer = nil
         if tapInstalled {

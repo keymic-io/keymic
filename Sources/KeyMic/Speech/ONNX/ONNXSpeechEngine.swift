@@ -19,10 +19,18 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
 
     private let recognizer: UnsafeMutableRawPointer    // sherpa_create_funasr 句柄,引擎持有
     private let capture = AudioCapture16k()
-    private let engine = AVAudioEngine()
+    /// Recreated on every `startSession()`: a long-lived AVAudioEngine caches the input
+    /// device's HAL format, so after a default-input change `start()` throws
+    /// kAudioUnitErr_FormatNotSupported (-10868). See SenseVoiceSpeechEngine.
+    private var engine = AVAudioEngine()
     private var tapInstalled = false
     /// 每次 startSession 自增;后台 final decode 捕获其值,新会话开始后丢弃旧结果(防 stale 注入)。
     private var sessionGeneration = 0
+    /// Bluetooth SCO cold start can leave the engine "running" with no frames
+    /// arriving. Mirror AppleSpeechEngine's 800ms watchdog: no first buffer →
+    /// tear down and surface an error instead of silently recording nothing.
+    private var firstBufferReceived = false
+    private var audioWatchdog: DispatchWorkItem?
 
     /// recognizer 须由调用方(AppDelegate)在 off-main 用 sherpa_create_funasr 建好后传入。
     init(recognizer: UnsafeMutableRawPointer, locale: Locale) {
@@ -37,15 +45,22 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         let status = AVCaptureDevice.authorizationStatus(for: .audio)
         guard status == .authorized else { throw VoiceError.microphoneAccessDenied(status) }
 
-        // Self-heal: a second entry point (e.g. the selected-text editor bypassing the
-        // session host) may still have our tap installed — installing twice throws an
-        // Obj-C NSException and crashes. Mirror SpeechAnalyzerSpeechEngine.startSession.
+        // Self-heal: a second entry point bypassing the session host may still have our
+        // tap installed — installing twice throws an Obj-C NSException and crashes.
+        // Mirror SpeechAnalyzerSpeechEngine.startSession.
         teardown()
         sessionGeneration &+= 1
         capture.reset()
+        firstBufferReceived = false
+        engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
             self?.capture.append(buf)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !self.firstBufferReceived else { return }
+                self.firstBufferReceived = true
+                self.audioWatchdog?.cancel(); self.audioWatchdog = nil
+            }
         }
         tapInstalled = true
         engine.prepare()
@@ -53,8 +68,20 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
             try engine.start()
         } catch {
             teardown()
+            logger.error("engine.start failed: \(error.localizedDescription, privacy: .public)")
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
+        let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"
+        let myGen = sessionGeneration
+        let watchdog = DispatchWorkItem { [weak self] in
+            guard let self, self.sessionGeneration == myGen, !self.firstBufferReceived else { return }
+            logger.error(
+                "No audio frames in 800ms — Bluetooth SCO cold-start failure (device: \(deviceName, privacy: .public))")
+            self.teardown()
+            self.onError?("麦克风未响应，请松开后稍候再试")
+        }
+        audioWatchdog = watchdog
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8, execute: watchdog)
         // 离线非流式:无 partial 计时器(D5)。
         return VoiceSession { [weak self] in self?.teardown() }
     }
@@ -95,6 +122,8 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
     }
 
     private func teardown() {
+        audioWatchdog?.cancel()
+        audioWatchdog = nil
         if tapInstalled {
             engine.inputNode.removeTap(onBus: 0)
             tapInstalled = false

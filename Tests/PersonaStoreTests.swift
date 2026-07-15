@@ -9,9 +9,9 @@ struct PersonaStoreTestRunner {
         defer { try? FileManager.default.removeItem(at: tmp) }
         let url = tmp.appendingPathComponent("personas.json")
 
-        // First load on empty disk → seeds 6 built-ins, active = nil
+        // First load on empty disk → seeds 5 built-ins, active = nil
         let store1 = PersonaStore(storeURL: url)
-        expect(store1.personas.count == 6, "first load seeds 6 built-ins")
+        expect(store1.personas.count == 5, "first load seeds 5 built-ins")
         expect(store1.activePersonaId == nil,
                "first launch leaves active persona empty")
         expect(FileManager.default.fileExists(atPath: url.path),
@@ -19,7 +19,7 @@ struct PersonaStoreTestRunner {
 
         // Persistence: re-load same URL retains state
         let store2 = PersonaStore(storeURL: url)
-        expect(store2.personas.count == 6, "reload keeps 6 personas")
+        expect(store2.personas.count == 5, "reload keeps 5 personas")
         expect(store2.activePersonaId == nil, "reload keeps empty active persona")
 
         // setActive(nil) → passthrough mode
@@ -36,7 +36,7 @@ struct PersonaStoreTestRunner {
             createdAt: now, updatedAt: now
         )
         store3.add(custom)
-        expect(store3.personas.count == 7, "add appends")
+        expect(store3.personas.count == 6, "add appends")
         expect(store3.persona(id: "user-1") != nil, "lookup by id works")
 
         // delete: built-in cannot be deleted
@@ -85,19 +85,44 @@ struct PersonaStoreTestRunner {
         expect(cliDup.injectionStrategy == .runShell(commandTemplate: "{query}"),
                "duplicate preserves source injectionStrategy")
 
-        // persona(forHotkey:)
-        var withHotkey = dup
-        withHotkey.hotkey = "alt+q"
-        store3.update(withHotkey)
-        expect(store3.persona(forHotkey: "alt+q")?.id == dup.id,
-               "lookup by hotkey works")
-        expect(store3.persona(forHotkey: "alt+w") == nil,
-               "missing hotkey returns nil")
+        // setHotkey: assigns via id lookup
+        store3.setHotkey("alt+q", personaId: dup.id)
+        expect(store3.persona(id: dup.id)?.hotkey == "alt+q", "setHotkey assigns by id")
 
         testBuiltinCliInjectionStrategyPromotedOnMerge()
         testCorruptStoreBackedUpBeforeReseed()
+        testSetHotkeyKickOut()
 
         print("✅ PersonaStoreTests passed")
+    }
+
+    static func testSetHotkeyKickOut() {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("keymic-persona-sethotkey-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let storeURL = tmpDir.appendingPathComponent("personas.json")
+
+        let store = PersonaStore(storeURL: storeURL)
+        let a = Persona(id: "user-a", name: "A", icon: "person", stylePrompt: "x",
+                        temperature: 0.3, hotkey: nil, contextSources: [], builtIn: false,
+                        createdAt: Date(), updatedAt: Date(), injectionStrategy: .replaceFocusedText)
+        let b = Persona(id: "user-b", name: "B", icon: "person", stylePrompt: "x",
+                        temperature: 0.3, hotkey: nil, contextSources: [], builtIn: false,
+                        createdAt: Date(), updatedAt: Date(), injectionStrategy: .replaceFocusedText)
+        store.add(a); store.add(b)
+
+        store.setHotkey("alt+q", personaId: "user-a")
+        expect(store.persona(id: "user-a")?.hotkey == "alt+q", "hotkey assigned")
+
+        store.setHotkey("alt+q", personaId: "user-b")
+        expect(store.persona(id: "user-b")?.hotkey == "alt+q", "hotkey claimed by b")
+        expect(store.persona(id: "user-a")?.hotkey == nil, "kick-out cleared a")
+
+        store.setHotkey(nil, personaId: "user-b")
+        expect(store.persona(id: "user-b")?.hotkey == nil, "hotkey cleared")
+
+        store.setHotkey("alt+z", personaId: "no-such-id")   // must not crash / not persist
     }
 
     /// A decode failure must back up the unreadable personas.json (timestamped .bak)
@@ -113,7 +138,7 @@ struct PersonaStoreTestRunner {
         try? corrupt.write(to: storeURL, atomically: true, encoding: .utf8)
 
         let store = PersonaStore(storeURL: storeURL)
-        expect(store.personas.count == 6, "corrupt store re-seeds built-ins")
+        expect(store.personas.count == 5, "corrupt store re-seeds built-ins")
 
         let siblings = (try? FileManager.default.contentsOfDirectory(atPath: tmpDir.path)) ?? []
         let backups = siblings.filter { $0.hasPrefix("personas.json.bak-") }

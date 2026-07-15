@@ -220,7 +220,7 @@ enum VoiceModelCatalog {
     static let selectableModels: [VoiceModelOption] = [
         VoiceModelOption(id: "apple", displayName: "Apple (system)", available: true, sizeText: nil,
                          supportedLanguages: nil),
-        VoiceModelOption(id: "senseVoice", displayName: "SenseVoice Small", available: true, sizeText: "≈ 432 MB",
+        VoiceModelOption(id: "senseVoice", displayName: "SenseVoice Small", available: true, sizeText: "≈ 198 MB",
                          supportedLanguages: ["zh", "yue", "en", "ja", "ko"]),
         VoiceModelOption(id: "funasrNano", displayName: "Fun-ASR-Nano (zh/en/ja)", available: true, sizeText: "≈ 1 GB",
                          supportedLanguages: ["zh", "en", "ja"]),

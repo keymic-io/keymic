@@ -7,7 +7,7 @@ import os.log
 private let log = Logger(subsystem: "io.keymic.app", category: "KeyMonitor")
 
 final class KeyMonitor {
-    var onTriggerDown: (() -> Void)?
+    var onTriggerDown: ((VoiceTriggerSource) -> Void)?
     var onTriggerUp: (() -> Void)?
     var onTriggerInterrupted: (() -> Void)?
     /// Fired on the main queue when a non-trigger keyDown arrives while voice
@@ -15,23 +15,38 @@ final class KeyMonitor {
     /// forwarded to the system unchanged — only the in-flight voice session
     /// should be aborted by the consumer.
     var onExtraneousKeyDuringVoice: (() -> Void)?
+    /// Fired on the main queue when Tab (forward) / Shift+Tab (backward) is
+    /// pressed during an active voice-trigger session. The event is swallowed;
+    /// the consumer cycles the voice picker highlight. Does NOT cancel voice.
+    var onPersonaCycle: ((_ forward: Bool) -> Void)?
     /// O(1) lookup of whether the voice state machine is non-idle. Used by
     /// the extraneous-key branch so it doesn't need to track session state.
     var isVoiceActive: (() -> Bool)?
+    /// Synchronous, O(1): true only while a DEFAULT-trigger voice session is
+    /// recording. Gates Tab-cycle interception so persona-hotkey push-to-talk keeps
+    /// its cancel-on-Tab behavior even after the hotkey key is released.
+    var isDefaultTriggerVoiceActive: (() -> Bool)?
+    /// Synchronous, O(1): true while the post-release context console is open. The
+    /// event tap then passes the trigger key through (no activation, no interrupt)
+    /// so the console stays usable — including Option-modified typing.
+    var isConsoleOpen: (() -> Bool)?
     /// O(1) lookup of the user-level "Voice Enabled" toggle. When it returns
     /// false, voice-trigger and persona push-to-talk *activation* must not
     /// swallow events — fn keeps its system behavior and persona hotkeys pass
     /// through. Deactivation of an already-running session stays ungated.
     var isVoiceEnabled: (() -> Bool)?
     var onClipboardHotkey: (() -> Void)?
+    /// One step of the hold-modifier switcher gesture: open the panel + highlight
+    /// the first item, or move the highlight down if already open.
+    var onClipboardSwitcherStep: (() -> Void)?
+    /// Commit the switcher gesture: paste the highlighted item and close.
+    var onClipboardSwitcherCommit: (() -> Void)?
     var onVaultHotkey: (() -> Void)?
     var onClipboardQuickPaste: ((Int) -> Void)?
     var isClipboardPanelVisible: (() -> Bool)?
     var onSettingsHotkey: (() -> Void)?
     var onScreenshotHotkey: (() -> Void)?
     var onMeetingTranscribeHotkey: (() -> Void)?
-    var onSelectedTextEditorHotkey: (() -> Void)?
-    var onClipboardTransformHotkey: (() -> Void)?
     var onAction: (([HotkeyAction]) -> Void)?
     /// Synchronous, O(1) lookup of the bundle ID KeyMic believes is frontmost.
     /// MUST NOT call into LaunchServices — this runs in the event-tap callback on the
@@ -69,12 +84,12 @@ final class KeyMonitor {
     /// Physical events still pass through unchanged.
     private var secureInputSuspended = false
     private var clipboardHotkey: HotkeyConfig?
+    /// Cmd+Tab-style state for the clipboard hotkey (hold modifier + repeated tap).
+    private var clipboardSwitcher = ClipboardSwitcherState()
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
     private var meetingTranscribeHotkey: HotkeyConfig?
-    private var selectedTextEditorHotkey: HotkeyConfig?
-    private var clipboardTransformHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
     private var repeatTimers: [CGKeyCode: DispatchSourceTimer] = [:]
@@ -222,12 +237,15 @@ final class KeyMonitor {
         let priorTimerCount = repeatTimers.count
         let prior = state.resetTransient()
         cancelAllRepeatTimers()
+        clipboardSwitcher.reset()
         isResetRecoveryMode = true
 
         // Interrupt any active voice session — fn-held trigger OR persona-hotkey
-        // push-to-talk. AppDelegate's cancelRecording is idempotent so a single
-        // notification covers both sources.
-        if prior.triggerActive || prior.personaHotkeyKeyDown != nil {
+        // push-to-talk OR an open post-release console (which has neither a held
+        // trigger nor a persona-hotkey keyDown, yet must still be torn down on a
+        // reset such as settings reload / stop / secure-input). onTriggerInterrupted
+        // is idempotent (guards on isActive), so a single notification covers all.
+        if prior.triggerActive || prior.personaHotkeyKeyDown != nil || (isConsoleOpen?() ?? false) {
             DispatchQueue.main.async { [weak self] in self?.onTriggerInterrupted?() }
         }
 
@@ -256,8 +274,6 @@ final class KeyMonitor {
         settingsHotkey = hotkeys.hotkey(for: .settingsWindow)
         screenshotHotkey = hotkeys.hotkey(for: .screenshot)
         meetingTranscribeHotkey = hotkeys.hotkey(for: .meetingTranscribe)
-        selectedTextEditorHotkey = hotkeys.hotkey(for: .selectedTextEditor)
-        clipboardTransformHotkey = hotkeys.hotkey(for: .clipboardTransform)
         voiceTriggerHotkey = hotkeys.hotkey(for: .voiceTrigger)
         actionBindings = HotkeyBindingsStore.shared.bindings.compactMap { b in
             guard b.enabled,
@@ -285,6 +301,12 @@ final class KeyMonitor {
         case 0x1D: return 9
         default: return nil
         }
+    }
+
+    /// Tab (0x30) → forward; Shift+Tab → backward; anything else → nil.
+    static func personaCycleDirection(keyCode: CGKeyCode, flags: CGEventFlags) -> Bool? {
+        guard keyCode == 0x30 else { return nil }
+        return !flags.contains(.maskShift)
     }
 
     static func shouldCancelVoiceForUnexpectedKeyPress(
@@ -394,6 +416,26 @@ final class KeyMonitor {
             }
         }
 
+        // Voice picker: while a DEFAULT-TRIGGER voice session is recording, Tab /
+        // Shift+Tab cycle the highlighted persona instead of cancelling. Swallow both
+        // the keyDown (cycle on non-autorepeat only) and its matching keyUp. Gated on
+        // an explicit default-trigger signal — NOT on `personaHotkeyKeyDown == nil`,
+        // which goes stale once a persona hotkey's key is released while transcription
+        // is still live (that would wrongly swallow Tab for a persona-hotkey session).
+        // Must precede the keyDown cancel paths below (triggerActive interrupt +
+        // shouldCancelVoiceForUnexpectedKeyPress).
+        if (type == .keyDown || type == .keyUp),
+           isDefaultTriggerVoiceActive?() == true {
+            let tabCode = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+            if let forward = Self.personaCycleDirection(keyCode: tabCode, flags: event.flags) {
+                if type == .keyDown,
+                   event.getIntegerValueField(.keyboardEventAutorepeat) != 1 {
+                    DispatchQueue.main.async { [weak self] in self?.onPersonaCycle?(forward) }
+                }
+                return nil
+            }
+        }
+
         if let fKey = HotkeyConfig.decodeMediaFKey(type: type, event: event) {
             if Self.shouldCancelVoiceForUnexpectedKeyPress(
                 keyCode: fKey,
@@ -454,11 +496,21 @@ final class KeyMonitor {
                 }
             }
 
-            // Clipboard hotkey
+            // Clipboard hotkey — hold-modifier switcher gesture (Cmd+Tab style).
             if let cfg = clipboardHotkey,
                !cfg.isPureModifier,
                cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
-                DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
+                if cfg.modifiers.isEmpty {
+                    // No modifier to detect release on — fall back to plain toggle.
+                    DispatchQueue.main.async { [weak self] in self?.onClipboardHotkey?() }
+                    return nil
+                }
+                // Only discrete taps drive the gesture; swallow auto-repeat so the
+                // held key neither types nor rapidly cycles the highlight.
+                if !isAutoRepeat {
+                    _ = clipboardSwitcher.onHotkeyTap(hotkeyModifiers: cfg.modifiers)
+                    DispatchQueue.main.async { [weak self] in self?.onClipboardSwitcherStep?() }
+                }
                 return nil
             }
 
@@ -494,22 +546,6 @@ final class KeyMonitor {
                 return nil
             }
 
-            // Selected Text Editor hotkey
-            if let cfg = selectedTextEditorHotkey,
-               !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
-                DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
-                return nil
-            }
-
-            // Clipboard Transform hotkey
-            if let cfg = clipboardTransformHotkey,
-               !cfg.isPureModifier,
-               cfg.matches(keyCode: keyCode, flags: event.flags) {
-                DispatchQueue.main.async { [weak self] in self?.onClipboardTransformHotkey?() }
-                return nil
-            }
-
             // Persona hotkeys: push-to-talk per persona. Activate the persona and
             // start a voice session; the matching keyUp ends it. Swallow the event
             // to prevent dead-key side effects (e.g. ⌥E → ´). Gate on no other
@@ -525,16 +561,15 @@ final class KeyMonitor {
                isVoiceEnabled?() ?? true,
                state.personaHotkeyKeyDown == nil,
                !state.triggerActive {
-                let hotkeys = HotkeySettingsStore.shared
                 for persona in PersonaStore.shared.personas {
-                    guard let cfg = hotkeys.personaHotkey(personaId: persona.id),
+                    guard let raw = persona.hotkey,
+                          let cfg = HotkeyConfig.parse(raw),
                           !cfg.isPureModifier,
                           cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) else { continue }
                     let id = persona.id
                     state.personaHotkeyKeyDown = keyCode
                     DispatchQueue.main.async { [weak self] in
-                        PersonaStore.shared.setActive(id)
-                        self?.onTriggerDown?()
+                        self?.onTriggerDown?(.personaHotkey(personaId: id))
                     }
                     return nil
                 }
@@ -547,6 +582,17 @@ final class KeyMonitor {
         // hotkey would start a second voice session AppDelegate doesn't gate, and
         // its release would prematurely stop the persona recording.
         let nowActive = computeTriggerActive(type: type, event: event)
+
+        // Clipboard switcher: releasing the held hotkey modifier commits the
+        // gesture (paste highlighted + close). Never swallows the flagsChanged —
+        // voice/persona logic below still needs it.
+        if type == .flagsChanged {
+            let visible = isClipboardPanelVisible?() ?? false
+            if clipboardSwitcher.onFlagsChanged(currentFlags: event.flags, panelVisible: visible) == .commitPaste {
+                DispatchQueue.main.async { [weak self] in self?.onClipboardSwitcherCommit?() }
+            }
+        }
+
         if state.personaHotkeyKeyDown != nil {
             return Unmanaged.passUnretained(event)
         }
@@ -557,9 +603,15 @@ final class KeyMonitor {
         // Always honour *deactivation* — if Secure Input toggles on while
         // a session is already running, releasing the trigger must still stop
         // the recording cleanly.
-        if nowActive && !state.triggerActive && !secureInputSuspended && (isVoiceEnabled?() ?? true) {
+        // Also gate on `!isConsoleOpen`: while the post-release console is open the
+        // trigger key must pass through unchanged (return the event below) so it
+        // doesn't set `triggerActive` — otherwise the next keyDown would fire
+        // `onTriggerInterrupted` and close the console mid-edit (e.g. Option+Arrow
+        // when Right Option is the trigger).
+        if nowActive && !state.triggerActive && !secureInputSuspended && (isVoiceEnabled?() ?? true)
+            && !(isConsoleOpen?() ?? false) {
             state.triggerActive = true
-            DispatchQueue.main.async { [weak self] in self?.onTriggerDown?() }
+            DispatchQueue.main.async { [weak self] in self?.onTriggerDown?(.defaultTrigger) }
             return nil
         } else if !nowActive && state.triggerActive {
             state.triggerActive = false
@@ -609,16 +661,6 @@ final class KeyMonitor {
         if let cfg = meetingTranscribeHotkey, !cfg.isPureModifier,
            cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
             DispatchQueue.main.async { [weak self] in self?.onMeetingTranscribeHotkey?() }
-            return true
-        }
-        if let cfg = selectedTextEditorHotkey, !cfg.isPureModifier,
-           cfg.matches(keyCode: keyCode, flags: flags) {
-            DispatchQueue.main.async { [weak self] in self?.onSelectedTextEditorHotkey?() }
-            return true
-        }
-        if let cfg = clipboardTransformHotkey, !cfg.isPureModifier,
-           cfg.matches(keyCode: keyCode, flags: flags) {
-            DispatchQueue.main.async { [weak self] in self?.onClipboardTransformHotkey?() }
             return true
         }
         return false

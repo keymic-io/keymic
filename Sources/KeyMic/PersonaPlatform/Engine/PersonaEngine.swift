@@ -41,14 +41,22 @@ final class PersonaEngine {
             return .routed(text: transcript, via: strategy, result: routeResult)
         }
 
-        let context = await PersonaContextBuilder.build(
-            for: invocation.persona,
-            clipboardStore: clipboardStore,
-            onStatusUpdate: onStatusUpdate
-        )
+        let context: PersonaContext
+        let sources: Set<ContextSource>
+        if let override = invocation.contextOverride {
+            context = override.context
+            sources = override.sources
+        } else {
+            context = await PersonaContextBuilder.build(
+                for: invocation.persona,
+                clipboardStore: clipboardStore,
+                onStatusUpdate: onStatusUpdate
+            )
+            sources = invocation.persona.contextSources
+        }
         let userText = context.buildPrompt(
             transcript: transcript,
-            sources: invocation.persona.contextSources
+            sources: sources
         )
 
         // Map cancellation to InvocationError.cancelled (not a bare CancellationError):
@@ -76,7 +84,14 @@ final class PersonaEngine {
 
         if Task.isCancelled { throw InvocationError.cancelled }
 
-        let finalText = refined.isEmpty ? transcript : refined
+        // An empty LLM response is a deliberate "inject nothing" signal (personas
+        // may return empty for meaningless / unrelated input). Do NOT fall back
+        // to the raw transcript — that would inject exactly the noise the persona
+        // filtered out.
+        guard !refined.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .bypassed(reason: .emptyLLMResponse)
+        }
+        let finalText = refined
         let routeResult = await outputRouter.route(
             PersonaOutput(
                 text: finalText,

@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KeyMic is a single macOS menu-bar app (`LSUIElement`) that bundles several productivity layers inspired by Maccy (clipboard history), Karabiner (key remap), and skhd (shortcut hotkeys):
 
-- **Voice input** — hold a trigger key (Fn or Right Option), speak, transcribed text is pasted into the focused field via simulated `Cmd+V`. Optional LLM refinement (OpenAI-compatible chat-completions endpoint).
-- **Clipboard history** — text-only background monitor, SwiftData-backed storage, hotkey panel (`⌥V`) with search, arrow navigation, `⌥1`–`⌥0` quick paste.
+- **Voice input** — hold a trigger key (Fn or Right Option), speak, transcribed text is routed into the focused field. Transcription runs on one of four swappable engines (see *Speech engines*). Optional LLM refinement runs through the **Persona** pipeline.
+- **Personas** — the voice/LLM path is generalized into user-configurable "personas" (`Persona`: style prompt, temperature, hotkey, context sources, injection strategy). `PersonaEngine.run(Invocation)` builds context, calls the LLM, and hands the result to `OutputRouter` (see *PersonaPlatform & output routing*).
+- **Clipboard history** — text-only background monitor, SwiftData-backed storage, hotkey panel (`⌥V`) with search, arrow navigation, `⌥1`–`⌥0` quick paste, hold-modifier switcher gesture, and space-separated multi-paste.
 - **Key mapping** — Karabiner-style modifier remaps applied via a session-level `CGEvent` tap (e.g. Right Cmd → Forward Delete, Caps Lock → Left Control).
 - **Hotkey actions** — user-configurable shortcuts bound to `HotkeyAction` cases (`HotkeyConfig` + `HotkeyBindingsStore` + `HotkeyActionRunner`).
 - **Vault** — secret-aware clipboard escalation. `SecretScanner` (driven by bundled `gitleaks.toml`) classifies clipboard text; matches are persisted in macOS Keychain via `KeychainBackend` + `VaultStore`, surfaced through `VaultListView`.
@@ -39,9 +40,11 @@ scripts/release.sh -f 1.2.3   # `-f` overwrites existing v<VERSION> release + ta
 
 `scripts/release.sh` builds both arches, merges via `lipo` into a universal binary, codesigns, packages with `ditto`, generates a Sparkle appcast (EdDSA via `~/.sparkle-tools/generate_appcast`, keychain account `ed25519`), deploys appcast.xml to the `gh-pages` branch (served via GitHub Pages), commits + pushes `Info.plist`, creates an annotated `v<VERSION>` git tag, and publishes a GitHub release on `keymic-io/keymic`.
 
-**Tests are standalone `swiftc` runners**, not XCTest and not part of the Swift package. Each test file declares `@main` and prints `… passed` on success or exits non-zero. To add a new test target, add a `test-<name>:` rule to the `Makefile` listing every source file the test depends on.
+**Tests are standalone `swiftc` runners**, not XCTest and not part of the Swift package. Each test file declares `@main` and prints `… passed` on success or exits non-zero. `make test-all` chains ~70 individual runners (`test-clipboard-*`, `test-hotkey-*`, `test-speech-*`, `test-sensevoice-*`, `test-persona*`, `test-vault-*`, `test-shell-*`, `test-context-*`, …). To add a new test target, add a `test-<name>:` rule to the `Makefile` listing every source file the test depends on, then add it to the `test-all` list.
 
 `swift test` will fail — there is no test target in `Package.swift`. Always run via `make test*`.
+
+The SwiftPM package has two targets: the `KeyMic` executable and a `CSherpaOnnx` C target (`Sources/CSherpaOnnx/`) that bridges the sherpa-onnx runtime for the ONNX/funasr speech engine. Sparkle 2 is still the only external SPM dependency.
 
 ## Architecture
 
@@ -49,8 +52,9 @@ scripts/release.sh -f 1.2.3   # `-f` overwrites existing v<VERSION> release + ta
 
 `Sources/KeyMic/AppDelegate.swift` owns every long-lived component and connects them by callback:
 
-- `KeyMonitor` → emits `onTriggerDown` / `onTriggerUp` (voice hold) and `onClipboardHotkey` (⌥V).
-- Voice path: `KeyMonitor.onTriggerDown/Up` → `VoiceTrigger` (in `PersonaPlatform/Triggers/`) → `SpeechEngine` via `SpeechSessionHost` → 2 s grace timer → `PersonaEngine.run(Invocation)` → `LLMClient.complete` → `OutputRouter.dispatch` → `FocusedTextStrategy` (Cmd+V via `TextInjector`). `AppDelegate` constructs the platform graph in `applicationDidFinishLaunching` and routes `SpeechEngine` callbacks via `speechSessionHost.routePartial/Final/Error/AudioLevel`.
+- `KeyMonitor` → emits `onTriggerDown` / `onTriggerUp` (voice hold), `onClipboardHotkey` (⌥V), and per-persona hotkeys.
+- Voice path: `KeyMonitor.onTriggerDown/Up` → `VoiceTrigger` (in `PersonaPlatform/Triggers/`) → active `SpeechEngineProtocol` via `SpeechSessionHost` → 2 s grace timer → `PersonaEngine.run(Invocation)` → `LLMClient` → `OutputRouter.route(PersonaOutput)` → `InjectionStrategy` handler (Cmd+V via `TextInjector`, or clipboard/openURL/shell/iTerm). `AppDelegate` constructs the platform graph in `applicationDidFinishLaunching` and routes engine callbacks via `speechSessionHost.routePartial/Final/Error/AudioLevel`.
+- The speech engine starts on the cheap Apple path (main-safe, no model load), then `applySpeechEnginePreference()` asynchronously loads and swaps in a heavier engine (SenseVoice / ONNX / SpeechAnalyzer) off the main thread once its model is ready. A generation counter guards against a stale async swap clobbering a newer decision.
 - Clipboard path: `onClipboardHotkey` → `ClipboardController.toggle` (showing `ClipboardPanel` SwiftUI view).
 
 User-visible state lives in `UserDefaults` and is read on demand (no central settings object). Keys are scattered across components: `voiceEnabled`, `selectedLocaleCode`, `voiceTriggerKey`, `keyMappingEnabled`, `llmEnabled`/`llm*`, `ClipboardPreferences.*Key`, `HotkeyPreferences`, and `VaultConfig`.
@@ -68,6 +72,34 @@ Single `.cgSessionEventTap` watching `flagsChanged` + `keyDown` + `keyUp`. The c
 - Apple keyboards emit arrow/fn-row keyDowns with `.maskSecondaryFn` already set; never read `event.flags.contains(.maskSecondaryFn)` directly to detect Fn — track via `flagsChanged` filtered by `keyCode == 0x3F`.
 - Synthetic Caps Lock events do **not** flip system Caps Lock state. Use `IOHIDSetModifierLockState` via IOKit (`CapsLockToggler` in `KeyMonitor.swift`).
 - Modifier keys' `flagsChanged` events have no down/up boolean — derive state by toggling a `Set<CGKeyCode>` or by reading the matching flag bit.
+
+### Speech engines (`Sources/KeyMic/Speech/`)
+
+Four interchangeable backends behind `SpeechEngineProtocol` (start/end session + partial/final/error/audioLevel callbacks). `SpeechEngineFactory.choose(...)` is a pure function that picks one from the user-selected model, OS version, and per-engine readiness:
+
+- **Apple** — legacy `SFSpeechRecognizer`. Always available; the default and universal fallback.
+- **SpeechAnalyzer** (`Speech/SpeechAnalyzer/`) — macOS 26+ on-device recognizer. Auto-upgraded from the Apple default when the locale is supported and its local asset is ready (more accurate).
+- **SenseVoice** (`Speech/SenseVoice/`) — offline **CoreML** model (`MLModel`, ~226 MB, int8). Not sherpa-based. Own fbank extractor, CTC decoder, SPM vocab. `textnorm` embedding index controls punctuation/casing (`withitn=14` default, `woitn=15`). Model downloaded on demand and stored under `~/Library/Application Support/KeyMic/models/`, gated by a SHA256 `.version` sidecar (stale/pre-int8 dirs are evicted). macOS 15+.
+- **ONNX / funasr** (`Speech/ONNX/`) — sherpa-onnx runtime via the `CSherpaOnnx` C target. Encoder/LLM/embedding int8 `.onnx` assets fetched by `VoiceModelCatalog` with source→mirror fallback (HuggingFace primary, ModelScope mirror, GitHub release for the runtime dylib). macOS 15+.
+
+`SenseVoiceModelStore` / `AssetStore` are shared singletons so the engine factory and the Settings download button observe the same `State` (`notDownloaded`/`downloading`/`ready`/`failed`).
+
+### PersonaPlatform & output routing (`Sources/KeyMic/PersonaPlatform/`, `Sources/KeyMic/Output/`)
+
+The LLM+injection half of the voice path. `PersonaEngine.run(Invocation)` (transcript + `Persona` + originating app + optional output override):
+
+1. If the LLM is not configured/ready, route the raw transcript directly.
+2. Otherwise `PersonaContextBuilder.build` assembles context from the persona's `contextSources` (`selection`, `clipboardTop`, `clipboardHistory`, `windowOCR`), builds a prompt, calls `LLMClient`, then routes the refined text.
+
+`OutputRouter.route(PersonaOutput)` dispatches on `InjectionStrategy`: `replaceFocusedText`, `replaceSelection`, `clipboard`, `openURL(template)` (scheme-safelisted, `{query}`/`{selection}`/`{clipboard}` placeholders), `runShell(commandTemplate)` (via `ShellOutputRunner` + `ShellConfirmationSheet`), `writeToITermPane` (via `Output/iTerm/ITermBridge`). Falls back to clipboard with a typed `FallbackReason` when injection is impossible (no focused element, AX permission missing, etc.).
+
+`PersonaStore.shared` persists personas; built-ins include a general editor persona (`replaceSelection` strategy, `[.selection]` context).
+
+### Context & input state
+
+- `Context/WindowOCRProvider` — captures the frontmost window and OCRs it to feed the `windowOCR` context source.
+- `Input/SecureInputMonitor` — detects when a secure text field (password) has focus and notifies `KeyMonitor` (`onSecureInputEnter/Exit`) so trigger/remap behavior can back off.
+- `Tools/Shell/` — `ShellRunner` (long-lived login shell, warmed up at launch, 30 s command timeout), `ShellSnapshot` (cwd/env snapshot), `ShellLogger`. Backs the `runShell` output strategy.
 
 ### Clipboard subsystem (`Sources/KeyMic/Clipboard/`)
 
@@ -105,9 +137,9 @@ Single `.cgSessionEventTap` watching `flagsChanged` + `keyDown` + `keyUp`. The c
 
 Wraps `SPUStandardUpdaterController` from Sparkle 2. Reads `SUFeedURL` and `SUPublicEDKey` from `Info.plist`. The appcast is hosted on GitHub Pages (`gh-pages` branch), NOT in the main source tree. `Info.plist`/`SUFeedURL` points to `https://keymic-io.github.io/keymic/appcast.xml`. Update artifacts are signed by `scripts/release.sh` using the EdDSA private key in `scripts/keys/` (or whatever the `~/.sparkle-tools/generate_appcast --account` resolves). The release script deploys appcast.xml to the `gh-pages` branch via a temporary git worktree.
 
-### Settings (`SettingsWindow`)
+### Settings (`Sources/KeyMic/SettingsUI/`)
 
-Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMapping`/`clipboard`). Tab views are built with `NSTabViewItem` but rendered manually inside `contentContainer` — `tabView.label` is unused. Communicates back to `AppDelegate` through `SettingsWindowDelegate`.
+SwiftUI, hosted in a `SwiftUISettingsWindow` (`NSPanel`). `SettingsRoot` renders a sidebar with sections `general`/`voice`/`llm`/`personas`/`keyMapping`/`shortcuts`/`clipboard`/`screenshot`. Personas are edited in `PersonasView`. There is no central settings object — state lives in `UserDefaults` and is read on demand.
 
 ## Permissions & entitlements
 
@@ -119,9 +151,23 @@ Custom AppKit panel with sidebar-style sections (`general`/`voice`/`llm`/`keyMap
 
 ## Conventions
 
-- Swift 5.9, target macOS 14. Source root: `Sources/KeyMic/`.
-- One SwiftPM dependency: Sparkle 2 (`2.6.0..<3.0.0`).
+- Swift 5.9, target macOS 14 (some engines gate to macOS 15/26 at runtime). Source root: `Sources/KeyMic/`; C bridge in `Sources/CSherpaOnnx/`.
+- One external SwiftPM dependency: Sparkle 2 (`2.6.0..<3.0.0`). The sherpa-onnx runtime is not a package dependency — it's downloaded at runtime and bridged through the local `CSherpaOnnx` C target.
 - Logging: `os.Logger` with subsystem `io.keymic.app`.
-- Singletons (`KeyMappingManager.shared`, `PersonaStore.shared`) for cross-cutting state; `OpenAICompatibleLLMClient` and other PersonaPlatform components are owned by `AppDelegate`'s graph (injected, not shared).
-- Persistent locations: SwiftData store + lock file under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.
+- Singletons (`KeyMappingManager.shared`, `PersonaStore.shared`, `OutputRouter.shared`, `ShellRunner.shared`, `SenseVoiceModelStore.shared`) for cross-cutting state; `LLMClient` and other per-invocation PersonaPlatform components are owned by `AppDelegate`'s graph (injected).
+- Persistent locations: SwiftData store + lock file + downloaded speech models (`models/`) under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.
 - `AGENTS.md` (repo root) documents non-obvious macOS HID + TCC gotchas — read it before editing `KeyMonitor.swift` or codesign/Info.plist plumbing.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs live in the `keymic-io/keymic` GitHub Issues, driven by the `gh` CLI. External PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical triage roles use their default label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root (created lazily by `/domain-modeling`). See `docs/agents/domain.md`.

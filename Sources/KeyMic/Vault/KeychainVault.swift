@@ -11,22 +11,53 @@ struct KeychainVault: KeychainBackend {
         ]
     }
 
-    func write(account: String, secret: String) throws {
+    func write(account: String, secret: String, biometricProtected: Bool) throws {
         let data = Data(secret.utf8)
 
-        // Do NOT attach a SecAccessControl with .userPresence here.
-        // Access control with biometric auth is enforced at read time via LAContext.
-        // Adding .userPresence to SecItemAdd causes errSecAuthFailed on macOS when
-        // there is no active authentication context, silently dropping the vault entry.
         var query = baseQuery(account: account)
-        query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         query[kSecValueData as String] = data
+
+        if biometricProtected {
+            // Bind the item to a `.userPresence` access control: reading requires
+            // Touch ID (with device-passcode fallback), NOT the login keychain
+            // password prompt — which is unstable because our local self-signed
+            // identity changes cdhash on every rebuild.
+            //
+            // The original code avoided this because a bare SecItemAdd with a
+            // biometric ACL returns errSecAuthFailed when no authentication context
+            // is present. The fix is to supply a non-interactive LAContext: adding a
+            // .userPresence item never requires user auth (only *reading* it does),
+            // so the write stays silent — critical because ingest runs during
+            // automatic clipboard monitoring.
+            var acError: Unmanaged<CFError>?
+            guard let access = SecAccessControlCreateWithFlags(
+                nil,
+                kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+                .userPresence,
+                &acError
+            ) else {
+                throw KeychainError.writeFailed(errSecParam)
+            }
+            query[kSecAttrAccessControl as String] = access
+            let context = LAContext()
+            context.interactionNotAllowed = true
+            query[kSecUseAuthenticationContext as String] = context
+        } else {
+            query[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        }
 
         let status = SecItemAdd(query as CFDictionary, nil)
         if status == errSecDuplicateItem {
-            let updateAttrs: [String: Any] = [kSecValueData as String: data]
-            let updateStatus = SecItemUpdate(baseQuery(account: account) as CFDictionary, updateAttrs as CFDictionary)
-            if updateStatus != errSecSuccess { throw KeychainError.writeFailed(updateStatus) }
+            // SecItemUpdate cannot replace an existing item's kSecAttrAccessControl,
+            // so updating only kSecValueData would leave a pre-ACL entry readable
+            // without the intended `.userPresence` protection. Delete + re-add so
+            // the current access control (or plain accessibility) always applies.
+            let deleteStatus = SecItemDelete(baseQuery(account: account) as CFDictionary)
+            guard deleteStatus == errSecSuccess || deleteStatus == errSecItemNotFound else {
+                throw KeychainError.writeFailed(deleteStatus)
+            }
+            let retryStatus = SecItemAdd(query as CFDictionary, nil)
+            if retryStatus != errSecSuccess { throw KeychainError.writeFailed(retryStatus) }
         } else if status != errSecSuccess {
             throw KeychainError.writeFailed(status)
         }
