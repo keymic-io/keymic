@@ -56,6 +56,8 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
     private var converter: AVAudioConverter?
 
     private var firstBufferReceived = false
+    /// Session start timestamp, for the `engine_cold_start` first-buffer latency.
+    private var sessionStartTime: DispatchTime?
     private var audioWatchdog: DispatchWorkItem?
     // Bumped on every startSession / endSession. Result + start callbacks capture
     // their own generation at creation and drop callbacks once the value diverges,
@@ -80,6 +82,7 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
         generation &+= 1
         let myGen = generation
         firstBufferReceived = false
+        sessionStartTime = .now()
 
         // `.progressiveTranscription` preset sets reportingOptions = [.volatileResults]
         // so we receive streaming partials (volatile) followed by a finalized result.
@@ -153,6 +156,11 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
                 guard let self, !self.firstBufferReceived else { return }
                 self.firstBufferReceived = true
                 self.audioWatchdog?.cancel(); self.audioWatchdog = nil
+                let elapsedMs = self.sessionStartTime.map {
+                    Int((DispatchTime.now().uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000)
+                } ?? 0
+                TelemetryService.shared.engineColdStart(
+                    engine: "speechAnalyzer", firstBufferMs: elapsedMs, scoWatchdogFired: false)
             }
             if let converted = convertBuffer(buffer, using: capturedConverter, to: targetFormat) {
                 capturedContinuation.yield(AnalyzerInput(buffer: converted))
@@ -171,6 +179,11 @@ final class SpeechAnalyzerSpeechEngine: SpeechEngineProtocol {
         let watchdog = DispatchWorkItem { [weak self] in
             guard let self, self.generation == myGen, !self.firstBufferReceived else { return }
             logger.error("No audio frames in 800ms (device: \(deviceName, privacy: .public))")
+            let elapsedMs = self.sessionStartTime.map {
+                Int((DispatchTime.now().uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000)
+            } ?? 0
+            TelemetryService.shared.engineColdStart(
+                engine: "speechAnalyzer", firstBufferMs: elapsedMs, scoWatchdogFired: true)
             self.teardownInternal()
             self.onError?("麦克风未响应，请松开后稍候再试")
         }

@@ -125,6 +125,7 @@ final class SenseVoiceModelStore {
             break
         }
         _state = .downloading(0)
+        downloadStart = Date()
         lock.unlock()
 
         guard let url = URL(string: SenseVoiceConfig.modelDownloadURLString) else { fail("bad download URL", onState); return }
@@ -196,6 +197,7 @@ final class SenseVoiceModelStore {
             try? FileManager.default.removeItem(at: stagingURL)
             try? FileManager.default.removeItem(at: zip)
             setState(.ready)
+            emitModelDownload(result: "success", errorKind: nil)
             DispatchQueue.main.async { onState(.ready) }
         } catch {
             try? FileManager.default.removeItem(at: stagingURL)
@@ -282,8 +284,32 @@ final class SenseVoiceModelStore {
 
     private func fail(_ msg: String, _ onState: @escaping (State) -> Void) {
         logger.error("\(msg, privacy: .public)")
+        // Coarse, content-free error kind from the code-controlled msg prefix.
+        let kind: String
+        if msg.hasPrefix("sha256") { kind = "sha256Mismatch" }
+        else if msg.hasPrefix("download") { kind = "network" }
+        else if msg.hasPrefix("unzip") { kind = "unzip" }
+        else { kind = "other" }
+        emitModelDownload(result: "failed", errorKind: kind)
         setState(.failed(msg))
         DispatchQueue.main.async { onState(.failed(msg)) }
+    }
+
+    /// Start time for the in-flight download, for `model_download` telemetry.
+    private var downloadStart: Date?
+
+    private func emitModelDownload(result: String, errorKind: String?) {
+        let durationMs = downloadStart.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+        let source: String = {
+            let host = URL(string: SenseVoiceConfig.modelDownloadURLString)?.host?.lowercased() ?? ""
+            if host.contains("huggingface") { return "huggingface" }
+            if host.contains("modelscope") { return "modelscope" }
+            if host.contains("github") { return "github" }
+            return "other"
+        }()
+        TelemetryService.shared.modelDownload(
+            model: SenseVoiceConfig.modelDirName, result: result,
+            durationMs: durationMs, source: source, errorKind: errorKind)
     }
 }
 

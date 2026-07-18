@@ -10,6 +10,19 @@ enum InjectionStrategy: Codable, Equatable {
     case openURL(template: String)
     case runShell(commandTemplate: String)
     case writeToITermPane(paneIndex: Int)
+
+    /// Fixed low-cardinality case name for telemetry. NEVER includes the associated
+    /// value (URL template / shell command / pane index) — only the strategy kind.
+    var telemetryName: String {
+        switch self {
+        case .replaceFocusedText: return "replaceFocusedText"
+        case .replaceSelection:   return "replaceSelection"
+        case .clipboard:          return "clipboard"
+        case .openURL:            return "openURL"
+        case .runShell:           return "runShell"
+        case .writeToITermPane:   return "writeToITermPane"
+        }
+    }
 }
 
 /// What gets routed. Built by AppDelegate.finishTranscription (or any future consumer).

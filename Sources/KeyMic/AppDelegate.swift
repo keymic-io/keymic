@@ -1,3 +1,4 @@
+import AVFoundation
 import AppKit
 import CSherpaOnnx
 import CoreML
@@ -35,6 +36,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// upgrade captures the generation at dispatch time and aborts its main-thread swap if a newer
     /// decision has superseded it — so a slow model load can never clobber a fresher choice.
     private var speechEngineGeneration = 0
+    /// Telemetry name of the currently-decided speech engine. Set alongside the
+    /// `engine_selected` emission so `transcribe_error` reports the right engine.
+    private var currentEngineTelemetryName = "apple"
 #if KEYMIC_HAS_SPEECH_ANALYZER
     /// Backing store for `speechAnalyzerSupport`. Untyped because a stored property cannot carry
     /// `@available(macOS 26, *)`, and the concrete type is gated to macOS 26+.
@@ -166,6 +170,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if activateExistingInstanceIfNeeded() { return }
 
+        // Wire the production telemetry sink and start it early — before KeyMonitor —
+        // so an event-tap failure below can still emit. No-ops entirely when the
+        // consent toggle is off or no app ID is configured.
+        TelemetryService.shared.sinkProvider = { TelemetryDeckSink.makeIfConfigured() }
+        TelemetryService.shared.startIfEnabled()
+
         Task { @MainActor in await AccountStore.shared.refresh() }
         Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
             Task { await AccountStore.shared.refresh() }
@@ -182,6 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the reset; otherwise Caps Lock→Ctrl silently does nothing until the user toggles
         // key mapping off/on.
         KeyMappingManager.shared.reapplyHIDMappings()
+        if KeyMappingManager.shared.isEnabled,
+           KeyMappingManager.shared.mappings.contains(where: { $0.enabled }) {
+            TelemetryService.shared.featureUsed("keymap")
+        }
 
         AppScreen.refresh()
 
@@ -208,7 +222,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        emitPermissionStateSnapshot()
+
         if !AXIsProcessTrusted() {
+            TelemetryService.shared.eventTapFailed()
             showAccessibilityAlert()
             return
         }
@@ -217,12 +234,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // lazy init, and migrating after that point would be too late to affect this session.
         HotkeySettingsStore.migrateIfNeeded(defaults: .standard, personaStore: PersonaStore.shared)
         if !keyMonitor.start() {
+            TelemetryService.shared.eventTapFailed()
             showAccessibilityAlert()
             return
         }
         keyMonitor.currentFrontBundleID = { [weak self] in self?.cachedFrontBundleID }
 
-        keyMonitor.onAction = { [weak self] actions in self?.actionRunner.run(actions) }
+        keyMonitor.onAction = { [weak self] actions in
+            guard let self else { return }
+            TelemetryService.shared.featureUsed("hotkey")
+            for action in actions {
+                TelemetryService.shared.hotkeyAction(action.telemetryName)
+            }
+            self.actionRunner.run(actions)
+        }
         clipboardController = ClipboardController()
         clipboardController.overlayPanel = overlayPanel
 
@@ -270,6 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         keyMonitor.onTriggerDown = { [weak self] source in
             guard let self, self.isVoiceEnabled else { return }
+            TelemetryService.shared.featureUsed("voice")
             self.updateStatusIcon(recording: true)
             Task { @MainActor in self.voiceTrigger.onTriggerDown(source: source) }
         }
@@ -377,6 +403,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         ShellRunner.shared.warmUp()
+
+        showTelemetryFirstRunNoticeIfNeeded()
+    }
+
+    // MARK: - Telemetry helpers
+
+    private func emitPermissionStateSnapshot() {
+        func map(_ s: AVAuthorizationStatus) -> String {
+            switch s {
+            case .authorized: return "granted"
+            case .denied, .restricted: return "denied"
+            case .notDetermined: return "undetermined"
+            @unknown default: return "undetermined"
+            }
+        }
+        func mapSpeech(_ s: SFSpeechRecognizerAuthorizationStatus) -> String {
+            switch s {
+            case .authorized: return "granted"
+            case .denied, .restricted: return "denied"
+            case .notDetermined: return "undetermined"
+            @unknown default: return "undetermined"
+            }
+        }
+        TelemetryService.shared.permissionState(
+            mic: map(AVCaptureDevice.authorizationStatus(for: .audio)),
+            speech: mapSpeech(SFSpeechRecognizer.authorizationStatus()),
+            accessibility: AXIsProcessTrusted() ? "granted" : "denied",
+            screenCapture: CGPreflightScreenCaptureAccess() ? "granted" : "denied")
+    }
+
+    /// One-time notice that anonymous diagnostics + crash reporting are on and carry no
+    /// content. Shown once (persisted flag), only while telemetry is enabled.
+    private func showTelemetryFirstRunNoticeIfNeeded() {
+        let flagKey = "telemetryNoticeShown"
+        guard TelemetryService.shared.isEnabled,
+              !UserDefaults.standard.bool(forKey: flagKey) else { return }
+        UserDefaults.standard.set(true, forKey: flagKey)
+        DispatchQueue.main.async {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Anonymous diagnostics & crash reports")
+            alert.informativeText = String(localized: "KeyMic shares anonymous diagnostics & crash reports to fix crashes and device-specific failures. It never includes your transcripts, clipboard, keystrokes, or screen content. Turn it off anytime in Settings › General.")
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: String(localized: "OK"))
+            alert.runModal()
+        }
     }
 
     static func syncPersonaHotkeysToRegistry() {
@@ -520,6 +591,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngineGeneration &+= 1
         let gen = speechEngineGeneration
 
+        // Emit the winning engine decision (content-free enums). `syncSpeechEngineIfNeeded`
+        // only re-enters here when an engine/locale input actually changed, so this does not spam.
+        currentEngineTelemetryName = choice.telemetryName
+        TelemetryService.shared.engineSelected(
+            model: model,
+            engine: choice.telemetryName,
+            osMajor: String(ProcessInfo.processInfo.operatingSystemVersion.majorVersion),
+            locale: langKey)
+
         if choice == .speechAnalyzer {
 #if KEYMIC_HAS_SPEECH_ANALYZER
             if #available(macOS 26, *), let fmt = speechAnalyzerSupport.analyzerFormat {
@@ -616,6 +696,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// build the recognizer). No-op if a newer engine decision has already superseded `gen`.
     private func fallbackToApple(gen: Int) {
         guard gen == speechEngineGeneration else { return }
+        currentEngineTelemetryName = "apple"
         speechEngine = makeAppleEngine()
         setupSpeechCallbacks()
         speechSessionHost?.replaceEngine(speechEngine)
@@ -681,7 +762,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         speechEngine.onError = { [weak self] msg in
             DispatchQueue.main.async { [weak self] in
-                self?.speechSessionHost?.routeError(msg)
+                guard let self else { return }
+                // Coarse, content-free: report only that a recognition error occurred on
+                // the active engine — never the message text (may derive from user speech).
+                TelemetryService.shared.transcribeError(
+                    engine: self.currentEngineTelemetryName, errorKind: "recognition")
+                self.speechSessionHost?.routeError(msg)
             }
         }
         speechEngine.onAudioLevel = { [weak self] level in

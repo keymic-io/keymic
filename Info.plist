@@ -58,5 +58,7 @@
 	<string>ETSPhgEiWB+ZL2wZjM7o25iIwBVTYWFOnxoGIAb8A6A=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>0</integer>
+	<key>TelemetryDeckAppID</key>
+	<string>7D398458-F45A-48D8-AFF2-DED18ACA1F0F</string>
 </dict>
 </plist>
