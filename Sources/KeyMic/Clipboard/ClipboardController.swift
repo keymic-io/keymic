@@ -92,6 +92,7 @@ final class ClipboardController {
     }
 
     func toggle(initialTab: PanelTab = .clipboard) {
+        TelemetryService.shared.featureUsed("clipboard")
         let trace = ClipboardOpenTrace.shared
         trace.begin(reason: "toggle(\(initialTab))")
 
@@ -420,6 +421,7 @@ final class ClipboardController {
                     "vault ingest failed — keeping clipboard item \(itemID.uuidString, privacy: .public) in history")
                 return
             }
+            TelemetryService.shared.featureUsed("vault")
             // Divert, don't copy: once the secret is safely in the Keychain, remove
             // the plaintext row from the (unencrypted) SwiftData history store.
             self.store.delete(id: itemID)

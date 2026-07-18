@@ -1,6 +1,61 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Anonymous — never includes transcripts, clipboard, keystrokes, or screen content.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anonymous — never includes transcripts, clipboard, keystrokes, or screen content."
+          }
+        }
+      }
+    },
+    "Anonymous diagnostics & crash reports": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anonymous diagnostics & crash reports"
+          }
+        }
+      }
+    },
+    "Diagnostics": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Diagnostics"
+          }
+        }
+      }
+    },
+    "KeyMic shares anonymous diagnostics & crash reports to fix crashes and device-specific failures. It never includes your transcripts, clipboard, keystrokes, or screen content. Turn it off anytime in Settings › General.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "KeyMic shares anonymous diagnostics & crash reports to fix crashes and device-specific failures. It never includes your transcripts, clipboard, keystrokes, or screen content. Turn it off anytime in Settings › General."
+          }
+        }
+      }
+    },
+    "Share anonymous diagnostics & crash reports": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Share anonymous diagnostics & crash reports"
+          }
+        }
+      }
+    },
     "%@ is already mapped": {
       "extractionState": "manual",
       "localizations": {

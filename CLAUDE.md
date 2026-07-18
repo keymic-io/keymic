@@ -44,7 +44,7 @@ scripts/release.sh -f 1.2.3   # `-f` overwrites existing v<VERSION> release + ta
 
 `swift test` will fail — there is no test target in `Package.swift`. Always run via `make test*`.
 
-The SwiftPM package has two targets: the `KeyMic` executable and a `CSherpaOnnx` C target (`Sources/CSherpaOnnx/`) that bridges the sherpa-onnx runtime for the ONNX/funasr speech engine. Sparkle 2 is still the only external SPM dependency.
+The SwiftPM package has two targets: the `KeyMic` executable and a `CSherpaOnnx` C target (`Sources/CSherpaOnnx/`) that bridges the sherpa-onnx runtime for the ONNX/funasr speech engine. External SPM dependencies: Sparkle 2 and TelemetryDeck (`2.14.0..<3.0.0`, anonymous diagnostics — see *Telemetry*).
 
 ## Architecture
 
@@ -137,6 +137,15 @@ The LLM+injection half of the voice path. `PersonaEngine.run(Invocation)` (trans
 
 Wraps `SPUStandardUpdaterController` from Sparkle 2. Reads `SUFeedURL` and `SUPublicEDKey` from `Info.plist`. The appcast is hosted on GitHub Pages (`gh-pages` branch), NOT in the main source tree. `Info.plist`/`SUFeedURL` points to `https://keymic-io.github.io/keymic/appcast.xml`. Update artifacts are signed by `scripts/release.sh` using the EdDSA private key in `scripts/keys/` (or whatever the `~/.sparkle-tools/generate_appcast --account` resolves). The release script deploys appcast.xml to the `gh-pages` branch via a temporary git worktree.
 
+### Telemetry (`Sources/KeyMic/Telemetry/`)
+
+Opt-out anonymous diagnostics + feature analytics via the **TelemetryDeck** SDK (no self-hosted backend). Design principle: one gate, one import site, never any user content.
+
+- `TelemetryService` (singleton) — the only thing call sites talk to. Reads the shared `telemetryEnabled` UserDefaults key (default `true`); every typed emit method no-ops when disabled. Imports **no** SDK (so standalone `swiftc` test runners compile it). Emits both diagnostics (`engine_selected`, `model_download`, `engine_cold_start`, `transcribe_error`, `permission_state`, `event_tap_failed`) and adoption signals (`feature_used`, `persona_invoked`, `hotkey_action`, `activation_first_transcription`).
+- `TelemetryDeckSink` — the **sole `import TelemetryDeck` site**; `makeIfConfigured()` reads `TelemetryDeckAppID` from `Info.plist` and no-ops if absent. `AppDelegate` wires `TelemetryService.shared.sinkProvider = { TelemetryDeckSink.makeIfConfigured() }` then `startIfEnabled()` early in launch. The SDK auto-sends a session/launch signal, so there is no manual `app_launch`.
+- Consent: a single Settings › General toggle ("Share anonymous diagnostics & crash reports") + a one-time first-run notice. The same `telemetryEnabled` flag is designed to also gate the planned Sentry crash-reporting layer.
+- **Red-line**: emit arguments are only enums / case names / durations / bools / stable ids — never transcripts, clipboard, keys, OCR, secrets, or associated URL/shell values.
+
 ### Settings (`Sources/KeyMic/SettingsUI/`)
 
 SwiftUI, hosted in a `SwiftUISettingsWindow` (`NSPanel`). `SettingsRoot` renders a sidebar with sections `general`/`voice`/`llm`/`personas`/`keyMapping`/`shortcuts`/`clipboard`/`screenshot`. Personas are edited in `PersonasView`. There is no central settings object — state lives in `UserDefaults` and is read on demand.
@@ -152,7 +161,7 @@ SwiftUI, hosted in a `SwiftUISettingsWindow` (`NSPanel`). `SettingsRoot` renders
 ## Conventions
 
 - Swift 5.9, target macOS 14 (some engines gate to macOS 15/26 at runtime). Source root: `Sources/KeyMic/`; C bridge in `Sources/CSherpaOnnx/`.
-- One external SwiftPM dependency: Sparkle 2 (`2.6.0..<3.0.0`). The sherpa-onnx runtime is not a package dependency — it's downloaded at runtime and bridged through the local `CSherpaOnnx` C target.
+- External SwiftPM dependencies: Sparkle 2 (`2.6.0..<3.0.0`) and TelemetryDeck (`2.14.0..<3.0.0`). The sherpa-onnx runtime is not a package dependency — it's downloaded at runtime and bridged through the local `CSherpaOnnx` C target.
 - Logging: `os.Logger` with subsystem `io.keymic.app`.
 - Singletons (`KeyMappingManager.shared`, `PersonaStore.shared`, `OutputRouter.shared`, `ShellRunner.shared`, `SenseVoiceModelStore.shared`) for cross-cutting state; `LLMClient` and other per-invocation PersonaPlatform components are owned by `AppDelegate`'s graph (injected).
 - Persistent locations: SwiftData store + lock file + downloaded speech models (`models/`) under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.

@@ -212,6 +212,16 @@ final class VoiceTrigger: SpeechClient {
             return
         }
 
+        // Activation milestone: fire once ever on the first successful transcription.
+        // Only mark sent when actually emitted so a user who enables telemetry later
+        // still records their activation. Content-free (no transcript in the signal).
+        let activationKey = "activationFirstTranscriptionSent"
+        if TelemetryService.shared.isEnabled,
+           !UserDefaults.standard.bool(forKey: activationKey) {
+            UserDefaults.standard.set(true, forKey: activationKey)
+            TelemetryService.shared.activationFirstTranscription()
+        }
+
         // Persona-hotkey session: run its persona directly (unchanged behavior).
         // NO picker, NO console — honors the scope gate.
         if case .personaHotkey(let id) = currentSource {

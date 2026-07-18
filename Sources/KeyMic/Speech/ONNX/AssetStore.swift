@@ -82,19 +82,31 @@ final class AssetStore {
     }
 
     /// Download `file.url`, falling back to each mirror in order on failure (e.g. HF blocked →
-    /// ModelScope). Returns the first successful body, or throws the last error if all fail.
-    static func downloadWithFallback(_ file: AssetFile) throws -> Data {
+    /// ModelScope). Returns the first successful body plus the URL it came from, or throws the
+    /// last error if all fail.
+    static func downloadWithFallback(_ file: AssetFile) throws -> (data: Data, url: URL) {
         var lastError: Error = NSError(domain: "AssetStore", code: -1,
                                        userInfo: [NSLocalizedDescriptionKey: "no source URLs"])
         for url in [file.url] + file.mirrors {
-            do { return try Data(contentsOf: url) }
+            do { return (try Data(contentsOf: url), url) }
             catch { lastError = error }
         }
         throw lastError
     }
 
+    /// Coarse source label for telemetry, derived from a URL host. Content-free.
+    static func telemetrySource(for url: URL) -> String {
+        let host = url.host?.lowercased() ?? ""
+        if host.contains("huggingface") { return "huggingface" }
+        if host.contains("modelscope") { return "modelscope" }
+        if host.contains("github") { return "github" }
+        return "other"
+    }
+
     private func runDownload(onState: @escaping (State) -> Void) {
         defer { lock.lock(); inFlight = false; lock.unlock() }
+        dlStart = Date()
+        dlSource = Self.telemetrySource(for: bundle.files.first?.url ?? URL(fileURLWithPath: "/"))
         let fm = FileManager.default
         try? fm.removeItem(at: stagingDir)
         do { try fm.createDirectory(at: stagingDir, withIntermediateDirectories: true) }
@@ -105,8 +117,9 @@ final class AssetStore {
             let dst = stagingDir.appendingPathComponent(file.relPath)
             do {
                 try fm.createDirectory(at: dst.deletingLastPathComponent(), withIntermediateDirectories: true)
-                let data = try Self.downloadWithFallback(file)   // 主源失败→按序试镜像;file:// 与 https 均可
-                try data.write(to: dst)
+                let result = try Self.downloadWithFallback(file)   // 主源失败→按序试镜像;file:// 与 https 均可
+                dlSource = Self.telemetrySource(for: result.url)
+                try result.data.write(to: dst)
             } catch {
                 try? fm.removeItem(at: stagingDir)
                 return fail("download \(file.relPath): \(error.localizedDescription)", onState)
@@ -126,6 +139,7 @@ final class AssetStore {
             try fm.createDirectory(at: destDir.deletingLastPathComponent(), withIntermediateDirectories: true)
             try fm.moveItem(at: stagingDir, to: destDir)
             setState(.ready)
+            emitModelDownload(result: "success", errorKind: nil)
             DispatchQueue.main.async { onState(.ready) }
         } catch {
             try? fm.removeItem(at: stagingDir)
@@ -133,8 +147,25 @@ final class AssetStore {
         }
     }
 
+    /// Start time + winning source for the in-flight download, for `model_download` telemetry.
+    private var dlStart: Date?
+    private var dlSource = "other"
+
+    private func emitModelDownload(result: String, errorKind: String?) {
+        let durationMs = dlStart.map { Int(Date().timeIntervalSince($0) * 1000) } ?? 0
+        TelemetryService.shared.modelDownload(
+            model: bundle.destDirName, result: result, durationMs: durationMs,
+            source: dlSource, errorKind: errorKind)
+    }
+
     private func fail(_ msg: String, _ onState: @escaping (State) -> Void) {
         logger.error("\(msg, privacy: .public)")
+        // Coarse, content-free error kind from the code-controlled msg prefix (never a URL/path).
+        let kind: String
+        if msg.hasPrefix("sha256") { kind = "sha256Mismatch" }
+        else if msg.hasPrefix("download") { kind = "network" }
+        else { kind = "filesystem" }
+        emitModelDownload(result: "failed", errorKind: kind)
         setState(.failed(msg))
         DispatchQueue.main.async { onState(.failed(msg)) }
     }

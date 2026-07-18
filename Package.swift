@@ -9,6 +9,10 @@ let package = Package(
         .package(
             url: "https://github.com/sparkle-project/Sparkle",
             "2.6.0"..<"3.0.0"
+        ),
+        .package(
+            url: "https://github.com/TelemetryDeck/SwiftSDK",
+            "2.14.0"..<"3.0.0"
         )
     ],
     targets: [
@@ -20,6 +24,7 @@ let package = Package(
             name: "KeyMic",
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
+                .product(name: "TelemetryDeck", package: "SwiftSDK"),
                 "CSherpaOnnx"
             ],
             path: "Sources/KeyMic",
