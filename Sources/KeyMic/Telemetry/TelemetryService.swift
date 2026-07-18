@@ -19,6 +19,9 @@ protocol TelemetrySink {
     func personaInvoked(persona: String, injectionStrategy: String)
     func hotkeyAction(_ action: String)
     func activationFirstTranscription()
+    /// Shut the underlying SDK down so no further session tracking or queued sends
+    /// happen after the consent toggle is turned off.
+    func terminate()
 }
 
 /// The single gate for all telemetry emission. Every call site talks to this
@@ -33,9 +36,20 @@ final class TelemetryService {
     private let log = Logger(subsystem: "io.keymic.app", category: "Telemetry")
     private let defaults: UserDefaults
 
-    private(set) var isEnabled: Bool
+    /// Guards `_isEnabled` / `sink` / `started`. Emit methods run on background
+    /// queues (model-download completions) while `setEnabled` mutates on the main
+    /// thread, so every access to that shared state must go through this lock.
+    private let lock = NSLock()
+    private var _isEnabled: Bool
     private var sink: TelemetrySink?
     private var started = false
+
+    /// Thread-safe snapshot of the consent flag. Read by the first-run notice /
+    /// Settings toggle on the main thread.
+    var isEnabled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _isEnabled
+    }
 
     /// Builds the production sink lazily. Left as a no-op provider here so this
     /// file never imports TelemetryDeck (and stays compilable by the standalone
@@ -47,7 +61,7 @@ final class TelemetryService {
          enabled: Bool? = nil,
          defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        self.isEnabled = enabled ?? (defaults.object(forKey: TelemetryService.enabledKey) as? Bool ?? true)
+        self._isEnabled = enabled ?? (defaults.object(forKey: TelemetryService.enabledKey) as? Bool ?? true)
         self.sink = sink
         self.started = sink != nil
     }
@@ -55,68 +69,74 @@ final class TelemetryService {
     /// Called once at launch. Initializes the production sink only when telemetry
     /// is enabled; otherwise nothing is created and no signal can be sent.
     func startIfEnabled() {
-        guard isEnabled, !started else { return }
+        lock.lock(); defer { lock.unlock() }
+        guard _isEnabled, !started else { return }
         sink = sinkProvider()
         started = sink != nil
     }
 
-    /// Runtime toggle from the Settings consent switch. Turning off makes every
-    /// emit method short-circuit immediately (the SDK has no mid-session stop).
+    /// Runtime toggle from the Settings consent switch. Turning off terminates the
+    /// SDK (stops session tracking + queued sends) and drops the sink so a later
+    /// turn-on re-runs `startIfEnabled()` and reinitializes cleanly.
     func setEnabled(_ on: Bool) {
-        isEnabled = on
+        lock.lock()
+        _isEnabled = on
+        if !on {
+            sink?.terminate()
+            sink = nil
+            started = false
+        }
+        lock.unlock()
         defaults.set(on, forKey: TelemetryService.enabledKey)
         if on { startIfEnabled() }
+    }
+
+    /// The active sink, or `nil` when disabled. Captured under the lock and used
+    /// outside it so SDK calls never run while the lock is held.
+    private func liveSink() -> TelemetrySink? {
+        lock.lock(); defer { lock.unlock() }
+        return _isEnabled ? sink : nil
     }
 
     // MARK: - Emit surface (each no-ops when disabled)
 
     func engineSelected(model: String, engine: String, osMajor: String, locale: String) {
-        guard isEnabled, let sink else { return }
-        sink.engineSelected(model: model, engine: engine, osMajor: osMajor, locale: locale)
+        liveSink()?.engineSelected(model: model, engine: engine, osMajor: osMajor, locale: locale)
     }
 
     func modelDownload(model: String, result: String, durationMs: Int, source: String, errorKind: String? = nil) {
-        guard isEnabled, let sink else { return }
-        sink.modelDownload(model: model, result: result, durationMs: durationMs, source: source, errorKind: errorKind)
+        liveSink()?.modelDownload(model: model, result: result, durationMs: durationMs, source: source, errorKind: errorKind)
     }
 
     func engineColdStart(engine: String, firstBufferMs: Int, scoWatchdogFired: Bool) {
-        guard isEnabled, let sink else { return }
-        sink.engineColdStart(engine: engine, firstBufferMs: firstBufferMs, scoWatchdogFired: scoWatchdogFired)
+        liveSink()?.engineColdStart(engine: engine, firstBufferMs: firstBufferMs, scoWatchdogFired: scoWatchdogFired)
     }
 
     func transcribeError(engine: String, errorKind: String) {
-        guard isEnabled, let sink else { return }
-        sink.transcribeError(engine: engine, errorKind: errorKind)
+        liveSink()?.transcribeError(engine: engine, errorKind: errorKind)
     }
 
     func permissionState(mic: String, speech: String, accessibility: String, screenCapture: String) {
-        guard isEnabled, let sink else { return }
-        sink.permissionState(mic: mic, speech: speech, accessibility: accessibility, screenCapture: screenCapture)
+        liveSink()?.permissionState(mic: mic, speech: speech, accessibility: accessibility, screenCapture: screenCapture)
     }
 
     func eventTapFailed() {
-        guard isEnabled, let sink else { return }
-        sink.eventTapFailed()
+        liveSink()?.eventTapFailed()
     }
 
     func featureUsed(_ feature: String) {
-        guard isEnabled, let sink else { return }
-        sink.featureUsed(feature)
+        liveSink()?.featureUsed(feature)
     }
 
     func personaInvoked(persona: String, injectionStrategy: String) {
-        guard isEnabled, let sink else { return }
-        sink.personaInvoked(persona: persona, injectionStrategy: injectionStrategy)
+        liveSink()?.personaInvoked(persona: persona, injectionStrategy: injectionStrategy)
     }
 
     func hotkeyAction(_ action: String) {
-        guard isEnabled, let sink else { return }
-        sink.hotkeyAction(action)
+        liveSink()?.hotkeyAction(action)
     }
 
     func activationFirstTranscription() {
-        guard isEnabled, let sink else { return }
-        sink.activationFirstTranscription()
+        liveSink()?.activationFirstTranscription()
     }
 }

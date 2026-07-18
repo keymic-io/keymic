@@ -28,6 +28,8 @@ final class SpyTelemetrySink: TelemetrySink {
     }
     func hotkeyAction(_ action: String) { calls.append("hotkey_action|action=\(action)") }
     func activationFirstTranscription() { calls.append("activation_first_transcription|") }
+    private(set) var terminateCount = 0
+    func terminate() { terminateCount += 1 }
 }
 
 @main
@@ -48,6 +50,8 @@ struct TelemetryGatingTests {
         // 2. Enabled -> sink receives the expected signal name + payload keys.
         let spy2 = SpyTelemetrySink()
         let enabled = TelemetryService(sink: spy2, enabled: true, defaults: defaults)
+        // Toggling off drops the sink; toggling back on rebuilds it via the provider.
+        enabled.sinkProvider = { spy2 }
         enabled.featureUsed("clipboard")
         enabled.engineSelected(model: "senseVoice", engine: "senseVoice", osMajor: "15", locale: "zh-CN")
         assert(spy2.count == 2, "enabled service should emit 2; got \(spy2.count)")
@@ -56,8 +60,9 @@ struct TelemetryGatingTests {
         assert(spy2.calls[1] == "engine_selected|model=senseVoice,engine=senseVoice,osMajor=15,locale=zh-CN",
                "unexpected engine_selected payload: \(spy2.calls[1])")
 
-        // 3. Toggling off mid-run -> no further calls.
+        // 3. Toggling off mid-run -> SDK terminated, no further calls.
         enabled.setEnabled(false)
+        assert(spy2.terminateCount == 1, "toggle-off must terminate the sink; got \(spy2.terminateCount)")
         enabled.featureUsed("persona")
         enabled.hotkeyAction("toggleClipboard")
         assert(spy2.count == 2, "no emission after toggle-off; got \(spy2.count)")

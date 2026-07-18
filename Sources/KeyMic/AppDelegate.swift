@@ -175,6 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // consent toggle is off or no app ID is configured.
         TelemetryService.shared.sinkProvider = { TelemetryDeckSink.makeIfConfigured() }
         TelemetryService.shared.startIfEnabled()
+        // Show the one-time disclosure now, before any early-return launch path (missing
+        // Accessibility / event-tap failure) — otherwise the SDK has already initialized and
+        // emitted signals without ever telling the user. Once-only; skipped when disabled.
+        showTelemetryFirstRunNoticeIfNeeded()
 
         Task { @MainActor in await AccountStore.shared.refresh() }
         Timer.scheduledTimer(withTimeInterval: 5 * 60, repeats: true) { _ in
@@ -212,6 +216,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !granted, let msg = errorMsg {
                 self?.showAlert(title: String(localized: "Permission Required"), message: msg)
             }
+            // Mic/speech auth is now resolved; re-snapshot so a fresh install records the
+            // real granted/denied state instead of the `undetermined` seen at launch.
+            self?.emitPermissionStateSnapshot()
         }
 
         cachedFrontBundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier
@@ -403,8 +410,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         ShellRunner.shared.warmUp()
-
-        showTelemetryFirstRunNoticeIfNeeded()
     }
 
     // MARK: - Telemetry helpers
@@ -591,15 +596,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         speechEngineGeneration &+= 1
         let gen = speechEngineGeneration
 
-        // Emit the winning engine decision (content-free enums). `syncSpeechEngineIfNeeded`
-        // only re-enters here when an engine/locale input actually changed, so this does not spam.
-        currentEngineTelemetryName = choice.telemetryName
-        TelemetryService.shared.engineSelected(
-            model: model,
-            engine: choice.telemetryName,
-            osMajor: String(ProcessInfo.processInfo.operatingSystemVersion.majorVersion),
-            locale: langKey)
-
         if choice == .speechAnalyzer {
 #if KEYMIC_HAS_SPEECH_ANALYZER
             if #available(macOS 26, *), let fmt = speechAnalyzerSupport.analyzerFormat {
@@ -609,6 +605,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 speechSessionHost?.replaceEngine(engine)
                 recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.speechAnalyzer)
+                reportEngineSelected(engine: "speechAnalyzer", model: model, langKey: langKey, gen: gen)
                 return
             }
 #endif
@@ -625,6 +622,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
             SpeechEngineStatusStore.shared.update(
                 assetDownloading ? .sfSpeechRecognizerDownloadingAnalyzerAsset : .sfSpeechRecognizer)
+            // Actual engine swapped in is Apple (covers a .speechAnalyzer choice whose
+            // analyzer engine could not be built), so report apple, not the raw choice.
+            reportEngineSelected(engine: "apple", model: model, langKey: langKey, gen: gen)
             return
         }
 
@@ -638,7 +638,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self else { return }
                 guard ONNXRuntimeLoader.shared.loadIfReady() else {
-                    DispatchQueue.main.async { self.fallbackToApple(gen: gen) }
+                    DispatchQueue.main.async { self.fallbackToApple(gen: gen, model: model, langKey: langKey) }
                     return
                 }
                 var err = [CChar](repeating: 0, count: 1024)
@@ -656,7 +656,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                     guard let rec else {
                         logger.error("create_funasr failed: \(String(cString: err), privacy: .public)")
-                        self.fallbackToApple(gen: gen)
+                        self.fallbackToApple(gen: gen, model: model, langKey: langKey)
                         return
                     }
                     let engine = ONNXSpeechEngine(recognizer: rec, locale: self.speechEngine.locale)
@@ -665,6 +665,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.speechSessionHost?.replaceEngine(engine)
                     self.recordSpeechBaseline(model: model, lang: langKey, svReady: svReady, rtReady: rtReady, onnxReady: onnxReady)
                     SpeechEngineStatusStore.shared.update(.onnx)
+                    self.reportEngineSelected(engine: "onnx", model: model, langKey: langKey, gen: gen)
                 }
             }
             return
@@ -681,6 +682,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let mlModel,
                       let engine = self.makeSenseVoiceEngineIfPossible(model: mlModel) else {
                     // Model failed to load (e.g. corrupt) or resources missing → stay on Apple.
+                    self.reportEngineSelected(engine: "apple", model: model, langKey: langKey, gen: gen)
                     return
                 }
                 self.speechEngine = engine
@@ -688,19 +690,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.speechSessionHost?.replaceEngine(engine)
                 self.recordSpeechBaseline(model: model, lang: langKey, svReady: true, rtReady: rtReady, onnxReady: onnxReady)
                 SpeechEngineStatusStore.shared.update(.senseVoice)
+                self.reportEngineSelected(engine: "senseVoice", model: model, langKey: langKey, gen: gen)
             }
         }
     }
 
     /// Synchronously revert to the Apple engine (used when the ONNX path fails to load runtime or
     /// build the recognizer). No-op if a newer engine decision has already superseded `gen`.
-    private func fallbackToApple(gen: Int) {
+    private func fallbackToApple(gen: Int, model: String, langKey: String) {
         guard gen == speechEngineGeneration else { return }
-        currentEngineTelemetryName = "apple"
         speechEngine = makeAppleEngine()
         setupSpeechCallbacks()
         speechSessionHost?.replaceEngine(speechEngine)
         SpeechEngineStatusStore.shared.update(.sfSpeechRecognizer)
+        // The swap to Apple succeeded, so report apple now (correcting the never-emitted
+        // heavier choice that failed to construct).
+        reportEngineSelected(engine: "apple", model: model, langKey: langKey, gen: gen)
+    }
+
+    /// Emit `engine_selected` for a swap that actually landed, and update the tracked
+    /// engine name used by later error signals. Guarded by the generation counter so a
+    /// superseded async decision never reports a stale engine. Content-free enums only.
+    private func reportEngineSelected(engine: String, model: String, langKey: String, gen: Int) {
+        guard gen == speechEngineGeneration else { return }
+        currentEngineTelemetryName = engine
+        TelemetryService.shared.engineSelected(
+            model: model,
+            engine: engine,
+            osMajor: String(ProcessInfo.processInfo.operatingSystemVersion.majorVersion),
+            locale: langKey)
     }
 
     private func recordSpeechBaseline(model: String, lang: String, svReady: Bool, rtReady: Bool, onnxReady: Bool) {

@@ -36,7 +36,9 @@ final class TelemetryDeckSink: TelemetrySink {
     // MARK: - Diagnostics
 
     func engineSelected(model: String, engine: String, osMajor: String, locale: String) {
-        send("engine_selected", ["model": model, "engine": engine, "osMajor": osMajor, "locale": locale])
+        // NB: `locale` is a TelemetryDeck reserved key (auto-added to every signal),
+        // so send our value under `speechLocale` to avoid collision / a reserved-key warning.
+        send("engine_selected", ["model": model, "engine": engine, "osMajor": osMajor, "speechLocale": locale])
     }
 
     func modelDownload(model: String, result: String, durationMs: Int, source: String, errorKind: String?) {
@@ -80,5 +82,9 @@ final class TelemetryDeckSink: TelemetrySink {
 
     func activationFirstTranscription() {
         send("activation_first_transcription", [:])
+    }
+
+    func terminate() {
+        TelemetryDeck.terminate()
     }
 }
