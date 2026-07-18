@@ -175,6 +175,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // consent toggle is off or no app ID is configured.
         TelemetryService.shared.sinkProvider = { TelemetryDeckSink.makeIfConfigured() }
         TelemetryService.shared.startIfEnabled()
+        // Install the crash handler as early as possible so an early-launch failure is still
+        // captured. Reads the same shared `telemetryEnabled` flag; no-ops when the consent
+        // toggle is off or no `SentryDSN` is configured.
+        CrashReportingService.shared.startIfEnabled()
         // Show the one-time disclosure now, before any early-return launch path (missing
         // Accessibility / event-tap failure) — otherwise the SDK has already initialized and
         // emitted signals without ever telling the user. Once-only; skipped when disabled.

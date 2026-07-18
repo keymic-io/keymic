@@ -166,6 +166,9 @@ final class AssetStore {
         else if msg.hasPrefix("download") { kind = "network" }
         else { kind = "filesystem" }
         emitModelDownload(result: "failed", errorKind: kind)
+        // Content-free crash/error capture: only the coarse `.modelDownload` kind, never
+        // `msg` (which carries a URL/path and could embed content).
+        CrashReportingService.shared.capture(.modelDownload)
         setState(.failed(msg))
         DispatchQueue.main.async { onState(.failed(msg)) }
     }

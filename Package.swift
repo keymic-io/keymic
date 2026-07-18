@@ -13,6 +13,10 @@ let package = Package(
         .package(
             url: "https://github.com/TelemetryDeck/SwiftSDK",
             "2.14.0"..<"3.0.0"
+        ),
+        .package(
+            url: "https://github.com/getsentry/sentry-cocoa",
+            from: "9.0.0"
         )
     ],
     targets: [
@@ -25,6 +29,7 @@ let package = Package(
             dependencies: [
                 .product(name: "Sparkle", package: "Sparkle"),
                 .product(name: "TelemetryDeck", package: "SwiftSDK"),
+                .product(name: "Sentry", package: "sentry-cocoa"),
                 "CSherpaOnnx"
             ],
             path: "Sources/KeyMic",

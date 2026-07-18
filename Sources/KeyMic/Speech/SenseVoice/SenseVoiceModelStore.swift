@@ -291,6 +291,9 @@ final class SenseVoiceModelStore {
         else if msg.hasPrefix("unzip") { kind = "unzip" }
         else { kind = "other" }
         emitModelDownload(result: "failed", errorKind: kind)
+        // Content-free crash/error capture: only the coarse `.modelDownload` kind, never
+        // `msg` (which may carry a path/URL).
+        CrashReportingService.shared.capture(.modelDownload)
         setState(.failed(msg))
         DispatchQueue.main.async { onState(.failed(msg)) }
     }

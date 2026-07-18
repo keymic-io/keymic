@@ -86,6 +86,9 @@ final class PersonaEngine {
             throw InvocationError.cancelled
         } catch {
             logger.error("LLM request failed: \(error.localizedDescription, privacy: .public)")
+            // Content-free crash/error capture: only the coarse `.llm` kind, never the
+            // thrown error's message (which could embed prompt/transcript text).
+            CrashReportingService.shared.capture(.llm)
             throw InvocationError.llmFailed(underlying: error)
         }
 

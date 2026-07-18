@@ -200,6 +200,10 @@ final class ConfigSyncController {
         } catch {
             lastError = "Sync failed"
             log.error("sync action failed: \(String(describing: error))")
+            // Content-free crash/error capture: only the coarse `.configSync` kind, never
+            // the error description (unauthorized is handled above, so this is a genuine
+            // network/decoding failure).
+            CrashReportingService.shared.capture(.configSync)
         }
     }
 
