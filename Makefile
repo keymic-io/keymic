@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-mru test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-keychain-store test-me-api test-exchange-api test-auth-client test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating smoke-onnx
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-mru test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-keychain-store test-me-api test-exchange-api test-auth-client test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating test-crash-reporting-gating test-crash-reporting-scrub smoke-onnx
 
 
 build:
@@ -492,6 +492,20 @@ test-telemetry-gating:
 	       -o .build/telemetry-gating-tests
 	.build/telemetry-gating-tests
 
+test-crash-reporting-gating:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Telemetry/CrashReportingCore.swift \
+	       Tests/CrashReportingGatingTests.swift \
+	       -o .build/crash-reporting-gating-tests
+	.build/crash-reporting-gating-tests
+
+test-crash-reporting-scrub:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Telemetry/CrashReportingCore.swift \
+	       Tests/CrashReportingScrubTests.swift \
+	       -o .build/crash-reporting-scrub-tests
+	.build/crash-reporting-scrub-tests
+
 test-audio-capture-16k:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
@@ -943,7 +957,7 @@ test-context-resolver:
 	       -o .build/context-resolver-tests
 	.build/context-resolver-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating test-crash-reporting-gating test-crash-reporting-scrub
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)

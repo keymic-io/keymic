@@ -58,6 +58,8 @@
 	<string>ETSPhgEiWB+ZL2wZjM7o25iIwBVTYWFOnxoGIAb8A6A=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>0</integer>
+	<key>SentryDSN</key>
+	<string>https://8d86d7e7a1bac130ddee77c79239d2f6@o4509834831396864.ingest.us.sentry.io/4511757014728704</string>
 	<key>TelemetryDeckAppID</key>
 	<string>7D398458-F45A-48D8-AFF2-DED18ACA1F0F</string>
 </dict>

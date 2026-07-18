@@ -77,6 +77,8 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         } catch {
             teardown()
             logger.error("engine.start failed: \(error.localizedDescription, privacy: .public)")
+            // Content-free crash/error capture: only the coarse `.engineStart` kind.
+            CrashReportingService.shared.capture(.engineStart)
             throw VoiceError.audioEngineFailed(error.localizedDescription)
         }
         let deviceName = AVCaptureDevice.default(for: .audio)?.localizedName ?? "unknown"

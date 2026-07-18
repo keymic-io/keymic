@@ -44,7 +44,7 @@ scripts/release.sh -f 1.2.3   # `-f` overwrites existing v<VERSION> release + ta
 
 `swift test` will fail — there is no test target in `Package.swift`. Always run via `make test*`.
 
-The SwiftPM package has two targets: the `KeyMic` executable and a `CSherpaOnnx` C target (`Sources/CSherpaOnnx/`) that bridges the sherpa-onnx runtime for the ONNX/funasr speech engine. External SPM dependencies: Sparkle 2 and TelemetryDeck (`2.14.0..<3.0.0`, anonymous diagnostics — see *Telemetry*).
+The SwiftPM package has two targets: the `KeyMic` executable and a `CSherpaOnnx` C target (`Sources/CSherpaOnnx/`) that bridges the sherpa-onnx runtime for the ONNX/funasr speech engine. External SPM dependencies: Sparkle 2, TelemetryDeck (`2.14.0..<3.0.0`, anonymous diagnostics), and Sentry `sentry-cocoa` (`9.x`, crash/error — statically linked, no framework to sign) — see *Telemetry* / *Crash reporting*.
 
 ## Architecture
 
@@ -143,8 +143,17 @@ Opt-out anonymous diagnostics + feature analytics via the **TelemetryDeck** SDK 
 
 - `TelemetryService` (singleton) — the only thing call sites talk to. Reads the shared `telemetryEnabled` UserDefaults key (default `true`); every typed emit method no-ops when disabled. Imports **no** SDK (so standalone `swiftc` test runners compile it). Emits both diagnostics (`engine_selected`, `model_download`, `engine_cold_start`, `transcribe_error`, `permission_state`, `event_tap_failed`) and adoption signals (`feature_used`, `persona_invoked`, `hotkey_action`, `activation_first_transcription`).
 - `TelemetryDeckSink` — the **sole `import TelemetryDeck` site**; `makeIfConfigured()` reads `TelemetryDeckAppID` from `Info.plist` and no-ops if absent. `AppDelegate` wires `TelemetryService.shared.sinkProvider = { TelemetryDeckSink.makeIfConfigured() }` then `startIfEnabled()` early in launch. The SDK auto-sends a session/launch signal, so there is no manual `app_launch`.
-- Consent: a single Settings › General toggle ("Share anonymous diagnostics & crash reports") + a one-time first-run notice. The same `telemetryEnabled` flag is designed to also gate the planned Sentry crash-reporting layer.
+- Consent: a single Settings › General toggle ("Share anonymous diagnostics & crash reports") + a one-time first-run notice. The same `telemetryEnabled` flag also gates the Sentry crash-reporting layer (see *Crash reporting*).
 - **Red-line**: emit arguments are only enums / case names / durations / bools / stable ids — never transcripts, clipboard, keys, OCR, secrets, or associated URL/shell values.
+
+### Crash reporting (`Sources/KeyMic/Telemetry/CrashReporting*.swift`)
+
+Crash stacks + selective async-error capture via the **Sentry** `sentry-cocoa` SDK — the technical side TelemetryDeck cannot see. Same discipline as *Telemetry*: one gate, one import site, never any user content. Gated by the **same** `telemetryEnabled` flag and the same Settings toggle (the toggle's `onChange` drives both services).
+
+- `CrashReportingCore` — Sentry-free: `ErrorKind`, the lock-protected consent gate, and `CrashScrub` (a pure allowlist `beforeSend` scrub). Compilable by standalone `swiftc` test runners.
+- `CrashReportingService` — the **sole `import Sentry` site**; `startIfEnabled()` reads `SentryDSN` from `Info.plist` and no-ops if absent. Hardening: `sendDefaultPii = false`, no IP/userId, `environment` = `debug`/`production`, tracing off, crash handler on. `capture(.errorKind)` sends a synthetic content-free `NSError`; `ErrorKind` rides as a Sentry tag (survives the scrub). `setEnabled(false)` → `SentrySDK.close()`.
+- **Scrub (privacy core)**: drops **all** breadcrumbs + **all** `extra`, blanks any message not in a fixed synthetic set; keeps only structured device/OS/app contexts + the `error_kind`/`capture_site` tags. No transcript/clipboard/key/OCR/secret/path can pass.
+- Capture is **selective** — only genuinely-silent terminal failures (`.llm` at `PersonaEngine.complete`, `.modelDownload` at the download `fail()` funnels, `.configSync`, `.engineStart`), never blanket, never on expected/cancellation/permission-denied paths. Scope v1 excludes performance tracing and log forwarding.
 
 ### Settings (`Sources/KeyMic/SettingsUI/`)
 
@@ -161,7 +170,7 @@ SwiftUI, hosted in a `SwiftUISettingsWindow` (`NSPanel`). `SettingsRoot` renders
 ## Conventions
 
 - Swift 5.9, target macOS 14 (some engines gate to macOS 15/26 at runtime). Source root: `Sources/KeyMic/`; C bridge in `Sources/CSherpaOnnx/`.
-- External SwiftPM dependencies: Sparkle 2 (`2.6.0..<3.0.0`) and TelemetryDeck (`2.14.0..<3.0.0`). The sherpa-onnx runtime is not a package dependency — it's downloaded at runtime and bridged through the local `CSherpaOnnx` C target.
+- External SwiftPM dependencies: Sparkle 2 (`2.6.0..<3.0.0`), TelemetryDeck (`2.14.0..<3.0.0`), and Sentry `sentry-cocoa` (`9.x`). The sherpa-onnx runtime is not a package dependency — it's downloaded at runtime and bridged through the local `CSherpaOnnx` C target.
 - Logging: `os.Logger` with subsystem `io.keymic.app`.
 - Singletons (`KeyMappingManager.shared`, `PersonaStore.shared`, `OutputRouter.shared`, `ShellRunner.shared`, `SenseVoiceModelStore.shared`) for cross-cutting state; `LLMClient` and other per-invocation PersonaPlatform components are owned by `AppDelegate`'s graph (injected).
 - Persistent locations: SwiftData store + lock file + downloaded speech models (`models/`) under `~/Library/Application Support/KeyMic/`; vault entries in macOS Keychain under service `io.keymic.app.vault`.

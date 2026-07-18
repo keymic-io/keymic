@@ -315,6 +315,8 @@ private struct GeneralSettingsView: View {
                 Toggle("Share anonymous diagnostics & crash reports", isOn: $telemetryEnabled)
                     .onChange(of: telemetryEnabled) { _, newValue in
                         TelemetryService.shared.setEnabled(newValue)
+                        // One shared toggle drives both tools; turning off closes Sentry too.
+                        CrashReportingService.shared.setEnabled(newValue)
                     }
             } header: {
                 Text("Diagnostics")

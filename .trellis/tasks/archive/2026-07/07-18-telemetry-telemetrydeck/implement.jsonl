@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-18-observability-stack/prd.md", "reason": "Parent shared requirements: single consent flag, privacy red-lines (no content ever), dependency budget. This child owns the shared toggle + flag both tools reuse."}
+{"file": "AGENTS.md", "reason": "Non-obvious macOS HID + TCC + codesign/Info.plist gotchas — needed because instrumentation touches AppDelegate/KeyMonitor launch paths and adds an Info.plist key + a new signed SPM dependency."}
+{"file": "CLAUDE.md", "reason": "Build/test conventions (standalone swiftc runners + Makefile test-all), .xcstrings append-only rule, UserDefaults-per-component settings pattern, single-import-boundary/singleton conventions this task must follow."}
