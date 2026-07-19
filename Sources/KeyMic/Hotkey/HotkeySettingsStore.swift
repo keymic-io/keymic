@@ -8,6 +8,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
     case vaultPanel
     case settingsWindow
     case screenshot
+    case meetingTranscribe
 
     var displayName: String {
         switch self {
@@ -16,6 +17,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         case .vaultPanel: return String(localized: "Vault panel")
         case .settingsWindow: return String(localized: "Settings window")
         case .screenshot: return String(localized: "Screenshot")
+        case .meetingTranscribe: return String(localized: "Meeting transcription")
         }
     }
 
@@ -25,6 +27,7 @@ enum HotkeyFeature: String, Codable, CaseIterable, Equatable {
         HotkeyFeature.vaultPanel.rawValue: "alt+b",                 // Open the Vault panel.
         HotkeyFeature.settingsWindow.rawValue: "cmd+shift+,",       // Open the Settings window.
         HotkeyFeature.screenshot.rawValue: "ctrl+alt+a",            // Open screenshot selection and annotation.
+        HotkeyFeature.meetingTranscribe.rawValue: "ctrl+alt+m",     // ⌃⌥M — start/stop meeting transcription.
     ]
 }
 
@@ -36,6 +39,7 @@ extension HotkeyFeature {
         case .vaultPanel: return .vaultPanel
         case .settingsWindow: return .settingsWindow
         case .screenshot: return .screenshot
+        case .meetingTranscribe: return .meetingTranscribe
         }
     }
 }
@@ -50,6 +54,7 @@ extension HotkeyFeature {
         case .vaultPanel: return "vaultPanelHotkey"
         case .settingsWindow: return "settingsWindowHotkey"
         case .screenshot: return "screenshotHotkey"
+        case .meetingTranscribe: return "meetingTranscribeHotkey"
         }
     }
 }

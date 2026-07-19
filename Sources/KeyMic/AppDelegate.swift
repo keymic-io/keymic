@@ -59,6 +59,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var overlayPanel = OverlayPanel()
     private var clipboardController: ClipboardController!
     private var screenshotController: ScreenshotController?
+    private var transcriptStore: TranscriptStore!
+    private var meetingController: MeetingController!
+    private var meetingDiarizer: MeetingDiarizer!
+    /// When `true`, the voice push-to-talk trigger is suppressed because a meeting
+    /// transcription session is active (PRD §4.1 voice mutex).
+    private var meetingVoiceSuspended = false
 
     private var singleInstanceLockURL: URL?
     private var personaObserverToken: NSObjectProtocol?
@@ -113,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private var voiceEnabledMenuItem: NSMenuItem!
     private weak var voiceToggleView: ToggleMenuItemView?
+    private var meetingMenuItem: NSMenuItem!
     private var personasRootMenuItem: NSMenuItem!
     private var personasMenu: NSMenu?
     private var keyMappingMenuItem: NSMenuItem!
@@ -121,6 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var shortcutsMenuItem: NSMenuItem!
     private var settingsMenuItem: NSMenuItem!
     private lazy var settingsWindow = SwiftUISettingsWindow()
+    private lazy var meetingSetupWindow = MeetingSetupWindow(
+        onStart: { [weak self] in self?.meetingController.start() })
     var selectedLocaleCode: String {
         get { UserDefaults.standard.string(forKey: Self.selectedLocaleCodeKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.selectedLocaleCodeKey) }
@@ -301,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             textInjector: textInjector
         )
         keyMonitor.onTriggerDown = { [weak self] source in
-            guard let self, self.isVoiceEnabled else { return }
+            guard let self, self.isVoiceEnabled, !self.meetingVoiceSuspended else { return }
             TelemetryService.shared.featureUsed("voice")
             self.updateStatusIcon(recording: true)
             Task { @MainActor in self.voiceTrigger.onTriggerDown(source: source) }
@@ -340,6 +349,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyMonitor.onSettingsHotkey = { [weak self] in self?.openSettings() }
         screenshotController = ScreenshotController()
         keyMonitor.onScreenshotHotkey = { [weak self] in self?.screenshotController?.start() }
+        keyMonitor.onMeetingTranscribeHotkey = { [weak self] in self?.toggleMeetingTranscribe() }
         // Now that the host + all engine consumers exist, decide the engine. If SenseVoice is
         // enabled this kicks off an off-main model load and swaps the engine in when ready;
         // otherwise it is a no-op (already on Apple).
@@ -369,6 +379,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         secureInputMonitor.start()
         clipboardController.start()
         _ = UpdaterController.shared
+
+        // Meeting transcription controller — must be built at launch so MeetingSettingsView
+        // can bind to a live controller via MeetingRuntime.shared (Task 4).
+
+        // Diarization WAVs are only consumed within the same app run; any left over from a
+        // previous run are orphans (model absent / failed / never diarized). Sweep them so
+        // disk doesn't grow unboundedly. Nothing is mid-diarization at launch time.
+        let meetingAudioDir = MeetingAudioRecorder.directory
+        if let orphans = try? FileManager.default.contentsOfDirectory(at: meetingAudioDir, includingPropertiesForKeys: nil) {
+            for f in orphans { try? FileManager.default.removeItem(at: f) }
+        }
+
+        transcriptStore = TranscriptStore.makeDefault()
+        let meetingPipeline = LiveMeetingPipeline(
+            store: transcriptStore,
+            offsetProvider: { [weak self] in self?.meetingController.currentOffset() ?? 0 },
+            modelDirProvider: { OnnxStores.streaming.destDir },
+            onRequestStop: { [weak self] in self?.meetingController.stop() })
+        // The streaming meeting model being present implies this user transcribes meetings; fetch
+        // the tiny (~7 MB) English punctuation+truecasing model in the background so the pipeline
+        // can post-process captions. Idempotent. This covers users whose prerequisites are already
+        // satisfied — `MeetingController.start()` skips the setup window for them, so the window's
+        // own trigger (fresh-user download path) never fires.
+        if OnnxStores.streaming.state == .ready {
+            OnnxStores.punct.ensureDownloaded { _ in }     // English truecasing+punct (~7 MB)
+            OnnxStores.ctPunct.ensureDownloaded { _ in }   // Chinese CT-transformer punct (~72 MB)
+        }
+        meetingController = MeetingController(
+            store: transcriptStore,
+            onPauseVoice: { [weak self] in self?.setMeetingVoiceSuspended(true) },
+            onResumeVoice: { [weak self] in self?.setMeetingVoiceSuspended(false) },
+            audioSourceProvider: { MeetingPreferences.audioSource() },
+            localeProvider: { UserDefaults.standard.string(forKey: "selectedLocaleCode") ?? "" },
+            pipeline: meetingPipeline)
+        // Refresh the menu item icon/title on ANY start/stop (menu, hotkey, settings, sleep/lock).
+        meetingController.onTranscribingChanged = { [weak self] _ in self?.updateMeetingMenuItemTitle() }
+        // Prerequisite gate (PRD §4.8): every start path funnels through start(); a missing
+        // mic permission / runtime / model surfaces the guided setup window instead of starting.
+        meetingController.prerequisitesReady = {
+            MeetingPrerequisites.live(source: MeetingPreferences.audioSource()).allReady
+        }
+        meetingController.onPrerequisitesMissing = { [weak self] in self?.showMeetingSetupWindow() }
+        MeetingRuntime.shared.controller = meetingController
+        MeetingRuntime.shared.store = transcriptStore
+
+        let meetingDiarizer = MeetingDiarizer(store: transcriptStore)
+        // Wire diarization to the pipeline's post-finalization callback so diarize() is only
+        // called after MeetingAudioRecorder.finish() has closed and patched the WAV header.
+        // (A controller-level post-session hook was removed in favor of this: it fired before finish().)
+        meetingPipeline.onRecorderFinalized = { sid, wavStartOffset in
+            meetingDiarizer.diarize(sessionID: sid, wavStartOffset: wavStartOffset)
+        }
+        self.meetingDiarizer = meetingDiarizer
+
+        // Sleep / lock auto-stop (PRD §4.1)
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(self, selector: #selector(meetingShouldStopForSystemEvent),
+                       name: NSWorkspace.willSleepNotification, object: nil)
+        ws.addObserver(self, selector: #selector(meetingShouldStopForSystemEvent),
+                       name: NSWorkspace.screensDidSleepNotification, object: nil)
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(meetingShouldStopForSystemEvent),
+            name: NSNotification.Name("com.apple.screenIsLocked"), object: nil)
 
         HotkeySettingsStore.shared.ensureInitialized()
         lastInputConfigSnapshot = InputConfigSnapshot.current()
@@ -858,6 +931,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         rebuildPersonasMenu()
         menu.addItem(personasRootMenuItem)
 
+        meetingMenuItem = NSMenuItem(
+            title: String(localized: "Start Meeting Transcription"),
+            action: #selector(toggleMeetingTranscribe), keyEquivalent: "")
+        meetingMenuItem.target = self
+        menu.addItem(meetingMenuItem)
+        updateMeetingMenuItemTitle()   // sets the initial title + icon
+
         menu.addItem(.separator())
 
         // Group 2: key mapping, shortcuts, clipboard history
@@ -928,6 +1008,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return image?.withSymbolConfiguration(config)
     }
 
+    /// Like `symbolImage`, but renders the symbol in a fixed color (non-template) — used for the
+    /// red recording-stop glyph so it stays red in the otherwise-monochrome menu.
+    private func coloredSymbolImage(_ name: String, color: NSColor) -> NSImage? {
+        let base = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        let config = base.applying(.init(paletteColors: [color]))
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config)
+        image?.isTemplate = false
+        return image
+    }
+
     private func updateStatusIcon(recording: Bool) {
         guard let button = statusItem.button else { return }
         if recording {
@@ -954,6 +1045,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         image.isTemplate = true
         return image
     }()
+
+    // MARK: - Meeting transcription
+
+    @objc private func toggleMeetingTranscribe() {
+        meetingController.toggle()
+        updateMeetingMenuItemTitle()
+    }
+
+    private func updateMeetingMenuItemTitle() {
+        let transcribing = meetingController?.isTranscribing ?? false
+        meetingMenuItem?.title = transcribing
+            ? String(localized: "Stop Meeting Transcription")
+            : String(localized: "Start Meeting Transcription")
+        // Idle → the same waveform glyph the settings tab uses. Recording → a red stop square
+        // (filled square inside a circle) to signal the active/stoppable state.
+        meetingMenuItem?.image = transcribing
+            ? coloredSymbolImage("stop.circle.fill", color: .systemRed)
+            : symbolImage("waveform.badge.mic")
+    }
+
+    /// Surface the guided setup window when a meeting can't start yet. Called from the controller's
+    /// `onPrerequisitesMissing` hook (menu / hotkey / settings Start all route through it).
+    private func showMeetingSetupWindow() {
+        NSApp.activate(ignoringOtherApps: true)
+        meetingSetupWindow.presentRefreshed()
+    }
+
+    /// Suppresses or re-enables the voice push-to-talk trigger while a meeting session runs.
+    /// Called via `MeetingController`'s `onPauseVoice`/`onResumeVoice` closures (PRD §4.1).
+    func setMeetingVoiceSuspended(_ suspended: Bool) {
+        meetingVoiceSuspended = suspended
+    }
+
+    @objc private func meetingShouldStopForSystemEvent() {
+        guard meetingController?.isTranscribing == true else { return }
+        meetingController.stop()
+        updateMeetingMenuItemTitle()
+    }
 
     // MARK: - Actions
 

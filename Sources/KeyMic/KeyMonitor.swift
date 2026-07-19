@@ -46,6 +46,7 @@ final class KeyMonitor {
     var isClipboardPanelVisible: (() -> Bool)?
     var onSettingsHotkey: (() -> Void)?
     var onScreenshotHotkey: (() -> Void)?
+    var onMeetingTranscribeHotkey: (() -> Void)?
     var onAction: (([HotkeyAction]) -> Void)?
     /// Synchronous, O(1) lookup of the bundle ID KeyMic believes is frontmost.
     /// MUST NOT call into LaunchServices — this runs in the event-tap callback on the
@@ -88,6 +89,7 @@ final class KeyMonitor {
     private var vaultHotkey: HotkeyConfig?
     private var settingsHotkey: HotkeyConfig?
     private var screenshotHotkey: HotkeyConfig?
+    private var meetingTranscribeHotkey: HotkeyConfig?
     private var voiceTriggerHotkey: HotkeyConfig?
     private var actionBindings: [(config: HotkeyConfig, actions: [HotkeyAction], appBundleIDs: [String])] = []
     private var repeatTimers: [CGKeyCode: DispatchSourceTimer] = [:]
@@ -271,6 +273,7 @@ final class KeyMonitor {
         vaultHotkey = hotkeys.hotkey(for: .vaultPanel)
         settingsHotkey = hotkeys.hotkey(for: .settingsWindow)
         screenshotHotkey = hotkeys.hotkey(for: .screenshot)
+        meetingTranscribeHotkey = hotkeys.hotkey(for: .meetingTranscribe)
         voiceTriggerHotkey = hotkeys.hotkey(for: .voiceTrigger)
         actionBindings = HotkeyBindingsStore.shared.bindings.compactMap { b in
             guard b.enabled,
@@ -536,6 +539,13 @@ final class KeyMonitor {
                 return nil
             }
 
+            // Meeting transcribe hotkey
+            if let cfg = meetingTranscribeHotkey, !cfg.isPureModifier,
+               cfg.matches(keyCode: keyCode, flags: event.flags, fnHeld: fnHeld) {
+                DispatchQueue.main.async { [weak self] in self?.onMeetingTranscribeHotkey?() }
+                return nil
+            }
+
             // Persona hotkeys: push-to-talk per persona. Activate the persona and
             // start a voice session; the matching keyUp ends it. Swallow the event
             // to prevent dead-key side effects (e.g. ⌥E → ´). Gate on no other
@@ -646,6 +656,11 @@ final class KeyMonitor {
            cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld),
            UserDefaults.standard.object(forKey: "screenshotEnabled") as? Bool ?? true {
             DispatchQueue.main.async { [weak self] in self?.onScreenshotHotkey?() }
+            return true
+        }
+        if let cfg = meetingTranscribeHotkey, !cfg.isPureModifier,
+           cfg.matches(keyCode: keyCode, flags: flags, fnHeld: fnHeld) {
+            DispatchQueue.main.async { [weak self] in self?.onMeetingTranscribeHotkey?() }
             return true
         }
         return false

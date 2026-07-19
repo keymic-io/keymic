@@ -3,6 +3,7 @@
 #include <dlfcn.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 
 typedef const SherpaOnnxOfflineRecognizer *(*Fn_CreateRec)(const SherpaOnnxOfflineRecognizerConfig *);
 typedef const SherpaOnnxOfflineStream *(*Fn_CreateStream)(const SherpaOnnxOfflineRecognizer *);
@@ -22,6 +23,76 @@ static Fn_DestroyResult g_destroyRes;
 static Fn_DestroyStream g_destroyStr;
 static Fn_DestroyRec    g_destroyRec;
 static int              g_loaded = 0;
+
+// ---- Streaming (Online) fn pointers ----
+typedef const SherpaOnnxOnlineRecognizer *(*Fn_CreateOnlineRec)(const SherpaOnnxOnlineRecognizerConfig *);
+typedef const SherpaOnnxOnlineStream *(*Fn_CreateOnlineStream)(const SherpaOnnxOnlineRecognizer *);
+typedef void (*Fn_OnlineAccept)(const SherpaOnnxOnlineStream *, int32_t, const float *, int32_t);
+typedef int32_t (*Fn_OnlineReady)(const SherpaOnnxOnlineRecognizer *, const SherpaOnnxOnlineStream *);
+typedef void (*Fn_OnlineDecode)(const SherpaOnnxOnlineRecognizer *, const SherpaOnnxOnlineStream *);
+typedef const SherpaOnnxOnlineRecognizerResult *(*Fn_OnlineGetResult)(const SherpaOnnxOnlineRecognizer *, const SherpaOnnxOnlineStream *);
+typedef void (*Fn_OnlineDestroyResult)(const SherpaOnnxOnlineRecognizerResult *);
+typedef int32_t (*Fn_OnlineIsEndpoint)(const SherpaOnnxOnlineRecognizer *, const SherpaOnnxOnlineStream *);
+typedef void (*Fn_OnlineReset)(const SherpaOnnxOnlineRecognizer *, const SherpaOnnxOnlineStream *);
+typedef void (*Fn_OnlineDestroyStream)(const SherpaOnnxOnlineStream *);
+typedef void (*Fn_OnlineDestroyRec)(const SherpaOnnxOnlineRecognizer *);
+
+static Fn_CreateOnlineRec     g_onCreateRec;
+static Fn_CreateOnlineStream  g_onCreateStream;
+static Fn_OnlineAccept        g_onAccept;
+static Fn_OnlineReady         g_onReady;
+static Fn_OnlineDecode        g_onDecode;
+static Fn_OnlineGetResult     g_onGetResult;
+static Fn_OnlineDestroyResult g_onDestroyResult;
+static Fn_OnlineIsEndpoint    g_onIsEndpoint;
+static Fn_OnlineReset         g_onReset;
+static Fn_OnlineDestroyStream g_onDestroyStream;
+static Fn_OnlineDestroyRec    g_onDestroyRec;
+
+// ---- Offline speaker diarization fn pointers ----
+typedef const SherpaOnnxOfflineSpeakerDiarization *(*Fn_DiarCreate)(const SherpaOnnxOfflineSpeakerDiarizationConfig *);
+typedef void (*Fn_DiarDestroy)(const SherpaOnnxOfflineSpeakerDiarization *);
+typedef const SherpaOnnxOfflineSpeakerDiarizationResult *(*Fn_DiarProcess)(const SherpaOnnxOfflineSpeakerDiarization *, const float *, int32_t);
+typedef int32_t (*Fn_DiarNumSegments)(const SherpaOnnxOfflineSpeakerDiarizationResult *);
+typedef const SherpaOnnxOfflineSpeakerDiarizationSegment *(*Fn_DiarSort)(const SherpaOnnxOfflineSpeakerDiarizationResult *);
+typedef void (*Fn_DiarDestroySegment)(const SherpaOnnxOfflineSpeakerDiarizationSegment *);
+typedef void (*Fn_DiarDestroyResult)(const SherpaOnnxOfflineSpeakerDiarizationResult *);
+
+static Fn_DiarCreate         g_diarCreate;
+static Fn_DiarDestroy        g_diarDestroy;
+static Fn_DiarProcess        g_diarProcess;
+static Fn_DiarNumSegments    g_diarNumSegments;
+static Fn_DiarSort           g_diarSort;
+static Fn_DiarDestroySegment g_diarDestroySegment;
+static Fn_DiarDestroyResult  g_diarDestroyResult;
+
+// ---- Online punctuation fn pointers ----
+typedef const SherpaOnnxOnlinePunctuation *(*Fn_PunctCreate)(const SherpaOnnxOnlinePunctuationConfig *);
+typedef const char *(*Fn_PunctAdd)(const SherpaOnnxOnlinePunctuation *, const char *);
+typedef void (*Fn_PunctFreeText)(const char *);
+typedef void (*Fn_PunctDestroy)(const SherpaOnnxOnlinePunctuation *);
+
+static Fn_PunctCreate   g_punctCreate;
+static Fn_PunctAdd      g_punctAdd;
+static Fn_PunctFreeText g_punctFreeText;
+static Fn_PunctDestroy  g_punctDestroy;
+
+// ---- Offline punctuation (CT-transformer) fn pointers ----
+typedef const SherpaOnnxOfflinePunctuation *(*Fn_OffPunctCreate)(const SherpaOnnxOfflinePunctuationConfig *);
+typedef const char *(*Fn_OffPunctAdd)(const SherpaOnnxOfflinePunctuation *, const char *);
+typedef void (*Fn_OffPunctFreeText)(const char *);
+typedef void (*Fn_OffPunctDestroy)(const SherpaOnnxOfflinePunctuation *);
+
+static Fn_OffPunctCreate   g_offPunctCreate;
+static Fn_OffPunctAdd      g_offPunctAdd;
+static Fn_OffPunctFreeText g_offPunctFreeText;
+static Fn_OffPunctDestroy  g_offPunctDestroy;
+
+// 内部句柄:绑定一个 recognizer 与它的一条 stream(单声道单流)。
+typedef struct {
+    const SherpaOnnxOnlineRecognizer *rec;
+    const SherpaOnnxOnlineStream *stream;
+} OnlineHandle;
 
 int sherpa_load(const char *onnx_dir, char *err, int err_cap) {
     if (g_loaded) return 0;
@@ -47,6 +118,43 @@ int sherpa_load(const char *onnx_dir, char *err, int err_cap) {
         !g_destroyRes || !g_destroyStr || !g_destroyRec) {
         snprintf(err, err_cap, "dlsym FAIL: one or more symbols null"); return 3;
     }
+    g_onCreateRec     = (Fn_CreateOnlineRec)dlsym(hsherpa, "SherpaOnnxCreateOnlineRecognizer");
+    g_onCreateStream  = (Fn_CreateOnlineStream)dlsym(hsherpa, "SherpaOnnxCreateOnlineStream");
+    g_onAccept        = (Fn_OnlineAccept)dlsym(hsherpa, "SherpaOnnxOnlineStreamAcceptWaveform");
+    g_onReady         = (Fn_OnlineReady)dlsym(hsherpa, "SherpaOnnxIsOnlineStreamReady");
+    g_onDecode        = (Fn_OnlineDecode)dlsym(hsherpa, "SherpaOnnxDecodeOnlineStream");
+    g_onGetResult     = (Fn_OnlineGetResult)dlsym(hsherpa, "SherpaOnnxGetOnlineStreamResult");
+    g_onDestroyResult = (Fn_OnlineDestroyResult)dlsym(hsherpa, "SherpaOnnxDestroyOnlineRecognizerResult");
+    g_onIsEndpoint    = (Fn_OnlineIsEndpoint)dlsym(hsherpa, "SherpaOnnxOnlineStreamIsEndpoint");
+    g_onReset         = (Fn_OnlineReset)dlsym(hsherpa, "SherpaOnnxOnlineStreamReset");
+    g_onDestroyStream = (Fn_OnlineDestroyStream)dlsym(hsherpa, "SherpaOnnxDestroyOnlineStream");
+    g_onDestroyRec    = (Fn_OnlineDestroyRec)dlsym(hsherpa, "SherpaOnnxDestroyOnlineRecognizer");
+    if (!g_onCreateRec || !g_onCreateStream || !g_onAccept || !g_onReady || !g_onDecode ||
+        !g_onGetResult || !g_onDestroyResult || !g_onIsEndpoint || !g_onReset ||
+        !g_onDestroyStream || !g_onDestroyRec) {
+        snprintf(err, err_cap, "dlsym FAIL: one or more online symbols null"); return 4;
+    }
+    g_diarCreate         = (Fn_DiarCreate)dlsym(hsherpa, "SherpaOnnxCreateOfflineSpeakerDiarization");
+    g_diarDestroy        = (Fn_DiarDestroy)dlsym(hsherpa, "SherpaOnnxDestroyOfflineSpeakerDiarization");
+    g_diarProcess        = (Fn_DiarProcess)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationProcess");
+    g_diarNumSegments    = (Fn_DiarNumSegments)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationResultGetNumSegments");
+    g_diarSort           = (Fn_DiarSort)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationResultSortByStartTime");
+    g_diarDestroySegment = (Fn_DiarDestroySegment)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationDestroySegment");
+    g_diarDestroyResult  = (Fn_DiarDestroyResult)dlsym(hsherpa, "SherpaOnnxOfflineSpeakerDiarizationDestroyResult");
+    // Diarization symbols may be absent in a diarization-incapable dylib. Do NOT fail here —
+    // a missing diarization capability must never block ASR/streaming. sherpa_diarize() guards
+    // against null pointers before use.
+    g_punctCreate   = (Fn_PunctCreate)dlsym(hsherpa, "SherpaOnnxCreateOnlinePunctuation");
+    g_punctAdd      = (Fn_PunctAdd)dlsym(hsherpa, "SherpaOnnxOnlinePunctuationAddPunct");
+    g_punctFreeText = (Fn_PunctFreeText)dlsym(hsherpa, "SherpaOnnxOnlinePunctuationFreeText");
+    g_punctDestroy  = (Fn_PunctDestroy)dlsym(hsherpa, "SherpaOnnxDestroyOnlinePunctuation");
+    // Punctuation symbols may be absent in a punctuation-incapable dylib. Do NOT fail here —
+    // missing punctuation must never block ASR/streaming. sherpa_create_punct() guards on null.
+    g_offPunctCreate   = (Fn_OffPunctCreate)dlsym(hsherpa, "SherpaOnnxCreateOfflinePunctuation");
+    g_offPunctAdd      = (Fn_OffPunctAdd)dlsym(hsherpa, "SherpaOfflinePunctuationAddPunct");
+    g_offPunctFreeText = (Fn_OffPunctFreeText)dlsym(hsherpa, "SherpaOfflinePunctuationFreeText");
+    g_offPunctDestroy  = (Fn_OffPunctDestroy)dlsym(hsherpa, "SherpaOnnxDestroyOfflinePunctuation");
+    // Same graceful-degrade rule: sherpa_create_offline_punct() guards on null.
     g_loaded = 1;
     return 0;
 }
@@ -104,4 +212,196 @@ int sherpa_decode(void *recognizer, const float *samples, int n, int sample_rate
 
 void sherpa_destroy(void *recognizer) {
     if (recognizer) g_destroyRec((const SherpaOnnxOfflineRecognizer *)recognizer);
+}
+
+void *sherpa_create_online(const char *model_dir, char *err, int err_cap) {
+    if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return NULL; }
+    char enc[2048], dec[2048], joi[2048], tok[2048];
+    snprintf(enc, sizeof(enc), "%s/encoder.onnx", model_dir);
+    snprintf(dec, sizeof(dec), "%s/decoder.onnx", model_dir);
+    snprintf(joi, sizeof(joi), "%s/joiner.onnx", model_dir);
+    snprintf(tok, sizeof(tok), "%s/tokens.txt", model_dir);
+
+    SherpaOnnxOnlineRecognizerConfig config;
+    memset(&config, 0, sizeof(config));
+    config.feat_config.sample_rate = 16000;
+    config.feat_config.feature_dim = 80;
+    config.model_config.transducer.encoder = enc;
+    config.model_config.transducer.decoder = dec;
+    config.model_config.transducer.joiner  = joi;
+    config.model_config.tokens      = tok;
+    config.model_config.num_threads = 2;
+    config.model_config.provider    = "cpu";
+    config.model_config.debug       = 0;
+    config.decoding_method = "greedy_search";
+    // 端点检测:2s 尾静音收一句;长句兜底 20s 强制切分(会议里有人不停说时仍能落段)。
+    config.enable_endpoint = 1;
+    config.rule1_min_trailing_silence = 2.4f;
+    config.rule2_min_trailing_silence = 1.2f;
+    config.rule3_min_utterance_length = 20.0f;
+
+    const SherpaOnnxOnlineRecognizer *rec = g_onCreateRec(&config);
+    if (!rec) { snprintf(err, err_cap, "CreateOnlineRecognizer NULL"); return NULL; }
+    const SherpaOnnxOnlineStream *stream = g_onCreateStream(rec);
+    if (!stream) { snprintf(err, err_cap, "CreateOnlineStream NULL"); g_onDestroyRec(rec); return NULL; }
+    OnlineHandle *h = (OnlineHandle *)calloc(1, sizeof(OnlineHandle));
+    if (!h) { snprintf(err, err_cap, "calloc NULL"); g_onDestroyStream(stream); g_onDestroyRec(rec); return NULL; }
+    h->rec = rec; h->stream = stream;
+    return (void *)h;
+}
+
+void sherpa_online_accept(void *handle, const float *samples, int n, int sample_rate) {
+    if (!handle || !samples || n <= 0) return;
+    OnlineHandle *h = (OnlineHandle *)handle;
+    g_onAccept(h->stream, sample_rate, samples, n);
+    while (g_onReady(h->rec, h->stream)) {
+        g_onDecode(h->rec, h->stream);
+    }
+}
+
+int sherpa_online_result(void *handle, char *out, int out_cap) {
+    if (!handle || !out || out_cap <= 0) return -1;
+    OnlineHandle *h = (OnlineHandle *)handle;
+    const SherpaOnnxOnlineRecognizerResult *r = g_onGetResult(h->rec, h->stream);
+    if (!r) { if (out_cap > 0) out[0] = '\0'; return -1; }
+    int len = 0;
+    if (r->text) { snprintf(out, out_cap, "%s", r->text); len = (int)strlen(out); }
+    else if (out_cap > 0) out[0] = '\0';
+    g_onDestroyResult(r);
+    return len;
+}
+
+int sherpa_online_is_endpoint(void *handle) {
+    if (!handle) return -1;
+    OnlineHandle *h = (OnlineHandle *)handle;
+    return (int)g_onIsEndpoint(h->rec, h->stream);
+}
+
+void sherpa_online_reset(void *handle) {
+    if (!handle) return;
+    OnlineHandle *h = (OnlineHandle *)handle;
+    g_onReset(h->rec, h->stream);
+}
+
+void sherpa_online_destroy(void *handle) {
+    if (!handle) return;
+    OnlineHandle *h = (OnlineHandle *)handle;
+    if (h->stream) g_onDestroyStream(h->stream);
+    if (h->rec) g_onDestroyRec(h->rec);
+    free(h);
+}
+
+int sherpa_diarize(const char *seg_model, const char *embedding_model, float threshold,
+                   const float *samples, int n,
+                   float *starts, float *ends, int *speakers, int max_segs,
+                   char *err, int err_cap) {
+    if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return -1; }
+    if (!samples || n <= 0) { snprintf(err, err_cap, "no samples"); return -2; }
+    // Guard: diarization symbols may be absent in a diarization-incapable dylib (sherpa_load
+    // no longer fails when they are null). Return a clear error so callers can degrade gracefully.
+    if (!g_diarCreate || !g_diarDestroy || !g_diarProcess || !g_diarNumSegments ||
+        !g_diarSort || !g_diarDestroySegment || !g_diarDestroyResult) {
+        snprintf(err, err_cap, "diarization symbols unavailable in loaded dylib"); return -5;
+    }
+
+    SherpaOnnxOfflineSpeakerDiarizationConfig config;
+    memset(&config, 0, sizeof(config));
+    config.segmentation.pyannote.model = seg_model;
+    config.segmentation.num_threads    = 2;
+    config.segmentation.provider       = "cpu";
+    config.embedding.model             = embedding_model;
+    config.embedding.num_threads       = 2;
+    config.embedding.provider          = "cpu";
+    // num_clusters <= 0 → auto-estimate count using the distance threshold.
+    config.clustering.num_clusters     = -1;
+    config.clustering.threshold        = threshold;
+
+    const SherpaOnnxOfflineSpeakerDiarization *sd = g_diarCreate(&config);
+    if (!sd) { snprintf(err, err_cap, "CreateOfflineSpeakerDiarization NULL"); return -3; }
+
+    const SherpaOnnxOfflineSpeakerDiarizationResult *res = g_diarProcess(sd, samples, n);
+    if (!res) { snprintf(err, err_cap, "Diarization Process NULL"); g_diarDestroy(sd); return -4; }
+
+    int32_t count = g_diarNumSegments(res);
+    const SherpaOnnxOfflineSpeakerDiarizationSegment *segs = g_diarSort(res);
+    int written = 0;
+    if (segs) {
+        for (int32_t i = 0; i < count && written < max_segs; i++) {
+            starts[written]   = segs[i].start;
+            ends[written]     = segs[i].end;
+            speakers[written] = segs[i].speaker;
+            written++;
+        }
+        g_diarDestroySegment(segs);
+    }
+    g_diarDestroyResult(res);
+    g_diarDestroy(sd);
+    return written;
+}
+
+void *sherpa_create_punct(const char *model, const char *bpe_vocab, char *err, int err_cap) {
+    if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return NULL; }
+    // Punctuation symbols may be absent in a punctuation-incapable dylib (sherpa_load no longer
+    // fails when they are null). Return NULL so callers can degrade to raw text gracefully.
+    if (!g_punctCreate || !g_punctAdd || !g_punctFreeText || !g_punctDestroy) {
+        snprintf(err, err_cap, "punctuation symbols unavailable in loaded dylib"); return NULL;
+    }
+    SherpaOnnxOnlinePunctuationConfig config;
+    memset(&config, 0, sizeof(config));
+    config.model.cnn_bilstm  = model;
+    config.model.bpe_vocab   = bpe_vocab;
+    config.model.num_threads = 1;
+    config.model.provider    = "cpu";
+    config.model.debug       = 0;
+
+    const SherpaOnnxOnlinePunctuation *p = g_punctCreate(&config);
+    if (!p) { snprintf(err, err_cap, "CreateOnlinePunctuation NULL"); return NULL; }
+    return (void *)p;
+}
+
+int sherpa_punct_add(void *handle, const char *text, char *out, int out_cap) {
+    if (!handle || !text || !out || out_cap <= 0) return -1;
+    const SherpaOnnxOnlinePunctuation *p = (const SherpaOnnxOnlinePunctuation *)handle;
+    const char *res = g_punctAdd(p, text);
+    int len = 0;
+    if (res) { snprintf(out, out_cap, "%s", res); len = (int)strlen(out); g_punctFreeText(res); }
+    else if (out_cap > 0) out[0] = '\0';
+    return len;
+}
+
+void sherpa_punct_destroy(void *handle) {
+    if (!handle) return;
+    g_punctDestroy((const SherpaOnnxOnlinePunctuation *)handle);
+}
+
+void *sherpa_create_offline_punct(const char *model, char *err, int err_cap) {
+    if (!g_loaded) { snprintf(err, err_cap, "sherpa_load not called"); return NULL; }
+    if (!g_offPunctCreate || !g_offPunctAdd || !g_offPunctFreeText || !g_offPunctDestroy) {
+        snprintf(err, err_cap, "offline punctuation symbols unavailable in loaded dylib"); return NULL;
+    }
+    SherpaOnnxOfflinePunctuationConfig config;
+    memset(&config, 0, sizeof(config));
+    config.model.ct_transformer = model;
+    config.model.num_threads    = 1;
+    config.model.provider       = "cpu";
+    config.model.debug          = 0;
+
+    const SherpaOnnxOfflinePunctuation *p = g_offPunctCreate(&config);
+    if (!p) { snprintf(err, err_cap, "CreateOfflinePunctuation NULL"); return NULL; }
+    return (void *)p;
+}
+
+int sherpa_offline_punct_add(void *handle, const char *text, char *out, int out_cap) {
+    if (!handle || !text || !out || out_cap <= 0) return -1;
+    const SherpaOnnxOfflinePunctuation *p = (const SherpaOnnxOfflinePunctuation *)handle;
+    const char *res = g_offPunctAdd(p, text);
+    int len = 0;
+    if (res) { snprintf(out, out_cap, "%s", res); len = (int)strlen(out); g_offPunctFreeText(res); }
+    else if (out_cap > 0) out[0] = '\0';
+    return len;
+}
+
+void sherpa_offline_punct_destroy(void *handle) {
+    if (!handle) return;
+    g_offPunctDestroy((const SherpaOnnxOfflinePunctuation *)handle);
 }

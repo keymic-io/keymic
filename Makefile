@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-mru test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-keychain-store test-me-api test-exchange-api test-auth-client test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating smoke-onnx
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-mru test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-keychain-store test-me-api test-exchange-api test-auth-client test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating smoke-onnx test-streaming-catalog test-streaming-bridge-nil smoke-streaming-onnx test-pcm-resampler smoke-system-audio test-transcript-store test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment test-transcript-exporter
 
 
 build:
@@ -384,6 +384,7 @@ test-keymonitor-persona-cycle:
 	       Sources/KeyMic/Hotkey/HotkeyPreferences.swift \
 	       Sources/KeyMic/Hotkey/HotkeyRecorder.swift \
 	       Sources/KeyMic/Hotkey/HotkeyBindingsStore.swift \
+	       Sources/KeyMic/Hotkey/HotkeyRegistry.swift \
 	       Sources/KeyMic/Hotkey/HotkeySettingsStore.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/Persona.swift \
 	       Sources/KeyMic/PersonaPlatform/Persona/PersonaContext.swift \
@@ -499,6 +500,13 @@ test-audio-capture-16k:
 	       Tests/AudioCapture16kTests.swift \
 	       -o .build/audio-capture-16k-tests
 	.build/audio-capture-16k-tests
+
+test-pcm-resampler:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-pcm-resampler \
+	    Tests/PCMResampler16kTests.swift \
+	    Sources/KeyMic/Meeting/PCMResampler16k.swift
+	.build/t-pcm-resampler
 
 test-sensevoice-vocab:
 	mkdir -p .build
@@ -943,7 +951,7 @@ test-context-resolver:
 	       -o .build/context-resolver-tests
 	.build/context-resolver-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating test-pcm-resampler test-streaming-catalog test-streaming-bridge-nil test-streaming-asr-engine test-transcript-store test-transcript-exporter test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
@@ -1011,8 +1019,169 @@ test-asset-store:
 	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift
 	.build/t-store
 
+test-streaming-catalog:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-streaming-catalog \
+	    Tests/StreamingModelCatalogTests.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift
+	.build/t-streaming-catalog
+
+test-streaming-bridge-nil:
+	@mkdir -p .build
+	clang -c Sources/CSherpaOnnx/SherpaBridge.c \
+	    -I Sources/CSherpaOnnx/include \
+	    -o .build/SherpaBridge.o
+	swiftc -parse-as-library -o .build/t-streaming-bridge-nil \
+	    -I Sources/CSherpaOnnx/include \
+	    -Xcc -fmodule-map-file=Sources/CSherpaOnnx/include/module.modulemap \
+	    .build/SherpaBridge.o \
+	    Tests/StreamingASRBridgeNilTests.swift \
+	    Sources/KeyMic/Speech/ONNX/StreamingASRBridge.swift \
+	    Sources/KeyMic/Meeting/StreamingASREngine.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
+	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
+	.build/t-streaming-bridge-nil
+
+# 手动真机冒烟(需 runtime + streaming 模型已下载到 App Support)。验证流式 partial/final。
+# NOTE: swiftc 不会把 -Xcc 传给它内部的 C 编译,故须先用 clang 把 SherpaBridge.c 编成 .o 再链接
+# (与 test-streaming-bridge-nil 同一模式,Task 4 验证)。
+smoke-streaming-onnx:
+	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/streaming-zipformer-bilingual-zh-en} populated"
+	@mkdir -p .build
+	clang -c Sources/CSherpaOnnx/SherpaBridge.c \
+	    -I Sources/CSherpaOnnx/include \
+	    -o .build/SherpaBridge.o
+	swiftc -parse-as-library -o .build/streaming-smoke \
+	    -I Sources/CSherpaOnnx/include \
+	    -Xcc -fmodule-map-file=Sources/CSherpaOnnx/include/module.modulemap \
+	    .build/SherpaBridge.o \
+	    Tests/StreamingSmoke.swift \
+	    Sources/KeyMic/Speech/ONNX/StreamingASRBridge.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
+	    Sources/KeyMic/Speech/ONNX/OnnxStores.swift \
+	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
+	.build/streaming-smoke
+
+# 手动真机冒烟(需 onnx-runtime + models/online-punct-en 已下载)。验证全大写英文 → truecasing+标点。
+smoke-punct-onnx:
+	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/online-punct-en} populated"
+	@mkdir -p .build
+	clang -c Sources/CSherpaOnnx/SherpaBridge.c \
+	    -I Sources/CSherpaOnnx/include \
+	    -o .build/SherpaBridge.o
+	swiftc -parse-as-library -o .build/punct-smoke \
+	    -I Sources/CSherpaOnnx/include \
+	    -Xcc -fmodule-map-file=Sources/CSherpaOnnx/include/module.modulemap \
+	    .build/SherpaBridge.o \
+	    Tests/PunctSmoke.swift \
+	    Sources/KeyMic/Speech/ONNX/PunctuationBridge.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
+	    Sources/KeyMic/Speech/ONNX/OnnxStores.swift \
+	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
+	.build/punct-smoke
+
+# 手动真机冒烟(需 onnx-runtime + models/punct-ct-zh-en 已下载)。验证中文/中英混排 → 加标点。
+smoke-ct-punct-onnx:
+	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/punct-ct-zh-en} populated"
+	@mkdir -p .build
+	clang -c Sources/CSherpaOnnx/SherpaBridge.c \
+	    -I Sources/CSherpaOnnx/include \
+	    -o .build/SherpaBridge.o
+	swiftc -parse-as-library -o .build/ct-punct-smoke \
+	    -I Sources/CSherpaOnnx/include \
+	    -Xcc -fmodule-map-file=Sources/CSherpaOnnx/include/module.modulemap \
+	    .build/SherpaBridge.o \
+	    Tests/CTPunctSmoke.swift \
+	    Sources/KeyMic/Speech/ONNX/CTPunctuationBridge.swift \
+	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
+	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift \
+	    Sources/KeyMic/Speech/ONNX/OnnxStores.swift \
+	    Sources/KeyMic/Speech/ONNX/ONNXRuntimeLoader.swift
+	.build/ct-punct-smoke
+
 # 手动真机冒烟(需预放/下载 runtime+模型;非 CI)。用真实 AR 模型转写 Tests/fixtures/zh.wav。
 smoke-onnx:
 	@echo "manual: ensure ~/Library/Application Support/KeyMic/{onnx-runtime,models/funasr-nano-ar} populated"
 	swift build
 	@echo "(invoke ONNX path via the running app; this target only builds)"
+
+# 手动真机冒烟(需 Screen Recording 权限 + 正在播放音频)。验证系统音频采集 → 16k 流。
+smoke-system-audio:
+	@echo "manual: grant Screen Recording to the runner; PLAY audio during the 5s window"
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/system-audio-smoke \
+	    Tests/SystemAudioSmoke.swift \
+	    Sources/KeyMic/Meeting/SystemAudioCapture.swift \
+	    Sources/KeyMic/Meeting/PCMResampler16k.swift
+	.build/system-audio-smoke
+
+test-transcript-store:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-transcript-store \
+	    Tests/TranscriptStoreTests.swift \
+	    Sources/KeyMic/Meeting/MeetingModels.swift \
+	    Sources/KeyMic/Meeting/TranscriptStore.swift
+	.build/t-transcript-store
+
+test-meeting-history-formatter:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-meeting-history-formatter \
+	    Tests/MeetingHistoryFormatterTests.swift \
+	    Sources/KeyMic/Meeting/MeetingHistoryFormatter.swift
+	.build/t-meeting-history-formatter
+
+test-meeting-preferences:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-meeting-preferences \
+	    Tests/MeetingPreferencesTests.swift \
+	    Sources/KeyMic/Meeting/MeetingPreferences.swift
+	.build/t-meeting-preferences
+
+test-meeting-controller:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-meeting-controller \
+	    Tests/MeetingControllerTests.swift \
+	    Sources/KeyMic/Meeting/MeetingController.swift \
+	    Sources/KeyMic/Meeting/MeetingPreferences.swift \
+	    Sources/KeyMic/Meeting/TranscriptStore.swift \
+	    Sources/KeyMic/Meeting/MeetingModels.swift
+	.build/t-meeting-controller
+
+test-meeting-prerequisites:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-meeting-prerequisites \
+	    Tests/MeetingPrerequisitesTests.swift \
+	    Sources/KeyMic/Meeting/MeetingPrerequisites.swift
+	.build/t-meeting-prerequisites
+
+test-meeting-audio-recorder:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-meeting-audio-recorder \
+	    Tests/MeetingAudioRecorderTests.swift \
+	    Sources/KeyMic/Meeting/MeetingAudioRecorder.swift
+	.build/t-meeting-audio-recorder
+
+test-speaker-assignment:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-speaker-assignment \
+	    Tests/SpeakerAssignmentTests.swift \
+	    Sources/KeyMic/Meeting/SpeakerAssignment.swift
+	.build/t-speaker-assignment
+
+test-transcript-exporter:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-transcript-exporter \
+	    Tests/TranscriptExporterTests.swift \
+	    Sources/KeyMic/Meeting/TranscriptExporter.swift
+	.build/t-transcript-exporter
+
+# StreamingASREngine unit test — uses a fake recognizer (no CSherpaOnnx, no model, no mic).
+test-streaming-asr-engine:
+	@mkdir -p .build
+	swiftc -parse-as-library -o .build/t-streaming-asr-engine \
+	    Tests/StreamingASREngineTests.swift \
+	    Sources/KeyMic/Meeting/StreamingASREngine.swift
+	.build/t-streaming-asr-engine
