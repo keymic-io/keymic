@@ -204,7 +204,7 @@ final class OutputRouter {
             if let executor = runShellExecutor {
                 result = try await executor(command)
             } else {
-                result = try await ShellOutputRunner.run(command)
+                result = await ShellOutputRunner.run(command)
             }
             routerLogger.debug("runShell exit=\(result.exitCode, privacy: .public) stdout_len=\(result.stdout.count, privacy: .public) stderr_len=\(result.stderr.count, privacy: .public)")
             let cleanStdout = ANSIStripper.strip(result.stdout)
@@ -224,8 +224,6 @@ final class OutputRouter {
                 return .failed(message: msg)
             }
             return .injected
-        } catch ShellOutputRunnerError.timeout {
-            return .failed(message: "shell command timed out after 30s")
         } catch {
             return .failed(message: "shell run failed: \(error.localizedDescription)")
         }

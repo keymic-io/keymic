@@ -12,6 +12,9 @@ struct AllowedToolsParserTests {
         testMixedPatternsAndNames()
         testExtraWhitespace()
         testTabsAndNewlinesAsSeparators()
+        testCommaSeparated()
+        testCommaSpaceSeparated()
+        testCommaSeparatedWithParens()
         testEmptyParens()
         testParensOnlyDropped()
         testYAMLNullLiteralReturnsNil()
@@ -52,6 +55,21 @@ struct AllowedToolsParserTests {
 
     static func testTabsAndNewlinesAsSeparators() {
         precondition(AllowedToolsParser.parse("Bash\nRead\tWrite") == Set(["Bash", "Read", "Write"]))
+    }
+
+    static func testCommaSeparated() {
+        // Claude-Code authoring style with no spaces around commas. Used to
+        // collapse to a single bogus token {"Bash,Read,Edit"} stripping all tools.
+        precondition(AllowedToolsParser.parse("Bash,Read,Edit") == Set(["Bash", "Read", "Edit"]))
+    }
+
+    static func testCommaSpaceSeparated() {
+        // Comma + space: trailing commas must not leak into tokens.
+        precondition(AllowedToolsParser.parse("Bash, Read, Edit") == Set(["Bash", "Read", "Edit"]))
+    }
+
+    static func testCommaSeparatedWithParens() {
+        precondition(AllowedToolsParser.parse("Bash(git:*), Read, Write(*.swift)") == Set(["Bash", "Read", "Write"]))
     }
 
     static func testEmptyParens() {

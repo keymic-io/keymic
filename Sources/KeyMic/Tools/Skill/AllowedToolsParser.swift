@@ -22,7 +22,12 @@ public enum AllowedToolsParser {
         guard !trimmed.isEmpty else { return nil }
         if trimmed == "~" || trimmed.lowercased() == "null" { return nil }
 
-        let separators = CharacterSet.whitespacesAndNewlines
+        // Claude-Code `allowed-tools` frontmatter is comma-separated
+        // (`Bash(git:*), Read, Edit`); we also accept whitespace separation.
+        // Splitting on both means `Bash,Read` and `Bash, Read` parse the same,
+        // and trailing commas never leak into a token (empty tokens are
+        // dropped by `split`'s default `omittingEmptySubsequences`).
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ","))
         let tokens = trimmed.unicodeScalars
             .split(whereSeparator: { separators.contains($0) })
             .map(String.init)

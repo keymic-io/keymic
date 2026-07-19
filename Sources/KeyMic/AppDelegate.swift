@@ -199,6 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         Task { @MainActor in
             await registerLocalTools()
+            await loadSkills()
             agentRunner = AgentRunner(registry: toolRegistry, skillRegistry: skillRegistry)
             Task { [mcpManager, toolRegistry] in
                 await mcpManager.loadAndConnectAll(registry: toolRegistry)
@@ -913,6 +914,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             logger.error("Failed to register local tools: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Directory users drop `*.md` skill files into. Mirrors the other
+    /// per-app persistent locations under Application Support.
+    static func skillsDirectory() -> URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/KeyMic/Skills", isDirectory: true)
+    }
+
+    /// Load skills from disk into `skillRegistry` so both the `runSkill` hotkey
+    /// path (`SkillHotkeyBridge`) and the model-driven `ActivateSkill` tool can
+    /// resolve them. Without this the registry stays empty and every skill
+    /// lookup fails. Missing directory → empty load (no error).
+    private func loadSkills() async {
+        let dir = Self.skillsDirectory()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let skills = skillLoader.loadDirectory(dir)
+        await skillRegistry.replace(with: skills)
+        logger.info("Loaded \(skills.count) skill(s) from \(dir.path, privacy: .public)")
     }
 }
 

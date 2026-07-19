@@ -242,21 +242,17 @@ final class SenseVoiceModelStore {
     /// `ditto -xk --sequesterRsrc` is more robust than `unzip` for the `.mlmodelc`
     /// bundle directory + macOS resource-fork/metadata. ditto returns non-zero on failure.
     private func extractArchive(_ zip: URL, into dir: URL) throws {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-        p.arguments = ["-xk", "--sequesterRsrc", zip.path, dir.path]
-        let errPipe = Pipe()
-        p.standardError = errPipe
-        try p.run()
-        // Drain stderr BEFORE `waitUntilExit()`. `readDataToEndOfFile()` reads until the write
-        // end closes (process exit), so a chatty ditto (e.g. permission errors over a large
-        // bundle) can't fill the 64 KB pipe buffer, block on write, and deadlock us in
-        // `waitUntilExit()` — which would leave the download stuck on `.downloading` forever.
-        let data = errPipe.fileHandleForReading.readDataToEndOfFile()
-        p.waitUntilExit()
-        if p.terminationStatus != 0 {
-            let msg = String(data: data, encoding: .utf8) ?? "unknown error"
-            throw NSError(domain: "ditto", code: Int(p.terminationStatus),
+        // ditto on a large `.mlmodelc` bundle can exceed the runner's default
+        // 30s, so a generous 120s timeout is passed. Pipe draining (the
+        // deadlock guard the old code handled manually) is handled inside
+        // ShellRunner via readability handlers.
+        let (exit, _, err) = ShellRunner.shared.runExecSync(
+            URL(fileURLWithPath: "/usr/bin/ditto"),
+            arguments: ["-xk", "--sequesterRsrc", zip.path, dir.path],
+            timeout: 120)
+        if exit != 0 {
+            let msg = err.isEmpty ? "unknown error" : err
+            throw NSError(domain: "ditto", code: Int(exit),
                           userInfo: [NSLocalizedDescriptionKey: "ditto failed: \(msg)"])
         }
     }

@@ -434,10 +434,9 @@ private struct GeneralSettingsView: View {
         alert.addButton(withTitle: String(localized: "Later"))
         if alert.runModal() == .alertFirstButtonReturn {
             let path = Bundle.main.bundlePath
-            let task = Process()
-            task.launchPath = "/bin/sh"
-            task.arguments = ["-c", "sleep 1; open \"$1\"", "sh", path]
-            try? task.run()
+            ShellRunner.shared.launchDetached(
+                URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "sleep 1; open \"$1\"", "sh", path])
             NSApp.terminate(nil)
         }
     }

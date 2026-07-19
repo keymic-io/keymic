@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import MCP
 
@@ -11,12 +12,18 @@ public struct MCPToolAdapter: Tool {
     private let client: MCPClientProtocol
 
     /// OpenAI's `tools[i].function.name` regex is `^[a-zA-Z0-9_-]{1,64}$` —
-    /// dots and most other punctuation are rejected with HTTP 400. We also
-    /// scrub any `.` / whitespace in `serverName` because users may have
-    /// configured a server id like `github.copilot` in their MCP config.
+    /// dots and most other punctuation are rejected with HTTP 400, and so is
+    /// any name longer than 64 characters. We also scrub any `.` / whitespace
+    /// in `serverName` because users may have configured a server id like
+    /// `github.copilot` in their MCP config. An over-length `server_tool`
+    /// combination is truncated with a deterministic hash suffix so distinct
+    /// long names stay distinct (a single >64 name would otherwise 400 the
+    /// whole request and terminate the entire agent run).
     public var name: String {
-        "\(Self.sanitizeForOpenAI(serverName))_\(Self.sanitizeForOpenAI(remoteName))"
+        Self.capForOpenAI("\(Self.sanitizeForOpenAI(serverName))_\(Self.sanitizeForOpenAI(remoteName))")
     }
+
+    static let maxOpenAINameLength = 64
 
     private static func sanitizeForOpenAI(_ raw: String) -> String {
         var out = ""
@@ -30,6 +37,24 @@ public struct MCPToolAdapter: Tool {
             }
         }
         return out
+    }
+
+    /// Truncate a sanitized name to `maxOpenAINameLength`, appending an 8-char
+    /// hex suffix derived from the full name so two long names that share a
+    /// prefix don't collide. Sanitized characters are all ASCII, so character
+    /// count equals byte count and prefixing by character is safe.
+    static func capForOpenAI(_ sanitized: String) -> String {
+        guard sanitized.count > maxOpenAINameLength else { return sanitized }
+        let suffix = stableHash8(sanitized)
+        let keep = maxOpenAINameLength - 1 - suffix.count // room for '_' + suffix
+        return "\(sanitized.prefix(keep))_\(suffix)"
+    }
+
+    /// First 4 bytes of SHA-256 as 8 lowercase hex chars — deterministic across
+    /// runs (unlike `Hasher`, which is seeded) so the wire name is stable.
+    private static func stableHash8(_ s: String) -> String {
+        let digest = SHA256.hash(data: Data(s.utf8))
+        return digest.prefix(4).map { String(format: "%02x", $0) }.joined()
     }
 
     public init(

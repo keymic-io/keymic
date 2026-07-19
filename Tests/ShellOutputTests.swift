@@ -25,31 +25,19 @@ struct ShellOutputTestRunner {
     }
 
     static func runRunnerSmoke() async {
-        do {
-            let ok = try await ShellOutputRunner.run("echo hello", timeout: 5)
-            expect(ok.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "hello",
-                   "echo hello stdout mismatch, got: \(ok.stdout)")
-            expect(ok.stderr.isEmpty, "echo hello should have no stderr, got: \(ok.stderr)")
-            expect(ok.exitCode == 0, "echo hello exitCode mismatch, got: \(ok.exitCode)")
-        } catch {
-            fail("echo hello threw: \(error)")
-        }
+        let ok = await ShellOutputRunner.run("echo hello")
+        expect(ok.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "hello",
+               "echo hello stdout mismatch, got: \(ok.stdout)")
+        expect(ok.stderr.isEmpty, "echo hello should have no stderr, got: \(ok.stderr)")
+        expect(ok.exitCode == 0, "echo hello exitCode mismatch, got: \(ok.exitCode)")
 
-        do {
-            let bad = try await ShellOutputRunner.run("false", timeout: 5)
-            expect(bad.exitCode != 0, "`false` should have non-zero exit, got: \(bad.exitCode)")
-        } catch {
-            fail("false threw unexpectedly: \(error)")
-        }
+        let bad = await ShellOutputRunner.run("false")
+        expect(bad.exitCode != 0, "`false` should have non-zero exit, got: \(bad.exitCode)")
 
-        do {
-            _ = try await ShellOutputRunner.run("sleep 3", timeout: 0.5)
-            fail("sleep 3 timeout=0.5 should have thrown .timeout")
-        } catch ShellOutputRunnerError.timeout {
-            // expected
-        } catch {
-            fail("sleep 3 threw wrong error: \(error)")
-        }
+        // cwd is $HOME (preserved from the old raw-Process behavior).
+        let pwd = await ShellOutputRunner.run("pwd")
+        expect(pwd.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == NSHomeDirectory(),
+               "cwd should be $HOME, got: \(pwd.stdout)")
     }
 
     static func testSubstituteQuery() {
