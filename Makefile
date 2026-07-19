@@ -12,7 +12,7 @@ endif
 BUILD_DIR := $(shell swift build -c release $(SPEECH_ANALYZER_FLAGS) --show-bin-path 2>/dev/null || echo .build/release)
 CODESIGN_IDENTITY ?= -
 
-.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-mru test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-keychain-store test-me-api test-exchange-api test-auth-client test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console smoke-onnx test-streaming-catalog test-streaming-bridge-nil smoke-streaming-onnx test-pcm-resampler smoke-system-audio test-transcript-store test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment test-transcript-exporter
+.PHONY: build build-arm64 build-x86_64 clean install install-hooks uninstall-hooks run test release format lint test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-mru test-hotkey-registry test-hotkey-settings-store test-pasteboard-snapshot test-selection-copy-wait test-voice-model-catalog test-asset-store test-keychain-store test-me-api test-exchange-api test-auth-client test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating smoke-onnx test-streaming-catalog test-streaming-bridge-nil smoke-streaming-onnx test-pcm-resampler smoke-system-audio test-transcript-store test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment test-transcript-exporter
 
 
 build:
@@ -448,6 +448,7 @@ test-speech-engine:
 	swiftc Sources/KeyMic/Speech/VoiceError.swift \
 	       Sources/KeyMic/Speech/VoiceState.swift \
 	       Sources/KeyMic/Speech/SenseVoice/SpeechEngineProtocol.swift \
+	       Sources/KeyMic/Telemetry/TelemetryService.swift \
 	       Sources/KeyMic/SpeechEngine.swift \
 	       Tests/SpeechEngineTests.swift \
 	       -o .build/speech-engine-tests
@@ -482,6 +483,15 @@ test-speech-status:
 	       Tests/SpeechEngineStatusTests.swift \
 	       -o .build/speech-status-tests
 	.build/speech-status-tests
+
+test-telemetry-gating:
+	mkdir -p .build
+	swiftc Sources/KeyMic/Speech/SenseVoice/SpeechEngineFactory.swift \
+	       Sources/KeyMic/Telemetry/TelemetryService.swift \
+	       Sources/KeyMic/Telemetry/SpeechEngineChoiceTelemetry.swift \
+	       Tests/TelemetryGatingTests.swift \
+	       -o .build/telemetry-gating-tests
+	.build/telemetry-gating-tests
 
 test-audio-capture-16k:
 	mkdir -p .build
@@ -519,6 +529,7 @@ test-fbank-extractor:
 test-sensevoice-model-store:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Telemetry/TelemetryService.swift \
 	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceModelStore.swift \
 	       Tests/SenseVoiceModelStoreTests.swift \
 	       -framework CoreML \
@@ -551,6 +562,7 @@ test-sensevoice-model-input:
 test-sensevoice-padding-parity:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Speech/SenseVoice/SenseVoiceConfig.swift \
+	       Sources/KeyMic/Telemetry/TelemetryService.swift \
 	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceModelStore.swift \
 	       Sources/KeyMic/Speech/SenseVoice/ProtobufReader.swift \
 	       Sources/KeyMic/Speech/SenseVoice/SenseVoiceVocab.swift \
@@ -939,7 +951,7 @@ test-context-resolver:
 	       -o .build/context-resolver-tests
 	.build/context-resolver-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-pcm-resampler test-streaming-catalog test-streaming-bridge-nil test-streaming-asr-engine test-transcript-store test-transcript-exporter test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating test-pcm-resampler test-streaming-catalog test-streaming-bridge-nil test-streaming-asr-engine test-transcript-store test-transcript-exporter test-meeting-history-formatter test-meeting-preferences test-meeting-controller test-meeting-prerequisites test-meeting-audio-recorder test-speaker-assignment
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
@@ -1002,6 +1014,7 @@ test-asset-store:
 	@mkdir -p .build
 	swiftc -parse-as-library -o .build/t-store \
 	    Tests/AssetStoreTests.swift \
+	    Sources/KeyMic/Telemetry/TelemetryService.swift \
 	    Sources/KeyMic/Speech/ONNX/AssetStore.swift \
 	    Sources/KeyMic/Speech/ONNX/VoiceModelCatalog.swift
 	.build/t-store

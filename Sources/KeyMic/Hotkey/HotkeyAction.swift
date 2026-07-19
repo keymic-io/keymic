@@ -5,6 +5,17 @@ enum HotkeyAction: Equatable {
     case keyPress(keyCode: UInt16, modifiers: UInt64)
     case wait(ms: Int)
     case shell(String)
+
+    /// Fixed case name for telemetry. NEVER includes the associated value
+    /// (typed text / shell command) — only the action kind.
+    var telemetryName: String {
+        switch self {
+        case .typeText: return "typeText"
+        case .keyPress: return "keyPress"
+        case .wait:     return "wait"
+        case .shell:    return "shell"
+        }
+    }
 }
 
 extension HotkeyAction: Codable {

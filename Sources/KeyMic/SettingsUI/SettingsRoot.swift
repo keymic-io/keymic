@@ -252,6 +252,7 @@ private struct ScreenshotSettingsView: View {
 
 private struct GeneralSettingsView: View {
     @AppStorage("automaticallyUpdates") private var automaticallyUpdates: Bool = true
+    @AppStorage("telemetryEnabled") private var telemetryEnabled: Bool = true
     @State private var hotkeyStore = HotkeySettingsStore.shared
     @State private var hotkeyResetError: String?
     private var settingsHotkey: Binding<String> { hotkeyBinding(hotkeyStore, for: .settingsWindow) }
@@ -311,6 +312,19 @@ private struct GeneralSettingsView: View {
                 Toggle("Automatically check and install updates", isOn: $automaticallyUpdates)
             } header: {
                 Text("Updates")
+            }
+
+            Section {
+                Toggle("Share anonymous diagnostics & crash reports", isOn: $telemetryEnabled)
+                    .onChange(of: telemetryEnabled) { _, newValue in
+                        TelemetryService.shared.setEnabled(newValue)
+                    }
+            } header: {
+                Text("Diagnostics")
+            } footer: {
+                Text("Anonymous — never includes transcripts, clipboard, keystrokes, or screen content.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
 
             Section {

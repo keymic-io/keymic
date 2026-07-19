@@ -91,6 +91,8 @@ final class AppleSpeechEngine: SpeechEngineProtocol {
     private var recognitionTask: SpeechRecognitionTasking?
     private var speechRecognizer: SFSpeechRecognizer?
     private var firstBufferReceived = false
+    /// Session start timestamp, for the `engine_cold_start` first-buffer latency.
+    private var sessionStartTime: DispatchTime?
     private var audioWatchdog: DispatchWorkItem?
     // Bumped on every startRecording / cancel. The resultHandler captures
     // its own generation at creation and drops callbacks once the value
@@ -177,6 +179,7 @@ final class AppleSpeechEngine: SpeechEngineProtocol {
         recognitionTask?.cancel()
         recognitionTask = nil
         firstBufferReceived = false
+        sessionStartTime = .now()
 
         guard speechRecognizerAvailability(speechRecognizer) else {
             throw VoiceError.recognizerUnavailable(locale.identifier)
@@ -209,6 +212,11 @@ final class AppleSpeechEngine: SpeechEngineProtocol {
                 self.firstBufferReceived = true
                 self.audioWatchdog?.cancel()
                 self.audioWatchdog = nil
+                let elapsedMs = self.sessionStartTime.map {
+                    Int((DispatchTime.now().uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000)
+                } ?? 0
+                TelemetryService.shared.engineColdStart(
+                    engine: "apple", firstBufferMs: elapsedMs, scoWatchdogFired: false)
             }
             guard let channelData = buffer.floatChannelData?[0] else { return }
             let frameLength = Int(buffer.frameLength)
@@ -235,6 +243,11 @@ final class AppleSpeechEngine: SpeechEngineProtocol {
             guard let self, !self.firstBufferReceived else { return }
             logger.error(
                 "No audio frames in 800ms — Bluetooth SCO cold-start failure (device: \(deviceName, privacy: .public))")
+            let elapsedMs = self.sessionStartTime.map {
+                Int((DispatchTime.now().uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000)
+            } ?? 0
+            TelemetryService.shared.engineColdStart(
+                engine: "apple", firstBufferMs: elapsedMs, scoWatchdogFired: true)
             self.cleanup()
             self.onError?("麦克风未响应，请松开后稍候再试")
         }

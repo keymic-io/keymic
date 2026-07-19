@@ -23,6 +23,7 @@ final class ScreenshotController: SelectionOverlayViewDelegate {
 
     func start() {
         guard !isCapturing else { return }
+        TelemetryService.shared.featureUsed("screenshot")
         isCapturing = true
         Task { @MainActor in
             do {

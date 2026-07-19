@@ -30,6 +30,8 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
     /// arriving. Mirror AppleSpeechEngine's 800ms watchdog: no first buffer →
     /// tear down and surface an error instead of silently recording nothing.
     private var firstBufferReceived = false
+    /// Session start timestamp, for the `engine_cold_start` first-buffer latency.
+    private var sessionStartTime: DispatchTime?
     private var audioWatchdog: DispatchWorkItem?
 
     /// recognizer 须由调用方(AppDelegate)在 off-main 用 sherpa_create_funasr 建好后传入。
@@ -52,6 +54,7 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
         sessionGeneration &+= 1
         capture.reset()
         firstBufferReceived = false
+        sessionStartTime = .now()
         engine = AVAudioEngine()  // rebind to the current default input device (see decl)
         let input = engine.inputNode
         input.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buf, _ in
@@ -60,6 +63,11 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
                 guard let self, !self.firstBufferReceived else { return }
                 self.firstBufferReceived = true
                 self.audioWatchdog?.cancel(); self.audioWatchdog = nil
+                let elapsedMs = self.sessionStartTime.map {
+                    Int((DispatchTime.now().uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000)
+                } ?? 0
+                TelemetryService.shared.engineColdStart(
+                    engine: "onnx", firstBufferMs: elapsedMs, scoWatchdogFired: false)
             }
         }
         tapInstalled = true
@@ -77,6 +85,11 @@ final class ONNXSpeechEngine: SpeechEngineProtocol {
             guard let self, self.sessionGeneration == myGen, !self.firstBufferReceived else { return }
             logger.error(
                 "No audio frames in 800ms — Bluetooth SCO cold-start failure (device: \(deviceName, privacy: .public))")
+            let elapsedMs = self.sessionStartTime.map {
+                Int((DispatchTime.now().uptimeNanoseconds &- $0.uptimeNanoseconds) / 1_000_000)
+            } ?? 0
+            TelemetryService.shared.engineColdStart(
+                engine: "onnx", firstBufferMs: elapsedMs, scoWatchdogFired: true)
             self.teardown()
             self.onError?("麦克风未响应，请松开后稍候再试")
         }

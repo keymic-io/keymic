@@ -29,6 +29,13 @@ final class PersonaEngine {
 
         let strategy = invocation.outputOverride ?? invocation.persona.injectionStrategy
 
+        // Content-free adoption signals: built-in personas report their (fixed) name,
+        // custom personas report their stable id — NEVER the user's style-prompt text.
+        TelemetryService.shared.featureUsed("persona")
+        TelemetryService.shared.personaInvoked(
+            persona: invocation.persona.builtIn ? invocation.persona.name : invocation.persona.id,
+            injectionStrategy: strategy.telemetryName)
+
         if !llmClient.isReady {
             let routeResult = await outputRouter.route(
                 PersonaOutput(
