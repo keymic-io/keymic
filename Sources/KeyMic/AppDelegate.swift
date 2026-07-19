@@ -199,6 +199,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if KeyMappingManager.shared.isEnabled,
            KeyMappingManager.shared.mappings.contains(where: { $0.enabled }) {
             TelemetryService.shared.featureUsed("keymap")
+            // Activation milestone: fire once ever on the first launch with an active
+            // remap. Only mark sent when actually emitted so a user who enables
+            // telemetry later still records their activation. Content-free.
+            let activationKey = "activationFirstRemapSent"
+            if TelemetryService.shared.isEnabled,
+               !UserDefaults.standard.bool(forKey: activationKey) {
+                UserDefaults.standard.set(true, forKey: activationKey)
+                TelemetryService.shared.activationFirstRemap()
+            }
         }
 
         AppScreen.refresh()

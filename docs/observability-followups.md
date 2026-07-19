@@ -36,6 +36,28 @@ toggle handler.
   `permission_state`, `feature_used`, etc. appear in the TelemetryDeck dashboard.
   App ID is already wired in `Info.plist`.
 
+## ✅ KEY-2 — activation-funnel signals (this change)
+
+Closed the gap between what child-1 shipped and the download → install →
+activation → day-7-retained funnel needed for the 1,000-user goal:
+
+- Added `activation_first_remap` and `activation_first_clipboard_use` (mirroring
+  the existing `activation_first_transcription` one-time-gate pattern) so all
+  three core loops (remap / voice / clipboard) have a first-use milestone, not
+  just voice.
+- Install and day-7 retention need **no new code** — TelemetryDeck's automatic
+  session/launch signal and its native per-anonymous-id retention computation
+  already cover both.
+- Download count is outside the app (pre-install); pulled from the public GitHub
+  Releases API, no PII.
+- Full recipe + the funnel/retention Insight this data feeds: see
+  `docs/analytics-funnel-dashboard.md`.
+
+**Remaining manual step (not scriptable from here):** building the actual
+Funnel/Retention Insight and dashboard in the TelemetryDeck web UI requires the
+org login, which isn't available in this environment — flagged to whoever holds
+that account (CEO/Growth) in the recipe doc above.
+
 ## 🔮 Later (explicitly out of scope for v1)
 
 - Sentry performance tracing / transactions.

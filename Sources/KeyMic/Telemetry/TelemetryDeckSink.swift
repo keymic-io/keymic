@@ -84,6 +84,14 @@ final class TelemetryDeckSink: TelemetrySink {
         send("activation_first_transcription", [:])
     }
 
+    func activationFirstRemap() {
+        send("activation_first_remap", [:])
+    }
+
+    func activationFirstClipboardUse() {
+        send("activation_first_clipboard_use", [:])
+    }
+
     func terminate() {
         TelemetryDeck.terminate()
     }

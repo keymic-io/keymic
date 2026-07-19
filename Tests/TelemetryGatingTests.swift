@@ -28,6 +28,8 @@ final class SpyTelemetrySink: TelemetrySink {
     }
     func hotkeyAction(_ action: String) { calls.append("hotkey_action|action=\(action)") }
     func activationFirstTranscription() { calls.append("activation_first_transcription|") }
+    func activationFirstRemap() { calls.append("activation_first_remap|") }
+    func activationFirstClipboardUse() { calls.append("activation_first_clipboard_use|") }
     private(set) var terminateCount = 0
     func terminate() { terminateCount += 1 }
 }
@@ -72,6 +74,13 @@ struct TelemetryGatingTests {
         assert(spy2.count == 3, "emission resumes after toggle-on; got \(spy2.count)")
         assert(spy2.calls[2] == "activation_first_transcription|",
                "unexpected activation payload: \(spy2.calls[2])")
+        enabled.activationFirstRemap()
+        enabled.activationFirstClipboardUse()
+        assert(spy2.count == 5, "expected 2 more activation emissions; got \(spy2.count)")
+        assert(spy2.calls[3] == "activation_first_remap|",
+               "unexpected activation payload: \(spy2.calls[3])")
+        assert(spy2.calls[4] == "activation_first_clipboard_use|",
+               "unexpected activation payload: \(spy2.calls[4])")
 
         // 4. SpeechEngineChoice -> engine string is 1:1 for all 4 cases.
         let mapping: [(SpeechEngineChoice, String)] = [
