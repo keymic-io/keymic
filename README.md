@@ -207,7 +207,11 @@ Sparkle 2 with an EdDSA-signed appcast. The release script builds, signs, packag
 
 ## Downloads
 
-Grab a signed build from [Releases](https://github.com/keymic-io/keymic/releases), or build from source (see [Development](#development)).
+```bash
+brew install --cask keymic-io/tap/keymic
+```
+
+Or grab a signed build from [Releases](https://github.com/keymic-io/keymic/releases), or build from source (see [Development](#development)).
 
 ```bash
 make build   # release build → ./KeyMic.app

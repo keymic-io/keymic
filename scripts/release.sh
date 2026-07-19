@@ -114,8 +114,49 @@ cp Resources/TrayIconTemplate.png "${BUNDLE}/Contents/Resources/"
 cp Resources/TrayIconTemplate@2x.png "${BUNDLE}/Contents/Resources/"
 cp -R "${ARM64_SPARKLE}" "${BUNDLE}/Contents/Frameworks/"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
-codesign --force --deep --sign "${CODESIGN_IDENTITY}" "${BUNDLE}/Contents/Frameworks/Sparkle.framework"
-codesign --force --sign "${CODESIGN_IDENTITY}" --entitlements "${PROJECT_DIR}/${APP_NAME}.entitlements" "${BUNDLE}"
+
+# "-" is ad-hoc/self-signed — fine for local dev, but Gatekeeper hard-blocks it on a
+# clean machine (no Developer ID, no notarization ticket). Only a real "Developer ID
+# Application: ..." identity gets --options runtime/--timestamp, which notarization requires.
+if [[ "${CODESIGN_IDENTITY}" == "-" ]]; then
+    echo "==> WARNING: CODESIGN_IDENTITY is ad-hoc ('-'). This build is NOT notarizable and"
+    echo "    will fail Gatekeeper on a clean machine. Set CODESIGN_IDENTITY to a"
+    echo "    'Developer ID Application: ...' identity and notarization credentials"
+    echo "    (see docs/BUILDING.md) to produce a distributable release."
+    CODESIGN_EXTRA_FLAGS=()
+else
+    CODESIGN_EXTRA_FLAGS=(--options runtime --timestamp)
+fi
+codesign --force --deep --sign "${CODESIGN_IDENTITY}" "${CODESIGN_EXTRA_FLAGS[@]}" "${BUNDLE}/Contents/Frameworks/Sparkle.framework"
+codesign --force --sign "${CODESIGN_IDENTITY}" "${CODESIGN_EXTRA_FLAGS[@]}" --entitlements "${PROJECT_DIR}/${APP_NAME}.entitlements" "${BUNDLE}"
+
+# --- Notarization (skipped for ad-hoc builds) ---
+# Auth via either a stored keychain profile (`xcrun notarytool store-credentials`) passed
+# as APPLE_NOTARY_PROFILE, or explicit APPLE_ID/APPLE_TEAM_ID/APPLE_APP_SPECIFIC_PASSWORD.
+if [[ "${CODESIGN_IDENTITY}" != "-" ]]; then
+    NOTARY_AUTH_ARGS=()
+    if [[ -n "${APPLE_NOTARY_PROFILE:-}" ]]; then
+        NOTARY_AUTH_ARGS=(--keychain-profile "${APPLE_NOTARY_PROFILE}")
+    elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_TEAM_ID:-}" && -n "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]]; then
+        NOTARY_AUTH_ARGS=(--apple-id "${APPLE_ID}" --team-id "${APPLE_TEAM_ID}" --password "${APPLE_APP_SPECIFIC_PASSWORD}")
+    else
+        echo "Error: CODESIGN_IDENTITY is set but no notarization credentials found."
+        echo "  Set APPLE_NOTARY_PROFILE, or APPLE_ID + APPLE_TEAM_ID + APPLE_APP_SPECIFIC_PASSWORD."
+        exit 1
+    fi
+
+    echo "==> Submitting ${APP_NAME}.app for notarization"
+    NOTARY_ZIP="${RELEASE_DIR}/${APP_NAME}-notarize.zip"
+    ditto -c -k --keepParent "${BUNDLE}" "${NOTARY_ZIP}"
+    xcrun notarytool submit "${NOTARY_ZIP}" "${NOTARY_AUTH_ARGS[@]}" --wait
+    rm -f "${NOTARY_ZIP}"
+
+    echo "==> Stapling notarization ticket"
+    xcrun stapler staple "${BUNDLE}"
+
+    echo "==> Verifying Gatekeeper assessment"
+    spctl --assess --type execute -vv "${BUNDLE}"
+fi
 
 APP_ZIP="${APP_NAME}-${VERSION}-universal.zip"
 ditto -c -k --sequesterRsrc --keepParent "${BUNDLE}" "${RELEASE_DIR}/${APP_ZIP}"
