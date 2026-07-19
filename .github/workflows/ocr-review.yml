@@ -6,7 +6,8 @@
 #
 # Triggers:
 #   - PR opened or reopened
-#   - A PR comment beginning with '/open-code-review' or '@open-code-review' (re-run on demand)
+#   - A PR comment from a repo OWNER/MEMBER/COLLABORATOR beginning with
+#     '/open-code-review' or '@open-code-review' (re-run on demand)
 #
 # Configuration:
 #   Non-secret settings live in the job-level `env:` block below as plaintext
@@ -33,6 +34,11 @@ permissions:
   contents: read
   pull-requests: write
 
+# Cancel duplicate/parallel runs for the same PR (open + rapid re-trigger comments).
+concurrency:
+  group: ocr-review-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   code-review:
     runs-on: ubuntu-latest
@@ -40,11 +46,19 @@ jobs:
     env:
       OCR_LLM_MODEL: "gpt-4o"
       OCR_USE_ANTHROPIC: "false"
-    # Run on PR open/reopen, or on a PR comment starting with a trigger keyword.
+    # Run on PR open/reopen (same-repo only), or on a trigger comment from an
+    # authorized member. issue_comment workflows run from the default branch WITH
+    # secret access regardless of commenter, so the association gate below is
+    # required to stop arbitrary users triggering a secret-bearing LLM job.
+    # Fork PRs are skipped on the pull_request path: origin/<head> won't resolve
+    # and secrets are empty, so they'd only produce a confusing error comment.
     if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '/open-code-review')) ||
-      (github.event_name == 'issue_comment' && github.event.issue.pull_request && startsWith(github.event.comment.body, '@open-code-review'))
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.fork == false) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       (startsWith(github.event.comment.body, '/open-code-review') || startsWith(github.event.comment.body, '@open-code-review')) &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     steps:
       - name: Get PR context
         id: pr-context
