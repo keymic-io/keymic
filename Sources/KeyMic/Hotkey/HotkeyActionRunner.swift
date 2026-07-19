@@ -74,6 +74,14 @@ final class HotkeyActionRunner {
             // immediately; a re-fired `runAgent` hotkey reaches this case
             // promptly because the queue is no longer parked, and
             // `AgentRunner.adoptHotkeyTask` cancels the in-flight run.
+            //
+            // CONTRACT: `.runAgent` is fire-and-forget and does NOT sequence with
+            // later actions in a composed binding. Any action after it (e.g.
+            // `[.runAgent, .typeText]`) runs immediately, while the agent is
+            // still executing — the agent's own output is injected asynchronously
+            // by `runForHotkey`, not ordered against subsequent steps. Treat
+            // `.runAgent` as terminal or standalone in a binding; do not rely on
+            // a following action seeing the agent's result.
             let provider = agentRunnerProvider
             Task { @MainActor in
                 guard let runner = provider() else {
