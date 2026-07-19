@@ -93,6 +93,15 @@ final class ClipboardController {
 
     func toggle(initialTab: PanelTab = .clipboard) {
         TelemetryService.shared.featureUsed("clipboard")
+        // Activation milestone: fire once ever on the first clipboard-panel open. Only
+        // mark sent when actually emitted so a user who enables telemetry later still
+        // records their activation. Content-free.
+        let activationKey = "activationFirstClipboardUseSent"
+        if TelemetryService.shared.isEnabled,
+           !UserDefaults.standard.bool(forKey: activationKey) {
+            UserDefaults.standard.set(true, forKey: activationKey)
+            TelemetryService.shared.activationFirstClipboardUse()
+        }
         let trace = ClipboardOpenTrace.shared
         trace.begin(reason: "toggle(\(initialTab))")
 

@@ -19,6 +19,8 @@ protocol TelemetrySink {
     func personaInvoked(persona: String, injectionStrategy: String)
     func hotkeyAction(_ action: String)
     func activationFirstTranscription()
+    func activationFirstRemap()
+    func activationFirstClipboardUse()
     /// Shut the underlying SDK down so no further session tracking or queued sends
     /// happen after the consent toggle is turned off.
     func terminate()
@@ -138,5 +140,13 @@ final class TelemetryService {
 
     func activationFirstTranscription() {
         liveSink()?.activationFirstTranscription()
+    }
+
+    func activationFirstRemap() {
+        liveSink()?.activationFirstRemap()
+    }
+
+    func activationFirstClipboardUse() {
+        liveSink()?.activationFirstClipboardUse()
     }
 }
