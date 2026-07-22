@@ -414,6 +414,13 @@ test-clipboard-history-keyboard:
 	       -o .build/clipboard-history-keyboard-tests
 	.build/clipboard-history-keyboard-tests
 
+test-voice-scratchpad-decision:
+	mkdir -p .build
+	swiftc Sources/KeyMic/PersonaPlatform/Triggers/VoiceScratchpadDecision.swift \
+	       Tests/VoiceScratchpadDecisionTests.swift \
+	       -o .build/voice-scratchpad-decision-tests
+	.build/voice-scratchpad-decision-tests
+
 test-app-tips:
 	mkdir -p .build
 	swiftc Sources/KeyMic/Tips/AppTips.swift \
@@ -943,7 +950,7 @@ test-context-resolver:
 	       -o .build/context-resolver-tests
 	.build/context-resolver-tests
 
-test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating
+test-all: test test-clipboard-store test-clipboard-monitor test-cleanup-policy test-hotkey-config test-hotkey-action test-hotkey-bindings-store test-hotkey-settings-store test-toml-parser test-kind-classifier test-hotkey-action-runner test-keymonitor-clipboard-panel test-clipboard-history-keyboard test-voice-scratchpad-decision test-app-tips test-clipboard-switcher test-clipboard-selection-bridge test-single-instance test-speech-engine test-keychain-vault test-secret-scanner test-vault-store test-annotation-model test-pixelator test-renderer test-selection-handles test-toolbar-positioner test-overlay-state test-persona test-persona-store test-persona-context test-persona-mru test-persona-injection-strategy test-output-router test-hotkey-registry test-shell-logger test-shell-snapshot test-shell-runner test-clipboard-store-binary test-clipboard-monitor-types test-thumbnail-cache test-input-state test-secure-input-monitor test-voice-session test-speech-protocol test-voice-state-machine test-pasteboard-snapshot test-selection-copy-wait test-selected-text-editor test-context-source test-window-ocr test-shell-output test-audio-capture-16k test-sensevoice-vocab test-fbank-extractor test-sensevoice-model-store test-speech-factory test-speech-status test-ctc-decoder test-sensevoice-model-input test-sensevoice-padding-parity test-voice-model-catalog test-asset-store test-context-resolver test-account test-sync-section test-sync-engine test-sync-merge test-voice-picker test-keymonitor-persona-cycle test-persona-engine test-context-console test-telemetry-gating
 	@echo "\n✅ All tests passed"
 
 ## Format all Swift sources in-place using swift-format (brew install swift-format)
