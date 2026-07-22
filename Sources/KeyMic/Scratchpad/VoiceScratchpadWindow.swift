@@ -15,6 +15,7 @@ final class VoiceScratchpadWindow: NSPanel {
         isReleasedWhenClosed = false
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = false
+        minSize = NSSize(width: 380, height: 220)
         self.contentViewController = contentViewController
         center()
     }
