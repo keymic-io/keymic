@@ -48,6 +48,7 @@ struct ClipboardHistoryView: View {
     private enum SelectionRefreshMode {
         case focusFirst
         case focusFirstIfNeeded
+        case focusFirstIfChanged
         case pruneInvisible
     }
 
@@ -72,6 +73,7 @@ struct ClipboardHistoryView: View {
     }
 
     private func refreshFiltered(selection mode: SelectionRefreshMode) {
+        let previousVisibleIDs = selectionBridge.visibleOrderedIDs
         filtered = computeFiltered()
         let visibleIDs = filtered.all.map(\.id)
         selectionBridge.visibleOrderedIDs = visibleIDs
@@ -88,6 +90,10 @@ struct ClipboardHistoryView: View {
                 break
             }
             selectionBridge.focus(visibleIDs.first)
+        case .focusFirstIfChanged:
+            if visibleIDs != previousVisibleIDs {
+                selectionBridge.focus(visibleIDs.first)
+            }
         case .pruneInvisible:
             selectionBridge.pruneVisibleState()
         }
@@ -171,7 +177,7 @@ struct ClipboardHistoryView: View {
             focus.currentTab = newTab
         }
         .onChange(of: query) { _, _ in
-            refreshFiltered(selection: .focusFirstIfNeeded)
+            refreshFiltered(selection: .focusFirstIfChanged)
         }
         .onChange(of: items) { _, _ in
             refreshFiltered(selection: .pruneInvisible)

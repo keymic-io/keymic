@@ -9,8 +9,8 @@ struct ClipboardHistoryKeyHandlingTestRunner {
                "arrow should leave empty search and enter list navigation")
         expect(ClipboardHistoryKeyHandling.shouldHandleArrowKey(isSearchFocused: true, query: "   "),
                "arrow should leave whitespace-only search and enter list navigation")
-        expect(!ClipboardHistoryKeyHandling.shouldHandleArrowKey(isSearchFocused: true, query: "abc"),
-               "arrow should stay in populated search field")
+        expect(ClipboardHistoryKeyHandling.shouldHandleArrowKey(isSearchFocused: true, query: "abc"),
+               "arrow navigates the filtered list even while typing a query (Alfred-style)")
 
         expect(ClipboardHistoryKeyHandling.shouldHandleReturn(isSearchFocused: true, hasPasteTarget: true),
                "return should paste when search is focused but an item is highlighted/selected (paste on open)")

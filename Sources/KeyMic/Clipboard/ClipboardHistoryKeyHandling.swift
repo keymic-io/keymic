@@ -1,9 +1,11 @@
 import Foundation
 
 enum ClipboardHistoryKeyHandling {
+    /// Up/Down always drive list navigation (Alfred-style): even while typing a
+    /// query, ↑/↓ move the highlighted result instead of the text caret. Left/Right
+    /// are not intercepted, so they still edit the query.
     static func shouldHandleArrowKey(isSearchFocused: Bool, query: String) -> Bool {
-        guard isSearchFocused else { return true }
-        return query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        true
     }
 
     static func shouldHandleReturn(isSearchFocused: Bool, hasPasteTarget: Bool) -> Bool {
