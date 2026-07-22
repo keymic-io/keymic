@@ -73,13 +73,16 @@ enum SelectionTextProvider {
     /// Cmd+V is fire-and-forget, so this must run BEFORE injecting.
     ///
     /// - `.editable`    : focused element exposes a settable text value/selection.
-    /// - `.nonEditable` : there is no focused UI element at all, OR a focused
-    ///                    element resolves whose value/selectedText is not settable
-    ///                    AND whose role is a known non-editable role.
-    /// - `.unknown`     : AX could not decide (attribute unsupported / app doesn't
-    ///                    implement AX — Electron / Chrome / VSCode / Slack). Callers
-    ///                    MUST treat `.unknown` as editable to avoid regressing those
-    ///                    apps, which accept Cmd+V despite failing AX probes.
+    /// - `.nonEditable` : a focused element RESOLVES, is not settable, AND its role
+    ///                    is a confidently non-editable role (e.g. AXOutline on the
+    ///                    Finder desktop, AXStaticText, AXImage). Only this case
+    ///                    diverts to the scratchpad.
+    /// - `.unknown`     : AX could not decide — the focus read failed / returned
+    ///                    NoValue (Electron/Chromium apps like VSCode/Slack do this
+    ///                    yet accept Cmd+V), the role is unreadable, or it's an
+    ///                    editable-ish/ambiguous role. Callers MUST treat `.unknown`
+    ///                    as editable and paste, to avoid regressing AX-hidden apps.
+    ///                    Trade-off: a truly no-AX surface (some games) won't divert.
     static func focusedTargetEditability() -> FocusEditability {
         let systemWide = AXUIElementCreateSystemWide()
         var focused: CFTypeRef?
@@ -90,9 +93,13 @@ enum SelectionTextProvider {
             let any = focused,
             CFGetTypeID(any) == AXUIElementGetTypeID()
         else {
-            // No focused UI element at all — the high-confidence "nowhere to type"
-            // case (Finder desktop, image/PDF viewer, game).
-            return .nonEditable
+            // Focus read failed (e.g. kAXErrorNoValue). This is AMBIGUOUS: an
+            // Electron/Chromium app (VSCode/Slack) that accepts Cmd+V fine also
+            // returns NoValue here. So this is NOT high-confidence "nowhere to
+            // type" — treat as unknown and let paste proceed (never regress
+            // AX-hidden editable apps). The cost: a genuinely no-AX surface
+            // (some games) won't open the scratchpad.
+            return .unknown
         }
 
         // Safe: guarded by the CFGetTypeID check above (see axSelection()).
@@ -123,11 +130,13 @@ enum SelectionTextProvider {
         if editableRoles.contains(role) { return .unknown }
 
         // Confidently non-editable roles. Container roles (AXGroup, AXScrollArea,
-        // AXList, AXTable) are deliberately EXCLUDED: a partial-AX web/Electron app
-        // can report a focused contenteditable as AXGroup with a non-settable value
-        // yet still accept Cmd+V, so they must stay in the .unknown safety bucket.
+        // AXList, AXTable) AND AXWebArea are deliberately EXCLUDED: a partial-AX
+        // web/Electron app can report a focused contenteditable as one of those
+        // with a non-settable value yet still accept Cmd+V, so they must stay in
+        // the .unknown safety bucket. AXOutline is included — verified as the
+        // Finder desktop's focused role, which cannot accept typed text.
         let nonEditableRoles: Set<String> = [
-            kAXStaticTextRole, kAXImageRole, "AXWebArea", kAXButtonRole,
+            kAXStaticTextRole, kAXImageRole, kAXOutlineRole, kAXButtonRole,
             kAXMenuItemRole, kAXMenuButtonRole, kAXCheckBoxRole, kAXRadioButtonRole,
         ]
         if nonEditableRoles.contains(role) { return .nonEditable }
