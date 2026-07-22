@@ -68,38 +68,6 @@ enum SelectionTextProvider {
         return s
     }
 
-    /// AX-only check of whether the focused element's selected text can be
-    /// written back — asks `AXUIElementIsAttributeSettable` about
-    /// `kAXSelectedTextAttribute`, the same attribute `AXSelectionWriter.write`
-    /// sets, so it predicts whether the `.replaceSelection` AX write will be
-    /// accepted without actually mutating anything.
-    ///
-    /// Returns `false` when the attribute is not settable, when the focused
-    /// element doesn't implement it (Electron / Chrome / VSCode / PDF viewers),
-    /// or when nothing is focused. `false` therefore means "not confirmed
-    /// editable", not strictly "read-only"; some clients also mis-report
-    /// settability, so treat the result as a hint, not a guarantee.
-    static func isSelectionEditable() -> Bool {
-        let systemWide = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        guard
-            AXUIElementCopyAttributeValue(
-                systemWide, kAXFocusedUIElementAttribute as CFString, &focused
-            ) == .success,
-            let any = focused,
-            CFGetTypeID(any) == AXUIElementGetTypeID()
-        else { return false }
-
-        // Safe: guarded by the CFGetTypeID check above (see axSelection()).
-        let element = any as! AXUIElement
-
-        var settable: DarwinBoolean = false
-        let status = AXUIElementIsAttributeSettable(
-            element, kAXSelectedTextAttribute as CFString, &settable
-        )
-        return status == .success && settable.boolValue
-    }
-
     /// Conservative pre-flight classification of the current focused element, used
     /// to decide whether a raw-dictation Cmd+V has any editable target at all.
     /// Cmd+V is fire-and-forget, so this must run BEFORE injecting.

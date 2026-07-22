@@ -299,7 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             personaStore: PersonaStore.shared,
             clipboardStore: clipboardController.store,
             textInjector: textInjector,
-            scratchpad: VoiceScratchpadController()
+            scratchpad: VoiceScratchpadController(clipboardStore: clipboardController.store)
         )
         keyMonitor.onTriggerDown = { [weak self] source in
             guard let self, self.isVoiceEnabled else { return }
