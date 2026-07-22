@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 1
-- **Last Active**: 2026-07-19
+- **Total Sessions**: 2
+- **Last Active**: 2026-07-23
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~42 | Active |
+| `journal-1.md` | ~78 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 2 | 2026-07-23 | Voice scratchpad fallback for no-editable-target dictation | `bbe97f7`, `10a6daf`, `ae56227`, `7ba3a46` | `feat/sentry-crash-error` |
 | 1 | 2026-07-19 | Telemetry via TelemetryDeck (child-1 of observability stack) | `7b55618`, `b1a26c4`, `dd13a3a` | `main` |
 <!-- @@@/auto:session-history -->
 
