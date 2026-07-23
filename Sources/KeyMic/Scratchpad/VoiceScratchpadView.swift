@@ -33,7 +33,7 @@ struct VoiceScratchpadView: View {
                 .focused($editorFocused)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .frame(minWidth: 360, minHeight: 160)
+                .frame(minWidth: 460, minHeight: 260)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .textBackgroundColor), in: .rect(cornerRadius: 8))
                 .overlay(
@@ -53,7 +53,7 @@ struct VoiceScratchpadView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 400, minHeight: 240)
+        .frame(minWidth: 500, minHeight: 340)
         // Defer to the next runloop so the window is key before we grab focus.
         .onAppear { DispatchQueue.main.async { editorFocused = true } }
     }
