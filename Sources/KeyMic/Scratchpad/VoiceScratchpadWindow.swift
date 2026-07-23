@@ -7,7 +7,7 @@ final class VoiceScratchpadWindow: NSPanel {
     init(contentViewController: NSViewController) {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 260),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )

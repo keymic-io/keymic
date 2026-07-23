@@ -9,11 +9,11 @@ private let logger = Logger(subsystem: "io.keymic.app", category: "VoiceScratchp
 /// the window key so the text field is first responder.
 ///
 /// Copy & Close writes `NSPasteboard.general` (so the user can paste immediately)
-/// and records the text directly in `ClipboardStore` (R5). The direct store write
-/// is required because the copy happens while KeyMic is frontmost, and
-/// `ClipboardMonitor` skips pasteboard writes whose source app is its own bundle —
-/// so the write would never reach history via the monitor. Discard / Esc closes
-/// without writing the clipboard (R6). Nothing is auto-copied on open.
+/// and records the text directly in `ClipboardStore` (R5), rather than relying on
+/// `ClipboardMonitor` to pick the write up — whether the monitor sees it depends on
+/// its 0.5 s poll firing before/after the window closes and on which app is
+/// frontmost at that moment, so a direct write is the deterministic path. Discard /
+/// Esc closes without writing the clipboard (R6). Nothing is auto-copied on open.
 @MainActor
 final class VoiceScratchpadController {
     private let clipboardStore: ClipboardStore
@@ -34,9 +34,14 @@ final class VoiceScratchpadController {
             )
         )
 
-        let window = window ?? VoiceScratchpadWindow(contentViewController: host)
-        window.contentViewController = host
-        self.window = window
+        let window: VoiceScratchpadWindow
+        if let existing = self.window {
+            existing.contentViewController = host
+            window = existing
+        } else {
+            window = VoiceScratchpadWindow(contentViewController: host)
+            self.window = window
+        }
 
         window.center()
         NSApp.activate(ignoringOtherApps: true)
@@ -47,8 +52,9 @@ final class VoiceScratchpadController {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
-        // Record directly: the ClipboardMonitor would skip this write (KeyMic is
-        // frontmost, so the write's source is our own bundle).
+        // Record directly rather than depending on ClipboardMonitor's poll (its
+        // timing/frontmost-app attribution is non-deterministic here); identical-
+        // newest dedup in ClipboardStore collapses any later monitor re-capture.
         clipboardStore.add(text: text, sourceBundleID: nil, sourceAppName: nil)
         logger.debug("scratchpad copy & close (length=\(text.count, privacy: .public))")
         window?.orderOut(nil)
