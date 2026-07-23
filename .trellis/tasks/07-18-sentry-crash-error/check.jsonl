@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/07-18-observability-stack/prd.md", "reason": "Cross-child + Sentry-hardening red-lines to verify: no content in any event/breadcrumb/tag/context, single toggle gates both tools, anonymous only, dependency budget."}
+{"file": ".trellis/tasks/07-18-sentry-crash-error/prd.md", "reason": "This task's own acceptance criteria — crash + captured error appear, toggle-off = no Sentry init/network, one import site, Debug not in production env, one new SPM dep."}
+{"file": "CLAUDE.md", "reason": "Verify conventions: Makefile test-<name> in test-all, Info.plist plutil -lint clean, single import-boundary mirrors the Telemetry section's pattern."}

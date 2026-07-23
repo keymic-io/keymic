@@ -68,6 +68,89 @@ enum SelectionTextProvider {
         return s
     }
 
+    /// Conservative pre-flight classification of the current focused element, used
+    /// to decide whether a raw-dictation Cmd+V has any editable target at all.
+    /// Cmd+V is fire-and-forget, so this must run BEFORE injecting.
+    ///
+    /// - `.editable`    : focused element exposes a settable text value/selection.
+    /// - `.nonEditable` : a focused element RESOLVES, is not settable, AND its role
+    ///                    is a confidently non-editable role (e.g. AXOutline on the
+    ///                    Finder desktop, AXStaticText, AXImage). Only this case
+    ///                    diverts to the scratchpad.
+    /// - `.unknown`     : AX could not decide — the focus read failed / returned
+    ///                    NoValue (Electron/Chromium apps like VSCode/Slack do this
+    ///                    yet accept Cmd+V), the role is unreadable, or it's an
+    ///                    editable-ish/ambiguous role. Callers MUST treat `.unknown`
+    ///                    as editable and paste, to avoid regressing AX-hidden apps.
+    ///                    Trade-off: a truly no-AX surface (some games) won't divert.
+    static func focusedTargetEditability() -> FocusEditability {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(
+                systemWide, kAXFocusedUIElementAttribute as CFString, &focused
+            ) == .success,
+            let any = focused,
+            CFGetTypeID(any) == AXUIElementGetTypeID()
+        else {
+            // Focus read failed (e.g. kAXErrorNoValue). This is AMBIGUOUS: an
+            // Electron/Chromium app (VSCode/Slack) that accepts Cmd+V fine also
+            // returns NoValue here. So this is NOT high-confidence "nowhere to
+            // type" — treat as unknown and let paste proceed (never regress
+            // AX-hidden editable apps). The cost: a genuinely no-AX surface
+            // (some games) won't open the scratchpad.
+            return .unknown
+        }
+
+        // Safe: guarded by the CFGetTypeID check above (see axSelection()).
+        let element = any as! AXUIElement
+
+        if isAttributeSettable(element, kAXSelectedTextAttribute)
+            || isAttributeSettable(element, kAXValueAttribute) {
+            return .editable
+        }
+
+        var roleRef: CFTypeRef?
+        guard
+            AXUIElementCopyAttributeValue(
+                element, kAXRoleAttribute as CFString, &roleRef
+            ) == .success,
+            let role = roleRef as? String
+        else {
+            // Role unreadable → can't tell → be safe, let paste proceed.
+            return .unknown
+        }
+
+        // Roles that are text-editable but sometimes mis-report settability →
+        // stay in the safety bucket so paste proceeds.
+        let editableRoles: Set<String> = [
+            kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole,
+            "AXSearchField",
+        ]
+        if editableRoles.contains(role) { return .unknown }
+
+        // Confidently non-editable roles. Container roles (AXGroup, AXScrollArea,
+        // AXList, AXTable) AND AXWebArea are deliberately EXCLUDED: a partial-AX
+        // web/Electron app can report a focused contenteditable as one of those
+        // with a non-settable value yet still accept Cmd+V, so they must stay in
+        // the .unknown safety bucket. AXOutline is included — verified as the
+        // Finder desktop's focused role, which cannot accept typed text.
+        let nonEditableRoles: Set<String> = [
+            kAXStaticTextRole, kAXImageRole, kAXOutlineRole, kAXButtonRole,
+            kAXMenuItemRole, kAXMenuButtonRole, kAXCheckBoxRole, kAXRadioButtonRole,
+        ]
+        if nonEditableRoles.contains(role) { return .nonEditable }
+
+        // Any other role → can't tell → favor pasting.
+        return .unknown
+    }
+
+    private static func isAttributeSettable(_ element: AXUIElement, _ attribute: String) -> Bool {
+        var settable: DarwinBoolean = false
+        let status = AXUIElementIsAttributeSettable(element, attribute as CFString, &settable)
+        return status == .success && settable.boolValue
+    }
+
     // MARK: - AX path
 
     enum AXResult {

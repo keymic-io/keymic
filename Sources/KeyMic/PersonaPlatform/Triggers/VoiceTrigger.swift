@@ -12,6 +12,7 @@ final class VoiceTrigger: SpeechClient {
     private let personaStore: PersonaStore
     private let clipboardStore: ClipboardStore
     private let textInjector: TextInjector
+    private let scratchpad: VoiceScratchpadController
 
     private var session: SpeechSession?
     private var isRecording = false
@@ -55,13 +56,15 @@ final class VoiceTrigger: SpeechClient {
          overlayPanel: OverlayPanel,
          personaStore: PersonaStore,
          clipboardStore: ClipboardStore,
-         textInjector: TextInjector) {
+         textInjector: TextInjector,
+         scratchpad: VoiceScratchpadController) {
         self.engine = engine
         self.sessionHost = sessionHost
         self.overlayPanel = overlayPanel
         self.personaStore = personaStore
         self.clipboardStore = clipboardStore
         self.textInjector = textInjector
+        self.scratchpad = scratchpad
     }
 
     func onTriggerDown(source: VoiceTriggerSource) {
@@ -309,10 +312,20 @@ final class VoiceTrigger: SpeechClient {
                     await MainActor.run {
                         self.overlayPanel.dismiss()
                     }
-                case .routed(_, _, let routeResult):
+                case .routed(let routedText, _, let routeResult):
                     await MainActor.run {
                         self.overlayPanel.dismiss()
-                        self.overlayPanel.showRouteResult(routeResult)
+                        // An editability fallback means there was no editable target:
+                        // open the scratchpad with the routed text (OutputRouter's
+                        // clipboard write on that path is kept). Other results —
+                        // including .failed for URL/shell — stay a toast.
+                        switch routeResult {
+                        case .fellBackToClipboard(.selectionNotEditable),
+                             .fellBackToClipboard(.noFocusedElement):
+                            self.scratchpad.present(text: routedText)
+                        default:
+                            self.overlayPanel.showRouteResult(routeResult)
+                        }
                     }
                 }
             } catch InvocationError.cancelled {
@@ -425,6 +438,15 @@ final class VoiceTrigger: SpeechClient {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self else { return }
             OutputRouter.shared.activateOriginatingAppSync(originatingApp)
+            // Pre-flight editability probe: Cmd+V is fire-and-forget, so a
+            // no-editable-target must be detected BEFORE injecting. Divert ONLY on
+            // high-confidence non-editable; .editable / .unknown paste as before.
+            let editability = SelectionTextProvider.focusedTargetEditability()
+            if VoiceScratchpadDecision.shouldOpen(for: editability) {
+                self.scratchpad.present(text: text)
+                NSSound(named: .init("Pop"))?.play()
+                return
+            }
             self.textInjector.inject(text)
             NSSound(named: .init("Pop"))?.play()
         }
